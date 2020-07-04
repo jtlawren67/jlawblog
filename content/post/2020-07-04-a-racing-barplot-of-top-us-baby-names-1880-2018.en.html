@@ -1,0 +1,475 @@
+---
+title: A Racing Barplot of Top US Baby Names 1880-2018
+author: JLaw
+date: '2020-07-04'
+slug: a-racing-barplot-of-top-us-baby-names-1880-2018
+categories:
+  - R
+  - DataViz
+tags:
+  - R
+  - rvest
+  - httr
+  - gganimate
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2020-07-04T11:00:24-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+
+
+<p>A few month’s back Mrs. JLaw and I were discussing baby names (purely for academic purposes) and it got me thinking about how have popular names changed over time. It was a particular interest to me as someone who had a name that was somewhat popular for a while and has since fallen out of fashion.</p>
+<p>This also provided me an opportunity to try out one of those ‘racing barplots’ that have been popping up all over the place. Also, while I’ve used the <a href="https://gganimate.com/articles/gganimate.html">gganimate</a> package a number of times, I constantly forget the syntax. And since this site is as much for me (probably moreso) than anyone else, this will be a good reference in case I try to do this again.</p>
+<p>On to the project….</p>
+<p>Fortunately, I know that baby name data is easily available as the <a href="https://www.ssa.gov/oact/babynames/index.html">Social Security Administration</a> website. And while I don’t reminder how I found the flat files for all years it is available as a <a href="https://www.ssa.gov/oact/babynames/names.zip">ZIP file</a> containing 139 .txt files, containing popular boys and girls names for each year. However, I don’t really want to deal with downloading and unzipping files, so I’m going to try to query the SSA site directly.</p>
+<div id="loading-some-libraries" class="section level2">
+<h2>Loading Some Libraries</h2>
+<p>To do this project, I’ll use:</p>
+<ul>
+<li><code>httr</code> - To construct the POST command to get the SSA to return a webpage with the data I want</li>
+<li><code>rvest</code> - To scrape the table of popular name data from the content returned from the <code>httr</code> request</li>
+<li><code>tidyverse</code> meta-package - for combining the data from each request (purrr), data manipulation (dplyr), and visualization (ggplot2)</li>
+<li><code>gganimate</code> - to animate the ggplot2 plots and make them look super cool</li>
+<li><code>scales</code> - To make the count of baby names in the chart appear prettier (comma-formatted)</li>
+</ul>
+<pre class="r"><code>library(tidyverse)
+library(gganimate)
+library(scales)
+library(httr)
+library(rvest)</code></pre>
+</div>
+<div id="reading-the-data" class="section level2">
+<h2>Reading the Data</h2>
+<p>As mentioned before, the data is available as a series of .txt files from the <a href="https://www.ssa.gov/oact/babynames/names.zip">SSA</a>. When I originally did this, I downloaded and extracted the ZIP file, but as I’m redoing this for the post, I’d rather have a solution that is entirely self-contained so I’m going to try to use <code>httr</code> to actually query the SSA data.</p>
+<p>So how to actually get the data from the website?</p>
+<p>From the <a href="https://www.ssa.gov/oact/babynames/index.html">Baby Names By Birth Year</a> section, I can input the birth year, how many names I want, and whether I want counts or percentages.</p>
+<center>
+<img src="/post/2020-07-04-a-racing-barplot-of-top-us-baby-names-1880-2018.en_files/webscrape1.PNG" />
+</center>
+<p>When I click go, I wind up at <code>https://www.ssa.gov/cgi-bin/popularnames.cgi</code> with my desired results in a table. Using Google Chrome’s Network Inspector I can see that I sent a <code>POST</code> request with three parameters (year, top, and number):</p>
+<center>
+<img src="/post/2020-07-04-a-racing-barplot-of-top-us-baby-names-1880-2018.en_files/webscrape2.PNG" />
+</center>
+<p>Now that I know what I need to send, I can create a function in purrr to request each year and stack each response on top of each other using <code>map_dfr</code>. For the inputs, I know that I want all available years (which I know are 1880 through 2018) and I only need the top 10 (so top = 10) and I want counts rather than percentages (number = “n”)</p>
+<pre class="r"><code>babynames &lt;- map_dfr(
+  1880:2018, #Inputs to My Function
+  #Define Function to Apply for Each Year
+  function(year){
+    #Construct POST Command
+    POST(
+      #Where to Send the Request
+      url = &quot;https://www.ssa.gov/cgi-bin/popularnames.cgi&quot;,
+      #What to Send the Requests (my three parameters)
+      body = paste0(&quot;year=&quot;,year,&quot;&amp;top=10&amp;number=n&quot;)
+    ) %&gt;%
+    #Extract the Content from the Request Response
+    content(&quot;parsed&quot;) %&gt;% 
+    #Extract All The Tables
+    html_nodes(&#39;table&#39;) %&gt;%
+    #Only Keep the 3rd Table (done through some guess and check)
+    .[[3]] %&gt;% 
+    #Store the Table Data as a data.frame
+    html_table() %&gt;%
+    #Add a column to the data frame for year
+    mutate(
+      year = year
+    )
+  }
+)</code></pre>
+<p>My expectation for this data is that there would be 139 distinct values for year and 1390 rows in the data. And in fact there are 139 distinct years (:heart_eyes:) and 1529 rows (:rage:).</p>
+<p>So what’s going on… Let’s look at the year 1880.</p>
+<table>
+<thead>
+<tr class="header">
+<th align="left">Rank</th>
+<th align="left">Male name</th>
+<th align="left">Number of males</th>
+<th align="left">Female name</th>
+<th align="left">Number of females</th>
+<th align="right">year</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">1</td>
+<td align="left">John</td>
+<td align="left">9,655</td>
+<td align="left">Mary</td>
+<td align="left">7,065</td>
+<td align="right">1880</td>
+</tr>
+<tr class="even">
+<td align="left">2</td>
+<td align="left">William</td>
+<td align="left">9,532</td>
+<td align="left">Anna</td>
+<td align="left">2,604</td>
+<td align="right">1880</td>
+</tr>
+<tr class="odd">
+<td align="left">3</td>
+<td align="left">James</td>
+<td align="left">5,927</td>
+<td align="left">Emma</td>
+<td align="left">2,003</td>
+<td align="right">1880</td>
+</tr>
+<tr class="even">
+<td align="left">4</td>
+<td align="left">Charles</td>
+<td align="left">5,348</td>
+<td align="left">Elizabeth</td>
+<td align="left">1,939</td>
+<td align="right">1880</td>
+</tr>
+<tr class="odd">
+<td align="left">5</td>
+<td align="left">George</td>
+<td align="left">5,126</td>
+<td align="left">Minnie</td>
+<td align="left">1,746</td>
+<td align="right">1880</td>
+</tr>
+<tr class="even">
+<td align="left">6</td>
+<td align="left">Frank</td>
+<td align="left">3,242</td>
+<td align="left">Margaret</td>
+<td align="left">1,578</td>
+<td align="right">1880</td>
+</tr>
+<tr class="odd">
+<td align="left">7</td>
+<td align="left">Joseph</td>
+<td align="left">2,632</td>
+<td align="left">Ida</td>
+<td align="left">1,472</td>
+<td align="right">1880</td>
+</tr>
+<tr class="even">
+<td align="left">8</td>
+<td align="left">Thomas</td>
+<td align="left">2,534</td>
+<td align="left">Alice</td>
+<td align="left">1,414</td>
+<td align="right">1880</td>
+</tr>
+<tr class="odd">
+<td align="left">9</td>
+<td align="left">Henry</td>
+<td align="left">2,444</td>
+<td align="left">Bertha</td>
+<td align="left">1,320</td>
+<td align="right">1880</td>
+</tr>
+<tr class="even">
+<td align="left">10</td>
+<td align="left">Robert</td>
+<td align="left">2,415</td>
+<td align="left">Sarah</td>
+<td align="left">1,288</td>
+<td align="right">1880</td>
+</tr>
+<tr class="odd">
+<td align="left">Note: Rank 1 is the most popular,</td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">rank 2 is the next most popular, and so forth. All names are from Social Security card applications</td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">for births that occurred in the United States. Note: Rank 1 is the most popular,</td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">rank 2 is the next most popular, and so forth. All names are from Social Security card applications</td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">for births that occurred in the United States. Note: Rank 1 is the most popular,</td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">rank 2 is the next most popular, and so forth. All names are from Social Security card applications</td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">for births that occurred in the United States. Note: Rank 1 is the most popular,</td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">rank 2 is the next most popular, and so forth. All names are from Social Security card applications</td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">for births that occurred in the United States. Note: Rank 1 is the most popular,</td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="right"></td>
+</tr>
+<tr class="even">
+<td align="left">rank 2 is the next most popular, and so forth. All names are from Social Security card applications</td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="right"></td>
+</tr>
+<tr class="odd">
+<td align="left">for births that occurred in the United States. 1880</td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="left"></td>
+<td align="right"></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="cleaning-the-data" class="section level2">
+<h2>Cleaning the Data</h2>
+<p>We were expected 10 rows but we got 11 because of a footnote at the bottom of the table. I could go fix the data pulling step to explicitly only get the Top 10 rows but there are a bunch of other data cleaning steps to do, so may as well do everything at once. In this step I’m going to:</p>
+<ol style="list-style-type: decimal">
+<li>Remove that pesky footer row</li>
+<li>Turn the Table from Wide Format to Long Format (so genders are on top of each other)</li>
+<li>Convert the Counts to Numeric</li>
+</ol>
+<pre class="r"><code>babynames_clean &lt;- babynames %&gt;% 
+  #Remove the Note row by filter rows where the Rank column has the string &quot;Note&quot;
+  filter(!str_detect(Rank, &quot;Note&quot;)) %&gt;%
+  #Turn Data from Wide Format to Long Format 
+  pivot_longer(
+    cols = c(&quot;Male name&quot;, &quot;Female name&quot;, &quot;Number of males&quot;, &quot;Number of females&quot;),
+    names_to = &quot;variable&quot;,
+    values_to = &quot;value&quot;
+  ) %&gt;% 
+  #Construct a way to split the Names and Counts
+  mutate(
+    gender = if_else(str_detect(str_to_lower(variable), &#39;female&#39;), &#39;F&#39;, &#39;M&#39;),
+    new_variable = if_else(str_detect(variable, &quot;name&quot;), &quot;name&quot;, &quot;count&quot;)
+  ) %&gt;% 
+  #Pivot Wider to Have Names and Counts in Separate Columns
+  pivot_wider(
+    id_cols = c(&#39;Rank&#39;, &#39;year&#39;, &#39;gender&#39;), 
+    names_from = &quot;new_variable&quot;,
+    values_from = &quot;value&quot;
+  ) %&gt;% 
+  #Convert Count to Numeric
+  mutate(
+    count = parse_number(count),
+    Rank = parse_number(Rank)
+  )</code></pre>
+<p>Now let’s look at our cleaned data for year 1880:</p>
+<table>
+<thead>
+<tr class="header">
+<th align="right">Rank</th>
+<th align="right">year</th>
+<th align="left">gender</th>
+<th align="left">name</th>
+<th align="right">count</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="right">1</td>
+<td align="right">1880</td>
+<td align="left">M</td>
+<td align="left">John</td>
+<td align="right">9655</td>
+</tr>
+<tr class="even">
+<td align="right">1</td>
+<td align="right">1880</td>
+<td align="left">F</td>
+<td align="left">Mary</td>
+<td align="right">7065</td>
+</tr>
+<tr class="odd">
+<td align="right">2</td>
+<td align="right">1880</td>
+<td align="left">M</td>
+<td align="left">William</td>
+<td align="right">9532</td>
+</tr>
+<tr class="even">
+<td align="right">2</td>
+<td align="right">1880</td>
+<td align="left">F</td>
+<td align="left">Anna</td>
+<td align="right">2604</td>
+</tr>
+<tr class="odd">
+<td align="right">3</td>
+<td align="right">1880</td>
+<td align="left">M</td>
+<td align="left">James</td>
+<td align="right">5927</td>
+</tr>
+<tr class="even">
+<td align="right">3</td>
+<td align="right">1880</td>
+<td align="left">F</td>
+<td align="left">Emma</td>
+<td align="right">2003</td>
+</tr>
+<tr class="odd">
+<td align="right">4</td>
+<td align="right">1880</td>
+<td align="left">M</td>
+<td align="left">Charles</td>
+<td align="right">5348</td>
+</tr>
+<tr class="even">
+<td align="right">4</td>
+<td align="right">1880</td>
+<td align="left">F</td>
+<td align="left">Elizabeth</td>
+<td align="right">1939</td>
+</tr>
+<tr class="odd">
+<td align="right">5</td>
+<td align="right">1880</td>
+<td align="left">M</td>
+<td align="left">George</td>
+<td align="right">5126</td>
+</tr>
+<tr class="even">
+<td align="right">5</td>
+<td align="right">1880</td>
+<td align="left">F</td>
+<td align="left">Minnie</td>
+<td align="right">1746</td>
+</tr>
+</tbody>
+</table>
+<p>Beautiful!!!</p>
+</div>
+<div id="making-the-barplot" class="section level2">
+<h2>Making The Barplot</h2>
+<p>Now that we’ve gotten and cleaned the data, the real fun can begin.</p>
+<p>My personal strategy for building animated ggplots is to first build the static version of the plot (in this case filtering to one year). Then once that is good, adding in the gganimate magic keynotes like <code>transition</code> and <code>ease</code>.</p>
+<p>While you can generated an animated plot by the code interactively, I find it easiest to save the plot object and then render using the <code>animate()</code> function. This way there are more ways to control how the animation occurs like duration, and frames per second.</p>
+<p>Because my laptop isn’t particular great, trying to nail down the aesthetics of making the animation look good (not too fast, not too slow) is the most time consuming part.</p>
+<div id="creating-a-generic-function" class="section level3">
+<h3>Creating a generic function</h3>
+<p>Since I’m creating two charts for Baby Boys and Baby Girls that will be identical except for some labeling, I’m going to write a function to actually build the animated chart and then I will call them in a future section.</p>
+<pre class="r"><code>#Input a 
+gen_graph &lt;- function(cond){
+  
+  #Use stereotypical gender colors for the two graphs
+  if(cond == &quot;F&quot;){
+    lbl = &quot;Girl&quot;
+    col = &quot;#FFC0CB&quot;
+  }else{
+    lbl = &quot;Boy&quot;
+    col = &quot;#89cff0&quot;
+  }
+  
+  #Construct Animated Object
+  animated &lt;- babynames_clean %&gt;% 
+    #Filter to specific gender
+    filter(gender == cond) %&gt;%
+    # Construct Basic GGPLOT Plot
+    ggplot(aes(x = Rank, y = count/2, group = name)) + 
+    geom_col(fill = col) + 
+    geom_text(aes(label = count %&gt;% comma(accuracy = 1)), hjust = 0, size = 10) + 
+    geom_text(aes(label = name), y = 0, vjust = .2, hjust = 1, size = 10) +
+    labs(x = paste0(lbl,&quot;&#39;s Name&quot;), y = &quot;# of Babies&quot;,
+         title = paste0(&quot;Top 10 &quot;, lbl, &quot;&#39;s Baby Names (1880-2018)&quot;),
+         #{frame_time} is a gganimate param that updates based on the time value
+         #Its used to dynamically update the subtitle
+         subtitle = &#39;{round(frame_time,0)}&#39;,
+         caption = &#39;Source: Social Security Administration&#39;) + 
+    scale_x_reverse() + 
+    coord_flip(clip = &#39;off&#39;) + 
+    theme_minimal() +
+    theme(axis.line=element_blank(),
+          axis.text.x=element_blank(),
+          axis.text.y=element_blank(),
+          axis.ticks=element_blank(),
+          axis.title.x=element_blank(),
+          axis.title.y=element_blank(),
+          legend.position=&quot;none&quot;,
+          panel.background=element_blank(),
+          panel.border=element_blank(),
+          panel.grid.major=element_blank(),
+          panel.grid.minor=element_blank(),
+          panel.grid.major.x = element_line(size=.4, 
+                                            color=&quot;grey&quot; ),
+          panel.grid.minor.x = element_line(size=.1, 
+                                            color=&quot;grey&quot; ),
+          plot.title.position = &quot;plot&quot;,
+          plot.title=element_text(size=20, 
+                                  face=&quot;bold&quot;, 
+                                  colour=&quot;#313632&quot;),
+          plot.subtitle=element_text(size=50, 
+                                     color=&quot;#a3a5a8&quot;),
+          plot.caption =element_text(size=15, 
+                                     color=&quot;#313632&quot;),
+          plot.background=element_blank(),
+          plot.margin = margin(1, 9, 1, 9, &quot;cm&quot;)) + 
+    #Add in GGANIMATE Magic
+    transition_time(year) + 
+    ease_aes(&#39;cubic-in-out&#39;) +
+    view_follow(fixed_x = T)
+
+  animate(animated, fps = 10, duration = 30, width = 1000, height = 600, 
+          end_pause = 20, start_pause = 20)
+    
+}</code></pre>
+</div>
+<div id="most-popular-boys-names" class="section level3">
+<h3>Most Popular Boy’s Names</h3>
+<pre class="r"><code>gen_graph(&quot;M&quot;)</code></pre>
+<p><img src="/post/2020-07-04-a-racing-barplot-of-top-us-baby-names-1880-2018.en_files/figure-html/boys_plot-1.gif" /><!-- --></p>
+</div>
+<div id="most-popular-boys-names-1" class="section level3">
+<h3>Most Popular Boy’s Names</h3>
+<pre class="r"><code>gen_graph(&quot;F&quot;)</code></pre>
+<p><img src="/post/2020-07-04-a-racing-barplot-of-top-us-baby-names-1880-2018.en_files/figure-html/girls_plot-1.gif" /><!-- --></p>
+<p>Thanks for reading my first blog post! In the future, I’ll work to get the sizing of the output charts to work better but for now… good &gt; perfect.</p>
+</div>
+</div>

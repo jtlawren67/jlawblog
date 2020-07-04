@@ -1,0 +1,3 @@
+{{ partial "page_edit" . }} {{ partial "tags" . }} {{ partial "share" . }} {{ partial "comments" . }} {{ if site.Params.section_pager }}
+{{ partial "section_pager" . }}
+{{ end }} {{ partial "page_related" . }}
