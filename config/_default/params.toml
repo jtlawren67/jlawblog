@@ -230,7 +230,7 @@ plugins_js  = []
   # Configuration of Disqus.
   [comments.disqus]
     shortname = "jlaw"  # Paste the shortname from your Disqus dashboard.
-    show_count = true  # Show comment count in page header? (true/false)
+    show_count = false  # Show comment count in page header? (true/false)
 
   # Configuration of Commento.
   [comments.commento]
