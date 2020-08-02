@@ -1,0 +1,313 @@
+---
+title: What's the Difference Between Instagram and TikTok? Using Word Embeddings to
+  Find Out
+author: JLaw
+date: '2020-08-02'
+slug: what-s-the-difference-between-instagram-and-tiktok-using-word-embeddings-to-find-out
+categories:
+  - R
+  - TextMining
+  - Twitter
+tags:
+  - rtweet
+  - tidytext
+  - ggtext
+  - widyr
+  - embeddings
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2020-08-02T15:00:28-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+
+
+<div id="tldr" class="section level1">
+<h1>TL;DR</h1>
+<ul>
+<li>Instagram - Tiktok = Photos, Photographers and Selfies</li>
+<li>Tiktok - Instagram = Witchcraft and Teens</li>
+</ul>
+<p>but read the whole post to find out why!</p>
+<div id="purpose" class="section level2">
+<h2>Purpose</h2>
+<p>The original intent of this post was to learn to train my own Word2Vec model, however, as is a running theme.. my laptop is not great and training a neural network would never work. However, in looking for alternatives, I had come across a post from <a href="https://juliasilge.com/blog/word-vectors-take-two/">Julia Silge</a> from 2017 which outlined how create Word Embeddings using a combination of <a href="https://en.wikipedia.org/wiki/Pointwise_mutual_information">point-wise mutual information (PMI)</a> and Singular Value Decomposition (SVD). This was based on a methodology from Chris Moody’s Stitchfix Post called <a href="https://multithreaded.stitchfix.com/blog/2017/10/18/stop-using-word2vec/">Stop Using word2vec</a>. Ms. Silge’s methodology has been updated as part of her book <a href="https://smltar.com/embeddings.html#understand-word-embeddings-by-finding-them-yourself">Supervised Machine Learning for Text Analysis in R</a>.</p>
+<p>Word Embeddings are vector representations of words in a large number of dimensions that capture the context of how words are used. They have been used to show fancy examples of how you can do math with words. One of the most well known example is <code>King - Man + Woman = Queen</code>.</p>
+<p>Since TikTok and Instagram are both popular social media apps, especially among teenagers, I figured it would be an interesting exercise to see if I could figure out <code>Tiktok - Instagram = ????</code> and <code>Instagram - TikTok = ????</code>.</p>
+</div>
+<div id="getting-and-cleaning-the-data" class="section level2">
+<h2>Getting and Cleaning the Data</h2>
+<p>In order to create these vector representations I need data. In the example posts above, they use the Hacker News corpus which is available on Google’s BigQuery. In quickly browsing that data it didn’t seem like there was enough to do something as targeted as Instagram vs. TikTok. So I decided to use Twitter data both because I thought it would be a decent source of information and second because it was a good excuse to try out the <a href="https://github.com/ropensci/rtweet">rtweet</a> package.</p>
+<p>In addition to the <code>rtweet</code> package, I’ll be using <code>tidyverse</code> for data manipulations and plotting, <code>tidytext</code> to create the word tokens, and <code>widyr</code> in order to do the PMI, SVD, and Cosine Similarity calculations.</p>
+<pre class="r"><code>library(rtweet) # To Exract Data from Twitter
+library(tidyverse) # Data Manipulation and Plotting
+library(tidytext) # To create the Work Tokens and Bigrams
+library(widyr) #For doing PMI, SVD, and Similarity</code></pre>
+<p>Turns out getting data from Twitter really couldn’t be easier with <code>rtweet</code>. The <code>search_tweets()</code> function is very straight forward and really is all you need. In this case, I wanted to run two separate queries, one for “instagram” and one for “tiktok”, so I used <code>search_tweets2()</code> which allows you to pass a vector of queries rather than a single one. In the code below, my two queries, one for “instagram” and one for “tiktok” are captured in the <code>q</code> parameter (with additionally filters to remove tweets with links and tweets with replies). The <code>n</code> parameter says that I want 50,000 tweets for each query. Additionally, I tell the query that I don’t want retweets, I want to grab recent tweets (the package can only search the last 6-7 days), and I want only English language.</p>
+<pre class="r"><code>tweets &lt;- search_tweets2(
+  q = c(&quot;tiktok -filter:quote -filter:replies -filter:links&quot;, 
+        &#39;instagram -filter:quote -filter:replies -filter:links&#39;),
+  n = 50000,
+  include_rts = FALSE,
+  retryonratelimit = TRUE,
+  type = &#39;recent&#39;,
+  lang = &#39;en&#39;
+)</code></pre>
+<p>The query for this data was originally run on 7/21/2020 and returned 108,000 rows. Because the Twitter data contains many characters not typically considered words, the data was run through some data cleaning and duplicated tweets (ones that contained both “instagram” and “tiktok” were deduped.</p>
+<pre class="r"><code>cleaned_tweets &lt;- tweets %&gt;% 
+  #Encode to Native
+  transmute(status_id, text = plain_tweets(text)) %&gt;% 
+  #Remove Potential Dups
+  distinct() %&gt;% 
+  #Clean Data
+  mutate(
+    text = str_remove_all(text, &quot;^[[:space:]]*&quot;), # Remove leading whitespaces
+    text = str_remove_all(text, &quot;[[:space:]]*$&quot;), # Remove trailing whitespaces
+    text = str_replace_all(text, &quot; +&quot;,&quot; &quot;), # Remove extra whitespaces
+    text = str_replace_all(text, &quot;&#39;&quot;, &quot;%%&quot;), # Replacing apostrophes with %%
+    #text = iconv(text, &quot;latin1&quot;, &quot;ASCII&quot;, sub=&quot;&quot;), # Remove emojis/dodgy unicode
+    text = str_remove_all(text, &quot;&lt;(.*)&gt;&quot;), # Remove pesky Unicodes like &lt;U+A&gt;
+    text = str_replace_all(text, &quot;\\ \\. &quot;, &quot; &quot;), # Replace orphaned fullstops with space
+    text = str_replace_all(text, &quot;  &quot;, &quot; &quot;), # Replace double space with single space
+    text = str_replace_all(text, &quot;%%&quot;, &quot;\&#39;&quot;), # Changing %% back to apostrophes
+    text = str_remove_all(text, &quot;https(.*)*$&quot;), # remove tweet URL
+    text = str_replace_all(text, &quot;\\n&quot;, &quot; &quot;), # replace line breaks with space
+    text = str_replace_all(text, &quot;&amp;amp;&quot;, &quot;&amp;&quot;), # fix ampersand &amp;,
+    text = str_remove_all(text, &#39;&amp;lt;|&amp;gt;&#39;), 
+    text = str_remove_all(text, &#39;\\b\\d+\\b&#39;) #Remove Numbers
+  ) </code></pre>
+<p>Finally, the data was tokenized to break apart the tweets into a tidy format of 1 row per word. For example, “The quick brown fox” will be broken into 4 rows, the first containing “the”, the second containing “quick” and so on. Besides tokenization, <em>stop words</em> and infrequent words (&lt;20 occurrences) were removed. Stop words are very common words like “the”, “it”, etc. that don’t add much meaning to the Tweets.</p>
+<pre class="r"><code>tokens &lt;- cleaned_tweets %&gt;% 
+  #Tokenize
+  unnest_tokens(word, text) %&gt;% 
+  #Remove Stop Words
+  anti_join(stop_words, by = &quot;word&quot;) %&gt;% 
+  #Remove All Words Occurring Less Than 20 Times
+  add_count(word) %&gt;%
+  filter(n &gt;= 20) %&gt;%
+  select(-n)</code></pre>
+</div>
+<div id="creating-the-embeddings" class="section level2">
+<h2>Creating the Embeddings</h2>
+<p>The way that word embeddings are able to capture the context of individual words is by looking at what words appear around the word of interest. Getting from Tokens to Embeddings are done in three steps:</p>
+<ol style="list-style-type: decimal">
+<li>Create the Sliding Window to capture words occurring together</li>
+<li>Calculate the point-wise mutual information to provide a measure to how likely two words will appear together</li>
+<li>Use SVD to decompose the matrix of 4,586 words into some number of dimensions (in this case we’ll use 100).</li>
+</ol>
+<div id="creating-the-sliding-windows" class="section level3">
+<h3>Creating the Sliding Windows</h3>
+<p>Sliding windows in text is kind of like a rolling average for numbers where at any point there is a subset of data that we’re looking at as subset moves over the entire data set.</p>
+<p>A very simple example would be the string “the quick brown fox jumps over the lazy dog” with a window size of four will generate six windows</p>
+<table>
+<thead>
+<tr class="header">
+<th align="left">window_id</th>
+<th align="left">words</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">1_1</td>
+<td align="left">the, quick, brown, fox</td>
+</tr>
+<tr class="even">
+<td align="left">1_2</td>
+<td align="left">quick, brown, fox, jumps</td>
+</tr>
+<tr class="odd">
+<td align="left">1_3</td>
+<td align="left">brown, fox, jumps, over</td>
+</tr>
+<tr class="even">
+<td align="left">1_4</td>
+<td align="left">fox, jumps, over, the</td>
+</tr>
+<tr class="odd">
+<td align="left">1_5</td>
+<td align="left">jumps, over, the, lazy</td>
+</tr>
+<tr class="even">
+<td align="left">1_6</td>
+<td align="left">over, the, lazy, dog</td>
+</tr>
+</tbody>
+</table>
+<p>The examples from the blog post use a combination of nesting and the <code>furrr</code> package to create sliding windows in parallel. Since my laptop only has two cores, there isn’t much benefit to parallelizing this code. Fortunately, someone in the comments linked to this gist from <a href="https://gist.github.com/JasonPunyon/3bca3bf606e7583c7ea2d8a00f86418e">Jason Punyon</a> which works very quickly for me.</p>
+<pre class="r"><code>slide_windows &lt;- function(tbl, doc_var, window_size) {
+  tbl %&gt;%
+    group_by({{doc_var}}) %&gt;%
+    mutate(WordId = row_number() - 1,
+           RowCount = n()) %&gt;%
+    ungroup() %&gt;%
+    crossing(InWindowIndex = 0:(window_size-1)) %&gt;%
+    filter((WordId - InWindowIndex) &gt;= 0, # starting position of a window must be after the beginning of the document
+           (WordId - InWindowIndex + window_size - 1) &lt; RowCount # ending position of a window must be before the end of the document
+    ) %&gt;%
+    mutate(window_id = WordId - InWindowIndex + 1)
+}</code></pre>
+<p>The one parameter that we need to choose when creating the windows is the window size. There is no right or wrong answer for a window size since it will depend on the question being asked. From Julia Silge’s post, “A smaller window size, like three or four, focuses on how the word is used and learns what other words are functionally similar. A larger window size, like ten, captures more information about the domain or topic of each word, not constrained by how functionally similar the words are (Levy and Goldberg 2014). A smaller window size is also faster to compute”. For this example, I’m choosing a size of <strong>eight</strong>.</p>
+</div>
+<div id="point-wise-mutual-information" class="section level3">
+<h3>Point-wise Mutual Information</h3>
+<p>Point-wise mutual information is an association measurement to determine how likely two words are to occur together normalized by how likely each of the words are to be found on their own. The higher the PMI the more likely words are to be found close together vs. on their own.</p>
+<p>PMI(word1, word2) = log(P(word1, word2)/(P(word1)P(word2)))</p>
+<p>This can be calculated using the <code>pairwise_pmi()</code> function from the <code>widyr</code> package.</p>
+</div>
+<div id="singular-value-decomposition" class="section level3">
+<h3>Singular Value Decomposition</h3>
+<p>This final step will turn our set of Word/Word PMI values into a 100-dimensional embedding for each word using Singular Value Decomposition, which is a technique for dimensionality reduction.</p>
+<p>This is calculated using the <code>widely_svd()</code> function also from <code>widyr</code>.</p>
+</div>
+<div id="putting-it-all-together" class="section level3">
+<h3>Putting it all together</h3>
+<p>Executing these three steps can done in the following code:</p>
+<pre class="r"><code>tidy_word_vectors &lt;- tokens %&gt;%  
+  slide_windows(status_id, 8) %&gt;% #Create Sliding Window of 8 Words (Step 1)
+  unite(window_id, status_id, window_id) %&gt;% #Create new ID for each window
+  pairwise_pmi(word, window_id) %&gt;%  #Calculate the PMI (Step 2)
+  widely_svd(item1, item2, pmi, nv = 100, maxit = 1000) #Create 100 Dimension Embedding (Step 3)</code></pre>
+<p>The data at this point looks like:</p>
+<pre><code>## # A tibble: 6 x 3
+##   item1     dimension    value
+##   &lt;chr&gt;         &lt;int&gt;    &lt;dbl&gt;
+## 1 instagram         1  0.0273 
+## 2 instagram         2 -0.0101 
+## 3 instagram         3 -0.0729 
+## 4 instagram         4  0.107  
+## 5 instagram         5 -0.00237
+## 6 instagram         6 -0.0844</code></pre>
+<p>Where <em>item1</em> represents the word, <em>dimension</em> is each of our 100 dimensions for the word vector, and <em>value</em> is the numeric value for that dimension for that word.</p>
+</div>
+</div>
+<div id="the-fun-stuff" class="section level2">
+<h2>The Fun Stuff</h2>
+<p>Now that we have these embeddings, which again are 100-dimensional vectors to represent each word we can start doing analysis to hopefully find some find things.</p>
+<div id="what-word-is-most-similar-to-instagram" class="section level3">
+<h3>What Word is Most Similar to Instagram?</h3>
+<p>To find the most similar words, we can use <a href="https://en.wikipedia.org/wiki/Cosine_similarity">cosine similarity</a> to determine which vectors are most similar to our target words. Cosine similarity can be calculated using the <code>pairwise_similarity()</code> function from the <code>widyr</code> package.</p>
+<p>Let’s look at what’s most similar to “Instagram”:</p>
+<pre class="r"><code>#Get 10 Most Similar Words to Instagram
+ig &lt;- tidy_word_vectors %&gt;% 
+  pairwise_similarity(item1, dimension, value) %&gt;%
+  filter(item1 == &#39;instagram&#39;) %&gt;% 
+  arrange(desc(similarity)) %&gt;% 
+  head(10)
+
+#Plot most similar words
+ig %&gt;%
+  ggplot(aes(x = fct_reorder(item2, similarity), y = similarity, fill = item2)) + 
+    geom_col() + 
+    scale_fill_discrete(guide = F) +
+    labs(x = &quot;&quot;, y = &quot;Similarity Score&quot;, 
+         title = &quot;Words Most Similar to &lt;i style=&#39;color:#833AB4&#39;&gt;Instagram&lt;/i&gt;&quot;) + 
+    coord_flip() + 
+    hrbrthemes::theme_ipsum_rc(grid=&quot;X&quot;) + 
+    theme(
+      plot.title.position = &quot;plot&quot;,
+      plot.title = ggtext::element_markdown()
+    )</code></pre>
+<p><img src="/post/20200802_ig_vs_tiktok/index_files/figure-html/insta_similar-1.png" width="672" /></p>
+<p>Looking at what words are most similar can provide a good gut check for whether things are working. Among the top words are “post(s)”, “dms”, “celebrities” which all seem to make sense in the context of Instagram. Admittedly, I got a chuckle about “Instagram hoes”, but that does have its own <a href="https://www.urbandictionary.com/define.php?term=Instagram%20Hoe">Urban Dictionary</a> definition so I suppose its legit.</p>
+</div>
+<div id="what-word-is-most-similar-to-tiktok" class="section level3">
+<h3>What Word is Most Similar to TikTok?</h3>
+<p>We can do the same calculation with ‘tiktok’ as opposed to ‘instagram’</p>
+<pre class="r"><code>tt &lt;- tidy_word_vectors %&gt;% 
+  pairwise_similarity(item1, dimension, value) %&gt;%
+  filter(item1 == &#39;tiktok&#39;) %&gt;% 
+  arrange(desc(similarity)) %&gt;% 
+  head(10)
+
+tt %&gt;%
+  ggplot(aes(x = fct_reorder(item2, similarity), y = similarity, fill = item2)) + 
+  geom_col() + 
+  scale_fill_discrete(guide = F) +
+  labs(x = &quot;&quot;, y = &quot;Similarity Score&quot;, 
+       title = &quot;Words Most Similar to &lt;i style=&#39;color:#69C9D0&#39;&gt;TikTok&lt;/i&gt;&quot;) + 
+  coord_flip() + 
+  hrbrthemes::theme_ipsum_rc(grid=&quot;X&quot;) + 
+  theme(
+    plot.title.position = &quot;plot&quot;,
+    plot.title = ggtext::element_markdown()
+  )</code></pre>
+<p><img src="/post/20200802_ig_vs_tiktok/index_files/figure-html/tiktok_similar-1.png" width="672" /></p>
+<p>Now admittedly, I’m less familiar with TikTok than I am Instagram, but from what I do know (and what I can Google), these make a lot of sense. The word most similar to TikTok is “dances” and I do know that TikTok is known for its viral dances. Some of the other terms I needed to look up but they seem legit. For example, “Straight TikTok” is used to refer to more mainstream TikTok vs. “Alt Tiktok” and “fyp” is the “For You Page” (I don’t actually know what this is, but I know its something TikTok-y). So again, I feel pretty good about these results.</p>
+</div>
+<div id="what-is-the-difference-between-tiktok-and-instagram" class="section level3">
+<h3>What is the Difference between TikTok and Instagram?</h3>
+<p>As mentioned at the start the goal of this post is to create <code>Instagram - Tiktok = ?</code> and <code>Tiktok - Instagram = ?</code> similar to the <code>king - man + woman = queen</code> often referenced in Word2Vec (or other embedding) posts.</p>
+<p>Since both TikTok and Instagram are now represented by 100-dimensional numeric vectors doing the subtraction is as simple as doing a pairwise subtraction on each dimension. Since our data is in a tidy format it takes a little bit of data wrangling to pull that off, but ultimately we’re going to grab the Top 10 Closest words to (Instagram-TikTok) and (TikTok-Instagram) by treating these resulting vectors as fake “words” and adding them to the data set before calculating the cosine similarity.</p>
+<pre class="r"><code>tt_ig_diff &lt;- tidy_word_vectors %&gt;% 
+  #Calculate TikTok - Instagram
+  filter(item1 %in% c(&#39;tiktok&#39;, &#39;instagram&#39;)) %&gt;% 
+  pivot_wider(names_from = &quot;item1&quot;, values_from = &quot;value&quot;) %&gt;% 
+  transmute(
+    item1 = &#39;tiktok_minus_ig&#39;,
+    dimension,
+    value = tiktok - instagram
+  ) %&gt;% 
+  bind_rows(
+    #Calculate Instagram - TikTok
+    tidy_word_vectors %&gt;% 
+    filter(item1 %in% c(&#39;tiktok&#39;, &#39;instagram&#39;)) %&gt;% 
+    pivot_wider(names_from = &quot;item1&quot;, values_from = &quot;value&quot;) %&gt;% 
+    transmute(
+      item1 = &#39;ig_minus_tiktok&#39;,
+      dimension,
+      value = instagram - tiktok
+    )
+  ) %&gt;% 
+  #Add in the rest of the individual words
+  bind_rows(tidy_word_vectors) %&gt;% 
+  #Calculate Cosine Similarity on All Words
+  pairwise_similarity(item1, dimension, value) %&gt;% 
+  #Keep just the simiarities to the two &quot;fake words&quot;
+  filter(item1 %in% c(&#39;tiktok_minus_ig&#39;, &#39;ig_minus_tiktok&#39;)) %&gt;% 
+  #Grab top 10 most similar values for each &quot;fake word&quot;
+  group_by(item1) %&gt;% 
+  top_n(10, wt = similarity) 
+
+#Plotting the Top 10 Words by Similarity
+tt_ig_diff %&gt;%
+  mutate(item1 = if_else(
+    item1 == &quot;ig_minus_tiktok&quot;, &quot;Instagram - TikTok = &quot;, &quot;Tiktok - Instagram = &quot;
+  )) %&gt;% 
+  ggplot(aes(x = reorder_within(item2, by = similarity, within = item1), 
+             y = similarity, fill = item2)) + 
+  geom_col() + 
+  scale_fill_discrete(guide = F) +
+  scale_x_reordered() + 
+  labs(x = &quot;&quot;, y = &quot;Similarity Score&quot;, 
+       title = &quot;What&#39;s the Difference between &lt;i style=&#39;color:#833AB4&#39;&gt;Instagram&lt;/i&gt; 
+       and  &lt;i style=&#39;color:#69C9D0&#39;&gt;TikTok&lt;/i&gt;&quot;) + 
+  facet_wrap(~item1, scales = &quot;free_y&quot;) + 
+  coord_flip() + 
+  hrbrthemes::theme_ipsum_rc(grid=&quot;X&quot;) + 
+  theme(
+    plot.title.position = &quot;plot&quot;,
+    plot.title = ggtext::element_markdown(),
+    strip.text = ggtext::element_textbox(
+      size = 12,
+      color = &quot;white&quot;, fill = &quot;#5D729D&quot;, box.color = &quot;#4A618C&quot;,
+      halign = 0.5, linetype = 1, r = unit(5, &quot;pt&quot;), width = unit(1, &quot;npc&quot;),
+      padding = margin(2, 0, 1, 0), margin = margin(3, 3, 3, 3)
+    )
+  )</code></pre>
+<p><img src="/post/20200802_ig_vs_tiktok/index_files/figure-html/diff_similarity-1.png" width="672" /></p>
+<p>A couple of things jump out from the results. First, the vectors for TikTok and Instagram aren’t similar enough to each other to not make “TikTok” or “Instagram” the most similar value. This is likely because of the data collection methodology of using TikTok and Instagram as search terms on Twitter. Also, as a result of this there is a bit of overlap between the “Most Similar Word to X” and the “Most Similar Word to X-Y”.</p>
+<p>However, once you get past the overlaps there are some interesting findings. For <code>Instagram - TikTok</code> you get “Selfies, Photo(s), Photographer” which makes a ton of sense since Instagram is primary a photo app while TikTok is entirely a video app.</p>
+<p>For <code>Tiktok - Instagram</code>, there still is a lot of overlap with just <code>TikTok</code>, but for the new items there’s a bunch of Witchcraft terms (coven, witchtok). But according to Wired UK <a href="https://www.wired.co.uk/article/witchcraft-tiktok">TikTok has become the home of modern witchcraft</a> that seems to track. Also, “Teens” is surfaced as a difference between Tiktok and Instagram reflecting its popularity among US Teenagers.</p>
+</div>
+</div>
+<div id="concluding-thoughts" class="section level2">
+<h2>Concluding Thoughts</h2>
+<p>I wanted to get involved with Word Embeddings through Word2Vec but I don’t have the technology for it. Luckily resources on the internet provided a way to do this with tools not requiring a Neural Network. By grabbing data from Twitter it was easy to create word embeddings and to try to understand the differences between TikTok and Instagram. In practice it would be good to have had more than 100,000 Tweets and I wish that there was a way to get word context more in the wild than specific search terms. But in the end, I’m happy with the results.</p>
+</div>
+</div>

@@ -2,7 +2,7 @@
 .Rhistory
 .RData
 .Ruserdata
-.RDS
+*.RDS
 blogdown
 .DS_Store # if a windows user, Thumbs.db instead
 Thumbs.db
