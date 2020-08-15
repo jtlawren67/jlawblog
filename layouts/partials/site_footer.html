@@ -1,9 +1,10 @@
 <footer class="site-footer">
   <p class="powered-by">
-    {{ with site.Copyright }}{{ replace . "{year}" now.Year | markdownify}}{{ end }}
-  </p>
-  
-  <p class="powered-by">
+    {{ with site.Copyright }}{{ replace . "{year}" now.Year | markdownify}} &middot; {{ end }}
+
+    Made with the <a href="https://cran.r-project.org/" target="_blank" rel="noopener"><i class="fab fa-r-project"></i> </a><a href="https://github.com/rstudio/blogdown" target="_blank" rel="noopener">blogdown</a> package and the
+    <a href="https://sourcethemes.com/academic/" target="_blank" rel="noopener">Academic theme</a> for
+    <a href="https://gohugo.io" target="_blank" rel="noopener">Hugo</a>. &middot; Also shared on <a href ="https://r-bloggers.com">R-bloggers</a>.
 
     {{ if not (in (slice "docs" "updates") .Type) }}
     <span class="float-right" aria-hidden="true">
