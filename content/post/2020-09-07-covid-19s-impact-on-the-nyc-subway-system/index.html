@@ -1,0 +1,403 @@
+---
+title: COVID-19s Impact on the NYC Subway System
+author: JLaw
+date: '2020-09-07'
+slug: covid-19s-impact-on-the-nyc-subway-system
+categories:
+  - R
+  - Maps
+tags:
+  - rvest
+  - leaflet
+  - ggtext
+  - ggmap
+  - patchwork
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2020-09-07T16:08:47-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+<script src="/rmarkdown-libs/htmlwidgets/htmlwidgets.js"></script>
+<script src="/rmarkdown-libs/pymjs/pym.v1.js"></script>
+<script src="/rmarkdown-libs/widgetframe-binding/widgetframe.js"></script>
+
+
+<p>At 8pm on March 22nd, 2020, the <a href="https://www.governor.ny.gov/news/governor-cuomo-signs-new-york-state-pause-executive-order">“New York State on PAUSE”</a> executive order became effective and New York City went on lockdown until June 8th, when the Phase 1 reopening began. During this time usage of the public transit systems had a sudden drop as all non-essential services needed to close. In this analysis, I look at <a href="http://web.mta.info/developers/fare.html">MTA Subway Fare</a> data to understand the effect of the PAUSE order on New York City Subway Ridership.</p>
+<p>The goals here are to:</p>
+<ol style="list-style-type: decimal">
+<li>See the overall effect of the PAUSE order on ridership</li>
+<li>See if regional differences around the city differ by type of Metrocard (Full Fare, Unlimited, etc.)</li>
+<li>Create an interactive map to understand the regional differences in usage declines</li>
+</ol>
+<div id="packages-used" class="section level2">
+<h2>Packages Used</h2>
+<pre class="r"><code>library(tidyverse) #For Data Manipulation and Plotting
+library(janitor) #For cleaning up the variable names in the CSV Files
+library(lubridate) #For date processing 
+library(patchwork) # For combining multiple ggplots together
+library(ggmap) # For producing a static map
+library(ggtext) # For adding some flair to ggplot
+library(leaflet) # For Making Interactive Plots
+library(rvest) # For Web Scraping Links to Download</code></pre>
+</div>
+<div id="gathering-the-data" class="section level2">
+<h2>Gathering the Data</h2>
+<p>The Metropolitan Transit Authority (MTA), which runs the New York City Subway system, publishes the <a href="http://web.mta.info/developers/fare.html">number of Metrocard swipes that occur in the system on a weekly basis</a> by Fare type (Full-Fare, 30-day Unlimited, Student Discount, Senior Discount, etc).</p>
+<p>Fortunately, since each weekly file exists as a <code>.csv.</code> with a roughly similar format it can be easily scraped using the <code>rvest</code> package. For this initial scrape, I will be getting any file with a filename from 2019 or 2020. According to the MTA website, the data is uploaded on a two-week delay so a file titled <code>fares_200905.csv</code> (9/5/20) will actually contain the data from two-weeks earlier.</p>
+<p>The process for obtaining all of the data will be:</p>
+<ol style="list-style-type: decimal">
+<li>Use <code>rvest</code> to extract the paths to all files in a vector by identifying all the anchor tags on the page (<code>html_nodes("a")</code>) and then extracting the <code>href</code> attribute (<code>html_attr("href")</code>)</li>
+<li>Use <code>purrr</code>’s <code>keep</code> and <code>stringr</code>’s <code>str_detect</code> to keep only the elements of the initial vector that match a certain pattern (have titles for 2019 or 2020)</li>
+<li>Use <code>purrr</code>’s <code>map_dfr</code> function to apply a function to each <code>.csv</code> file where the function:
+<ul>
+<li>Read’s the <code>.csv</code> file the MTA’s website (using <code>readr::read_csv</code>)</li>
+<li>Cleans the column names to a more R friend format (using <code>janitor::clean_names</code>)</li>
+<li>Removes any columns where all values are <code>NA</code></li>
+<li>Creates some meta-data around the actual time periods the data reflects</li>
+<li>Turns character formatted numbers into actual numbers (using <code>readr::parse_number</code>)</li>
+<li>Cast to a long-format (using <code>tidyr::pivot_longer</code>)</li>
+</ul></li>
+</ol>
+<pre class="r"><code>all_weeks &lt;- read_html(&quot;http://web.mta.info/developers/fare.html&quot;) %&gt;%
+  html_nodes(&quot;a&quot;) %&gt;% 
+  html_attr(&quot;href&quot;) %&gt;% 
+  keep(str_detect(., &#39;fares_(20)|(19)\\d{4}\\.csv&#39;)) %&gt;% 
+  map_dfr(., function(x){
+    return(
+      read_csv(paste0(&quot;http://web.mta.info/developers/&quot;, x), skip = 2) %&gt;% 
+        clean_names %&gt;%
+        #Drop Dead Columns
+        select_if(~!all(is.na(.x))) %&gt;%
+        mutate(
+          key = str_extract(x, &#39;\\d+&#39;),
+          
+          #The data in the files covers seven-day periods beginning on the Saturday 
+          #two weeks prior to the posting date and ending on the following Friday. 
+          #Thus, as an example, the file labeled Saturday, January 15, 2011, has data 
+          #covering the period from Saturday, January 1, 2011, through Friday, January 7. 
+          #The file labeled January 22 has data covering the period from 
+          #Saturday, January 8, through Friday, January 14. And so on and so forth
+          week_start = ymd(paste0(&#39;20&#39;,key)) - days(14),
+          week_end = ymd(paste0(&#39;20&#39;,key)) - days(8)
+        ) %&gt;%
+        mutate(across(c(-remote, -station, -week_start, -week_end, -key), parse_number)) %&gt;% 
+        pivot_longer(
+          cols = c(-remote, -station, -week_start, -week_end, -key),
+          names_to = &quot;fare_type&quot;,
+          values_to = &quot;fares&quot;
+        )
+    )
+  }
+) </code></pre>
+</div>
+<div id="time-series-of-subway-usage-by-week" class="section level2">
+<h2>Time-Series of Subway Usage by Week</h2>
+<p>A first glance at understanding to effect of COVID on the NYC Subway system is to look at a weekly time-series of total subway usage. In this chart and in the future, when looking at the amount of ridership decline I will be comparing points one months prior to the start of the PAUSE act (week of February 22nd) and one month after the PAUSE act (week of April 18th).</p>
+<p>From a coding perspective, this step is aggregating all the individual fare data by week and plotting it using <code>ggplot2</code>. The only non-vanilla ggplot portion is the use of <code>ggtext</code>’s <code>geom_textbox</code> to add to flair to the annotations.</p>
+<p>The red dots on the chart represent the comparison points used for the rest of this analysis and the dashed black line is March 22nd, when the PAUSE act went into effect.</p>
+<pre class="r"><code>all_weeks %&gt;% 
+  group_by(key, week_start, week_end) %&gt;% 
+  summarize(fares = sum(fares, na.rm = T), .groups = &#39;drop&#39;) %&gt;% 
+  ggplot(aes(x = week_start, y = fares/1e6)) + 
+    geom_line(color = &#39;#0039A6&#39;) + 
+    geom_vline(xintercept = ymd(20200322), lty = 2) + 
+    geom_point(data = tibble(
+      week_start = c(ymd(20200222), ymd(20200418)),
+      fares = c(30768135, 2548002)
+    ), color = &#39;red&#39;, size =3
+    ) +
+    geom_textbox(
+      x = ymd(20191001),
+      y = 15,
+      label = &quot;A ***&lt;span style = &#39;color:red&#39;&gt;92% Decrease&lt;/span&gt;*** \n in Subway Ridership \n 1 month before \n vs. 1 month after \n PAUSE order&quot;,
+      fill = &#39;cornsilk&#39;,
+      halign = 0.5,
+    ) + 
+    labs(x = &quot;Week Beginning&quot;, y = &quot;# of MTA Subway Fares (millions)&quot;,
+         title = &quot;&lt;span style=&#39;color:#0039A6&#39;&gt;MTA&lt;/span&gt; Ridership (Jan 2019 - Aug 2020)&quot;,
+         subtitle = &quot;PAUSE Order Begins on 3/22/2020&quot;) + 
+    scale_y_continuous(labels = scales::comma) +
+    cowplot::theme_cowplot() + 
+    theme(
+      plot.title = element_markdown()
+    )</code></pre>
+<p><img src="/post/2020-09-07-covid-19s-impact-on-the-nyc-subway-system/index_files/figure-html/overall_trends-1.png" width="672" />
+From this chart its clear to see that COVID had a strong effect on Subway ridership as there was a 92% decline between a month prior and a month post. While the ridership is beginning to trend upwards again, the overall numbers are still drastically smaller than in the pre-COVID time.</p>
+</div>
+<div id="exploring-the-overall-distribution-of-fares" class="section level2">
+<h2>Exploring the Overall Distribution of Fares</h2>
+<p>The NYC Subway uses <em>Metrocards</em> in order to gain access to the system. There are also a number of different types of Metrocards. Since ~94% of rides occur on the 7 most common card types, I’ll be focusing on those and bucketing the rest into an “other” group. The 7 most common are:</p>
+<ul>
+<li><strong>Full Fare</strong> - A person loads money on their Metrocard and pays per trip</li>
+<li><strong>Annual Unlimited</strong> - A person pays a fixed amount for a year of unlimited rides (typically offered through a person’s workplace)</li>
+<li><strong>30 Day Unlimited</strong> - A person pays a fixed amount for 30 days of unlimited rides</li>
+<li><strong>7 Day Unlimited</strong> - A person pays a fixed amount for 7 days of unlimited rides</li>
+<li><strong>Student</strong> - Assigned by schools to students for a certain number of trips per day</li>
+<li><strong>Senior Citizen</strong> - A reduced-fare Metrocard used by those Age 65 and over or with a disability</li>
+<li><strong>EasyPayXpress</strong> - A person sets up an account that automatically reloads the card when the balance gets low</li>
+</ul>
+<p>There needs to be some data cleaning to make our data more human readable as well as only focus on the weeks we want to compare vs. all weeks since 2019. This code step will keep only the weeks we care about, cast each time period to a column, given those time periods a nicer name, and give the fare_types a nicer name, and finally filter out some stations that are part of the MTA system but aren’t actually subway stations. These include the Airtrain at JFK Airport and the PATH trains between New York and New Jersey.</p>
+<pre class="r"><code>combined &lt;- all_weeks %&gt;% 
+  filter(week_start %in% c(ymd(20200222), ymd(20200418))) %&gt;% 
+  pivot_wider(
+    id_cols = c(&#39;remote&#39;, &#39;station&#39;, &#39;fare_type&#39;),
+    names_from = week_start,
+    values_from = fares,
+    values_fill = list(fares = 0)
+  ) %&gt;% 
+  rename(apr=`2020-04-18`, feb=`2020-02-22`) %&gt;% 
+  mutate(
+    fare_type = case_when(
+      fare_type == &#39;ff&#39; ~ &#39;Full Fare&#39;,
+      fare_type == &#39;x30_d_unl&#39; ~ &#39;30-Day Unlimited&#39;,
+      fare_type == &#39;x7_d_unl&#39; ~ &#39;7-Day Unlimited&#39;,
+      fare_type == &#39;students&#39; ~ &#39;Student&#39;,
+      fare_type == &#39;sen_dis&#39; ~ &#39;Senior Citizen/Disabled&#39;,
+      fare_type == &#39;tcmc_annual_mc&#39; ~ &#39;Annual Metrocard&#39;,
+      fare_type == &#39;mr_ezpay_exp&#39; ~ &#39;EasyPayXpress&#39;,
+      TRUE ~ fare_type
+    )
+  ) %&gt;% 
+  #Remove SBS Bus Stations and PATH
+  filter(!str_detect(station, &quot;SBS-|PA-|AIRTRAIN&quot;))</code></pre>
+<p>After cleaning, our data covers 443 different subway stations and 26 different fare_types.</p>
+<p>In order to recode the fare types outside of the top 7 I first need to identify what the Top 7 fare types are. In the below code, I create a vector of the Top 7 Fare Types based on the February data.</p>
+<pre class="r"><code>top_7 &lt;- combined %&gt;% 
+  count(fare_type, wt = feb, sort = T) %&gt;% 
+  head(7) %&gt;% 
+  pull(fare_type)</code></pre>
+<p>Then the final step is to aggregate the data over the various stations. In this step, there is also the use of <code>fct_other</code> from <code>forcats</code> to keep only the top 7 fares and create an “Other Fares” label for everything else. Also, the use of other <code>forcats</code> functions such as <code>fct_reorder</code> and <code>fct_relevel</code> are used to order the Fare Types by most common to least common (<code>fct_reorder</code>) but the ensure the the “Other Fares” group is last (<code>fct_relevel</code>).</p>
+<pre class="r"><code>agg_data &lt;- combined %&gt;% 
+  pivot_longer(
+    cols = c(&#39;feb&#39;, &#39;apr&#39;),
+    names_to = &quot;month&quot;,
+    values_to = &#39;fares&#39;
+  ) %&gt;% 
+  # Collapse Non-Top 7 Fares to &quot;Other&quot; Group
+  mutate(
+    fare_type = fct_other(fare_type, keep = top_7, other_level = &quot;Other Fares&quot;)
+  ) %&gt;% 
+  #Order with Month First So Summarize Will Return a Grouped DF by Month
+  group_by(month, fare_type) %&gt;% 
+  summarize(fares = sum(fares)) %&gt;% 
+  #Create % Variable
+  mutate(pct = fares / sum(fares),
+         period = if_else(month == &#39;feb&#39;, &#39;2/22 - 2/28&#39;, &#39;4/18 - 4/24&#39;)
+  ) %&gt;% 
+  ungroup() %&gt;% 
+  #Refactor Fare Type for Charts
+  mutate(
+    fare_type = fct_reorder(fare_type, fares, .fun = max) %&gt;% fct_relevel(., &quot;Other Fares&quot;, after = 0L)
+  ) </code></pre>
+<p>The following plots leverage the <code>patchwork</code> package to combine multiple ggplots together to show both the share of Fare Types Pre/Post COVID as well as the actual number of fares. This code is somewhat cumbersome and could probably be done more easily with facets, but I wanted to play with <code>plot_annotation</code> and <code>plot_layout</code> from <code>patchwork</code> in order to add titles to the combined image rather than each plot individually. If you haven’t used <code>patchwork</code> to combine multiple plots, I highly recommend it.</p>
+<pre class="r"><code>(agg_data %&gt;% 
+  ggplot(aes(x = fare_type, 
+             y = pct, 
+             fill = fct_rev(period))) + 
+    geom_col(position = &#39;dodge&#39;) + 
+    geom_text(aes(label = pct %&gt;% scales::percent(accuracy = .1)),
+              position = position_dodge(width = .9),
+              hjust = 0,
+              size = 3) +
+    labs(x = &quot;Fare Type&quot;, y = &quot;Share of Fares&quot;,
+         title = &quot;Share of Subway Rides&quot;,
+         fill = &quot;Period&quot;) + 
+    guides(fill = guide_legend(reverse = T)) + 
+    coord_flip(ylim = c(0, .6)) + 
+    cowplot::theme_cowplot() + 
+    theme(
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      plot.title = element_text(size = 12)
+    )
+) + 
+(agg_data %&gt;% 
+  ggplot(aes(x = fare_type, 
+             y = fares, 
+             fill = fct_rev(period))) + 
+  geom_col(position = &#39;dodge&#39;) + 
+  geom_text(aes(label = fares %&gt;% scales::comma()),
+            position = position_dodge(width = .9),
+            hjust = 0,
+            size = 3) +
+  labs(x = &quot;&quot;, y = &quot;Number of Fares&quot;,
+       title = &quot;# of Subway Rides&quot;,
+       fill = &quot;Period&quot;) + 
+  scale_fill_discrete(guide = F) +
+  coord_flip(ylim = c(0, 15e6)) + 
+  cowplot::theme_cowplot() + 
+  theme(
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    plot.title = element_text(size = 12)
+  )
+) + plot_annotation(
+  title = &#39;Changes in NYC Subway Ridership Pre/Post PAUSE&#39;,
+  caption = &#39;NYC PAUSE Began March 22nd&#39;
+) + plot_layout(guides = &quot;collect&quot;) &amp; theme(legend.position = &quot;bottom&quot;)</code></pre>
+<p><img src="/post/2020-09-07-covid-19s-impact-on-the-nyc-subway-system/index_files/figure-html/create_overall_fare_plot-1.png" width="672" /></p>
+<p>The panel on the right (number of fares) makes it very clear that the number of subway rides have plummeted in the month following the PAUSE act with Full Fare rides dropping from 10M to 1.2M. But more interesting is the specialty types of cards (Unlimited and Student) have very severe declines with the 30-day unlimited dropping 96% from 8M to 350k.</p>
+<p>In terms of a share of swipes. The Full Fare Metrocard actually <strong>increases</strong> in share from 36% to 50%. However, this is likely because Students are learning virtually and those who are able to work from home doing so. Additionally, if subway travel is becoming more infrequent its no longer cost effective to use 30-day unlimited cards, so there is also an effect from people who WOULD have used specialty cards switching to Full Fare.</p>
+</div>
+<div id="does-the-decline-by-fare-type-depend-on-the-area-of-nyc" class="section level2">
+<h2>Does the decline by Fare Type depend on the area of NYC?</h2>
+<p>From the first two charts its clear that there is an overall decline in Subway ridership and that decline is occurring across all Fare types. Another question is “do these declines change by area of the city?” To do this, I’ll be using <code>ggmap</code> to create maps of NYC Subway Stations by the various Fare types.</p>
+<p>The first step is to create data at the station and fare type level, geocode the MTA station data (Huge thanks to <a href="https://github.com/chriswhong/nycturnstiles/">Chris Whong</a> who had done the work of mapping Lat/Longs to the Station Names). Since Chris’ work was from 2013, the newer stations such as Hudson Yards and the 2nd Avenue Subway do not appear.</p>
+<p>In order to clean up the map, in cases where there were multiple geocodes for a single station the max Lat and max Long were used and stations with less than 1000 pre-COVID swipes of a given fare type were removed.</p>
+<pre class="r"><code>station_level &lt;- combined %&gt;% 
+  mutate(
+    fare_type = fct_other(fare_type, keep = top_7, other_level = &quot;Other Fares&quot;)
+  ) %&gt;% 
+  group_by(remote, station, fare_type) %&gt;% 
+  summarize(feb = sum(feb),
+            apr = sum(apr)
+  ) %&gt;% 
+  mutate(
+    abs_change = apr-feb,
+    rel_change = apr/feb - 1
+  )
+
+geocodes &lt;- read_csv(&#39;https://raw.githubusercontent.com/chriswhong/nycturnstiles/master/geocoded.csv&#39;, 
+                     col_names = c(&#39;remote&#39;, &#39;zuh&#39;, &#39;station&#39;, &#39;line&#39;, &#39;system&#39;, &#39;lat&#39;, &#39;long&#39;),
+)
+
+comb_geo &lt;- station_level %&gt;% 
+  inner_join(geocodes %&gt;% group_by(remote) %&gt;% summarize(lat = max(lat), long = max(long)), by = &quot;remote&quot;) %&gt;%
+  filter(feb &gt; 1000) %&gt;% 
+  ungroup()</code></pre>
+<div id="creating-the-maps-with-ggmap" class="section level3">
+<h3>Creating the Maps with ggmap</h3>
+<p>Since the overall trends seem like there is a large decline in ridership across the entire city, I wanted to create new breakpoints to understand where were larger declines vs. smaller declines. To do this I used the <code>classInt::classIntervals()</code> function with the <code>fisher</code> style to algorithmically find the breakpoints in the data. The <code>cut_format</code> function will format the break labels are percentages rather than decimals.</p>
+<pre class="r"><code>brks &lt;- classInt::classIntervals(comb_geo$rel_change, n = 5, style = &#39;fisher&#39;)
+
+comb_geo$grp_val = kimisc::cut_format(comb_geo$rel_change, 
+                                      brks$brks, 
+                                      include.lowest = T,  
+                                      format_fun = scales::percent)</code></pre>
+<p>To create the static map using <code>ggmap</code> I first need to create the base layer that the data will be plotted on. There a many ways to do this but I chose to define a boundary box using Lats and Longs from <a href="https://www1.nyc.gov/assets/planning/download/pdf/data-maps/open-data/nybb_metadata.pdf?ver=18c">NYC.gov</a>. The zoom option controls how many tiles should be used in the boundary box. The larger the number the more tiles / more zoomed in your are.</p>
+<pre class="r"><code>nyc &lt;-get_map(c(
+  left = -74.1,
+  right = -73.699215,
+  top = 40.915568,
+  bottom = 40.55
+),  zoom = 11, source = &#39;osm&#39;)</code></pre>
+<p>Since there are 7 different Fare Types to look at I’m breaking apart the maps into two sets of Fare Types, the unlimited cards, and everything else. The <code>element_markdown()</code> in the <code>theme()</code> block is from <code>ggtext</code> and allows for certain HTML tags to format text in ggplots.</p>
+<pre class="r"><code>ggmap(nyc, 
+      base_layer = ggplot(comb_geo %&gt;%
+                            filter(str_detect(fare_type, &quot;Unlimited|Annual&quot;)), 
+                          aes(x = long, y = lat, color = grp_val))) +
+  geom_point() + 
+  labs(
+    title = &quot;NYC Ridership Decline by &lt;b&gt;&lt;i style=&#39;color:#0039A6&#39;&gt;Unlimited Fare Types&lt;/i&gt;&lt;/b&gt;&quot;,
+    color = &quot;% Ridership Decline (Feb vs. Apr)&quot;,
+    x = &quot;&quot;, y = &quot;&quot;) +
+  facet_wrap(~fare_type, nrow = 1) +
+  guides(color=guide_legend(nrow=2,byrow=TRUE)) +
+  theme(legend.position = &#39;bottom&#39;,
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        plot.title = element_markdown())</code></pre>
+<p><img src="/post/2020-09-07-covid-19s-impact-on-the-nyc-subway-system/index_files/figure-html/unlimited_map-1.png" width="672" />
+Based on the unlimited cards decline by Subway station its clear that there ARE regional difference in how much COVID has affected usage. The 30-day unlimited card has the highest amount of decline in Manhattan and the parts of Brooklyn and Queens nearest to Manhattan. Meanwhile, the outer parts of Brooklyn, the Bronx, and Spanish Harlem have lower levels of decline. This is consistent with areas of lower socioeconomic status still needing to take the subway due to a higher likelihood of jobs that cannot be done from home.</p>
+<p>On the whole the different types of unlimited cards have similar patterns. Although the 7-day Unlimited has more areas not in the largest decline bucket.</p>
+<pre class="r"><code>ggmap(nyc, 
+      base_layer = ggplot(comb_geo %&gt;%
+                            filter(!str_detect(fare_type, &quot;Unlimited|Annual|Other&quot;)), 
+                          aes(x = long, y = lat, 
+                              color = grp_val))) +
+  geom_point() + 
+  labs(
+    title = &quot;NYC Ridership Decline by &lt;b&gt;&lt;i style=&#39;color:#0039A6&#39;&gt;Other Fare Types&lt;/i&gt;&lt;/b&gt;&quot;,
+    color = &quot;% Ridership Decline (Feb vs. Apr)&quot;,
+    x = &quot;&quot;, y = &quot;&quot;) +
+  facet_wrap(~fct_reorder(fare_type, -feb), nrow = 1) +
+  guides(color=guide_legend(nrow=2,byrow=TRUE)) +
+  theme(legend.position = &#39;bottom&#39;,
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        plot.title = element_markdown()
+        )</code></pre>
+<p><img src="/post/2020-09-07-covid-19s-impact-on-the-nyc-subway-system/index_files/figure-html/other_map-1.png" width="672" />
+The two largest contrasts in the non-unlimited groups are that Student cards are almost entirely in the largest decline bucket, which makes sense, as Students were engaged in distance learning. Similarly the EasyPayXpress is almost entirely in the largest decline bucket and almost entirely in Manhattan. This also makes sense as its potentially made up of commuters who don’t want to normally deal with refilling a card constantly but wouldn’t use it enough to justify an unlimited card. The closing of non-essential businesses and rise of Work-From-Home is the likely cause.</p>
+<p>For the full-fare cards the only area with the most severe declines are in “Core Manhattan” but other areas have smaller declines, potentially due to shifting from one Fare Type to the full fare due to less need to use the Subway System.</p>
+</div>
+</div>
+<div id="creating-an-interactive-map-with-leaflet" class="section level2">
+<h2>Creating an Interactive Map with Leaflet</h2>
+<p>while the above ggmaps are useful, its difficult to know exactly where the neighborhoods are with the largest/smaller declines. The above maps are useful for a general idea but having an interactive map that would allow the user to pan and zoom would yield greater insights. In order to create one I will use the <code>leaflet</code> package which serves as an API to the javascript library of the same name.</p>
+<p>Since for this map I will only be looking at the overall declines as opposed to the declines by Fare Type I need to re-summarize the data and create new breaks based on the overalls. The creation of the <em>msg</em> variable is to provide a pop-up to <code>leaflet</code>.</p>
+<pre class="r"><code>map_prep &lt;- comb_geo %&gt;%
+  group_by(remote, station, lat, long) %&gt;% 
+  summarize(feb = sum(feb),
+            apr = sum(apr),
+            .groups = &#39;drop&#39;
+  ) %&gt;% 
+  mutate(rel_change = apr/feb - 1,    
+         msg = paste(station, &quot;has decreased&quot;, scales::percent(rel_change, accuracy = .1),
+                &quot;pre-PAUSE to post-PAUSE from&quot;, feb %&gt;% scales::comma(), &quot;to&quot;,
+                apr %&gt;% scales::comma(), &quot;fares.&quot;)
+  )
+
+map_prep_breaks &lt;- classInt::classIntervals(map_prep$rel_change, 
+                                            n = 5, 
+                                            style = &#39;fisher&#39;)
+
+##Add in the Breaks
+map_prep$grp_val = kimisc::cut_format(map_prep$rel_change, 
+                                      map_prep_breaks$brks, 
+                                      include.lowest = T,  
+                                      format_fun = scales::percent
+                                      )</code></pre>
+<p>One of the things that I found difficult about <code>leaflet</code> was that creating a color palette to go with my breaks required a function that mapped the values to the colors. The <code>factpal</code> in leaflet associates a factor variable with a palette. In this case it takes the factors for the <em>grp_val</em> created above and maps them to colors from the “Set1” palette.</p>
+<pre class="r"><code>factpal &lt;- colorFactor(&quot;Set1&quot;, map_prep$grp_val)</code></pre>
+<p>Creating a basic map with <code>leaflet</code> is fairly straight-forward and the syntax is pretty user friendly. The main things to know when interpreting the code is that the “~” character means that its referring to a variable name within the passed in data (similar to how <code>aes()</code> does the same for ggplot).</p>
+<p>This function call while long does the following:</p>
+<ol style="list-style-type: decimal">
+<li>Passes in my dataset <code>map_prep</code> to the <code>leaflet()</code> function</li>
+<li>Adds the background tiles from the CartoDB.Positron theme</li>
+<li>Adds circle markers for each observation in my data set using the lats/longs with a fixed radius of 250, no border (stroke), and using a fill color from our pre-defined palette with 100% opacity. The hover labels will be the station names and when clicked the <em>msg</em> variable will be the pop-up.<br />
+</li>
+<li>Finally add a legend in the top-right corner with the pre-defined colors and breakpoints.</li>
+</ol>
+<p>The use of the <code>widgetframe::frameWidget()</code> was to get the map to load on the blog and was not necessary for use in RStudio.</p>
+<pre class="r"><code>library(widgetframe)
+
+ll_map &lt;- leaflet(map_prep) %&gt;%
+  addProviderTiles(providers$CartoDB.Positron) %&gt;% 
+  addCircles(
+    lng = ~long,
+    lat = ~lat,
+    radius = 250,
+    #radius = 4,
+    stroke = F,
+    fill = T,
+    color = ~factpal(grp_val),
+    fillOpacity = 1,
+    label = ~station,
+    group = &#39;stations&#39;,
+    popup = ~msg
+    ) %&gt;%
+    addLegend(
+      title = &quot;% Change in Rides&quot;,
+      pal = factpal,
+      values = ~grp_val,
+      position = &#39;topright&#39;
+    )
+
+frameWidget(ll_map)</code></pre>
+<p><div id="htmlwidget-1" style="width:100%;height:480px;" class="widgetframe html-widget"></div>
+<script type="application/json" data-for="htmlwidget-1">{"x":{"url":"/post/2020-09-07-covid-19s-impact-on-the-nyc-subway-system/index_files/figure-html//widgets/widget_ll_map.html","options":{"xdomain":"*","allowfullscreen":false,"lazyload":false}},"evals":[],"jsHooks":[]}</script>
+From this view, the regional difference in Subway usage declines are very apparent. The ‘red’ circles representing the largest declines are clustered in “Core Manhattan” which is from Lower Manhattan up to around 59th street. This would be where the majority of commuter swipes would be that were eliminated due to PAUSE. Then as you move further from central Manhattan the declines become less severe.</p>
+<p>The two callouts are the prevalence of the purple dots in the Bronx and orange “X” pattern in eastern Brooklyn (Brownsville, New Lots, East New York). According to <a href="https://www1.nyc.gov/site/opportunity/poverty-in-nyc/data-tool.page">New York City Government Poverty Measures</a>, Bronx Community Districts 1-6 have the largest percent of population below the poverty line followed by Brownsville and East New York which matches the narrative of areas of lower Socioeconomic status being less likely to be able to avoid the Subway during the pandemic and having less severe declines in ridership than areas of Lower and Midtown Manhattan.</p>
+</div>
+<div id="conclusions" class="section level2">
+<h2>Conclusions</h2>
+<p>COVID-19 and the New York State PAUSE act have had a dramatic impact on the ridership of the NYC Subway System. Overall ridership was down 92% between February and April as New York became the “COVID capital of the world” during those months. The MTA’s detailed data on types of fares at each station allows for a more granular look into how the pandemic is altering rider behavior leading to decreased usage of Unlimited Cards and Student cards as people are more constrained to their homes as well as areas of lower socioeconomic status having less severe changes in ridership comparable to more affluent areas of the city.</p>
+</div>
