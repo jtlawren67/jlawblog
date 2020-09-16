@@ -4,24 +4,34 @@
 #   The weight parameter defines the order that the links will appear in.
 
 [[main]]
-  name = "Home"
+  name = "<i class=\"fas fa-home\"></i> Home"
   url = ""
   weight = 5
 
 [[main]]
-  name = "Posts"
+  name = "<i class=\"fas fa-file\"></i> Posts"
   url = "#posts"
   weight = 10
 
-[[main]]
-  name = "Projects"
-  url = "#projects"
-  weight = 30
+#[[main]]
+#  name = "Projects"
+#  url = "#projects"
+#  weight = 30
 
 [[main]]
-  name = "About"
+  name = "<i class=\"fas fa-user\"></i> About"
   url = "#about"
   weight = 40
+
+[[main]]
+  name = "<i class=\"fas fa-rss\"></i> RSS"
+  url = "/category/r/index.xml"
+  weight = 45
+  
+[[main]]
+  name = "<i class=\"fab fa-github\"></i> Github"
+  url = "https://github.com/jtlawren67"
+  weight = 50
 
 # Link to a PDF of your resume/CV from the menu.
 # To enable, copy your resume/CV to `static/files/cv.pdf` and uncomment the lines below.
