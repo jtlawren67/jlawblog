@@ -1,0 +1,347 @@
+---
+title: Looking for Media Bias in Coverage of Trump's COVID Diagnosis
+author: JLaw
+date: '2020-10-07'
+slug: looking-for-media-bias-in-coverage-of-trump-s-covid-diagnosis
+categories:
+  - R
+  - TextMining
+  - SentimentAnalysis
+tags:
+  - ggtext
+  - ggupset
+  - UpSetR
+  - tidytext
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2020-10-07T08:24:38-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+
+
+<p>Within the United States, especially these last few years, there has been an increased focus on “fake news” or “bias in the media”. Fox News typically is the poster-child for right-wing bias and everything else seems to be the poster child for left-wing bias. While this is just a humble R blog (and <strong>NOT</strong> a political blog) I thought it could be an interesting question to look at how a single event is covered from different media sources.</p>
+<p>I don’t know much about assessing Media Bias, but fortunately websites like <a href="https://www.allsides.com/media-bias/media-bias-chart">Allsides.com</a> have done the research for me and produced the following chart breaking Media outlets based on direction of bias:</p>
+<center>
+<img src="https://www.allsides.com/sites/default/files/AllSidesMediaBiasChart-Version3.jpg" style="width:50.0%" />
+</center>
+<p>I don’t have a perspective on the accuracy of this chart. But it provides enough information to work with.</p>
+<p>Originally, I was planning on using the first Presidential Debate in late September, but with President Trump’s positive COVID-19 diagnosis on Friday 10/2, I’ve decided to use that event instead.</p>
+<p>The rules for this analysis are:</p>
+<ol style="list-style-type: decimal">
+<li>Pick one media outlet from each column of the Media Bias Chart above and find an article about Trump’s COVID diagnosis.</li>
+<li>No opinion pieces or editorials. The articles should be intended to be reporting on the facts of an event.</li>
+</ol>
+<div id="the-data" class="section level2">
+<h2>The Data</h2>
+<p>All data was collected on Friday, October 2 (some articles have since changed). The five articles are listed below from most left-leaning to most right-leaning:</p>
+<ul>
+<li><a href="https://www.huffpost.com/entry/donald-trump-tests-positive-coronavirus_n_5eb5d776c5b69c4b317a5ee5">Huffington Post</a></li>
+<li><a href="https://www.cnn.com/2020/10/02/politics/president-donald-trump-coronavirus-positive-test/index.html">CNN</a></li>
+<li><a href="https://apnews.com/article/virus-outbreak-donald-trump-elections-melania-trump-michael-pence-f6ba3a16ab9b74b161a3a7211248e97e">Associated Press (AP)</a></li>
+<li><a href="https://www.foxnews.com/politics/president-trump-confirms-he-first-lady-melania-trump-tested-positive-for-coronavirus">Fox News</a></li>
+<li><a href="https://www.theblaze.com/news/trump-positive-coronavirus">The Blaze</a></li>
+</ul>
+<p>I manually copy-pasted the titles, subtitles, and articles text in <code>.txt</code> files ensuring that inserted links to other articles were not accidentally picked up.</p>
+</div>
+<div id="analysis-plan" class="section level2">
+<h2>Analysis Plan</h2>
+<p>The main objectives for this analysis are to look at:</p>
+<ol style="list-style-type: decimal">
+<li>Sentiment Analysis of the five different articles</li>
+<li>Looking for the most representative words for each article</li>
+</ol>
+<p>to see if we can learn anything about Media Bias from these five sources.</p>
+<p>The libraries that will be used for this analysis are:</p>
+<pre class="r"><code>library(tidyverse) #Our Workhorse Data Manipulation / Plotting Functions
+library(tidytext) #Tidyverse Friend Package for Text-Mining
+library(scales) #For easier value formatting
+library(ggtext) # To Be Able to Use Images On Plots
+library(ggupset) # For Creating an Upset Chart
+library(UpSetR) # For Creating an Upset Chart</code></pre>
+<div id="reading-in-the-data" class="section level3">
+<h3>Reading in the data</h3>
+<p>As mentioned above, the text of the five articles are contained in five text files. The following code block will look into the working directory and use <code>purrr's map_dfr</code> function to execute the <code>readr::read_table</code> function and create a column to mark which source the text came from:</p>
+<pre class="r"><code>articles &lt;- dir() %&gt;% 
+  keep(str_detect(., &#39;\\.txt&#39;)) %&gt;% 
+  map_dfr(
+    ~read_table(.x, col_names = F) %&gt;% 
+      mutate(source = str_remove_all(.x, &#39;\\.txt&#39;))
+    ) </code></pre>
+<p>One of my earlier blog posts <a href="https://jlaw.netlify.app/2020/08/02/what-s-the-difference-between-instagram-and-tiktok-using-word-embeddings-to-find-out/">on creating work embeddings to compare TikTok and Instagram</a> describes the basic pieces of <code>tidytext</code>. But the first step of the text analysis is to ‘tokenize’ (split the data into one word per row) using <code>tidytext::unnest_tokens()</code> which will break apart the <code>X1</code> column containing sentences into a new column called <code>word</code>. Then the next step is removing stop words, which are common words like “the”, “and”, and “a” which don’t add much meaning to analysis. These words are contained in the stop_words data set and using <code>anti_join()</code> will remove them from our wordlist.</p>
+<pre class="r"><code>words &lt;- articles %&gt;% 
+  unnest_tokens(word, X1) %&gt;% 
+  anti_join(stop_words)</code></pre>
+</div>
+<div id="how-long-are-each-of-the-articles" class="section level3">
+<h3>How long are each of the articles?</h3>
+<p>The first analysis that we can do is look at the word count of the five articles:</p>
+<pre class="r"><code>count(words, source, name = &quot;article length&quot;, sort = T) %&gt;% 
+  knitr::kable()</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">source</th>
+<th align="right">article length</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">ap</td>
+<td align="right">603</td>
+</tr>
+<tr class="even">
+<td align="left">cnn</td>
+<td align="right">494</td>
+</tr>
+<tr class="odd">
+<td align="left">foxnews</td>
+<td align="right">394</td>
+</tr>
+<tr class="even">
+<td align="left">huffpo</td>
+<td align="right">271</td>
+</tr>
+<tr class="odd">
+<td align="left">theblaze</td>
+<td align="right">135</td>
+</tr>
+</tbody>
+</table>
+<p>What’s potentially interesting about the word counts is that the Associated Press articles which is supposed to be the most non-biased has the largest word count. Then the slightly biased sources (CNN and Fox News) are the next longest. Finally, the articles that were representing the most biased sources (Huffington Post and The Blaze) were the shortest.</p>
+</div>
+<div id="what-are-the-most-common-words-from-each-source" class="section level3">
+<h3>What Are The Most Common Words From Each Source?</h3>
+<p>Another quick analysis can be to look at the most frequent words from each of the five sources. The following code block takes advantage of the <code>ggtext</code> package to use logos for the axis-labels. <code>ggtext</code> is able to render html tags on ggplots using the <code>element_markdown()</code> function and the <code>icons_strip</code> object contains those tags.</p>
+<p>The following code block gets the word counts for each word in each source and then uses dplyr’s <code>slice_max()</code> to only keep the Top 10 words for each source. In the <code>ggplot</code> command, the <code>reorder_within()</code> and <code>scale_x_reordered()</code> allows for separate sorting within each facet on the resulting chart.</p>
+<pre class="r"><code>icons_strip &lt;- c(
+  huffpo = &quot;&lt;img src=&#39;huffpost.jpg&#39; width = 90 /&gt;&quot;,
+  cnn = &quot;&lt;img src=&#39;CNN.png&#39; width=&#39;40&#39; /&gt;&quot;,
+  ap = &quot;&lt;img src=&#39;ap.png&#39; width=&#39;80&#39; /&gt;&quot;,
+  foxnews = &quot;&lt;img src=&#39;foxnews.jpg&#39; width=&#39;70&#39; /&gt;&quot;,
+  theblaze = &quot;&lt;img src=&#39;theblaze.jpeg&#39; width=&#39;50&#39; /&gt;&quot;
+  )
+
+words %&gt;% 
+  group_by(source, word) %&gt;% 
+  summarize(cnt = n()) %&gt;% 
+  slice_max(order_by = cnt, n = 10, with_ties = F) %&gt;% 
+  mutate(icon = unname(icons_strip[source]),
+         icon = factor(icon, 
+                       levels = c(icons_strip[&#39;huffpo&#39;], icons_strip[&#39;cnn&#39;],
+                                  icons_strip[&#39;ap&#39;], icons_strip[&#39;foxnews&#39;],
+                                  icons_strip[&#39;theblaze&#39;]))
+         ) %&gt;%
+  ggplot(aes(x = reorder_within(word, cnt, source), y = cnt, fill = icon)) +
+    geom_col() +
+    scale_x_reordered() +
+    scale_fill_discrete(guide = F) +
+    labs(x = &quot;Words&quot;,
+         y = &quot;# of Occurances&quot;,
+         title = &quot;Most Common Words in Articles about Trump&#39;s Positive COVID Test&quot;) +
+    facet_wrap(~icon, nrow = 2, scales = &quot;free&quot;) +
+    coord_flip() +
+    theme(
+      strip.text.x = element_markdown(),
+      strip.background.x = element_blank()
+    )</code></pre>
+<p><img src="/post/2020-10-07-looking-for-media-bias-in-coverage-of-trump-s-covid-diagnosis/index_files/figure-html/most_common_words-1.png" width="672" /></p>
+<p>Unsurprisingly, the words “President” or “Trump” were the most common words in all five articles.</p>
+</div>
+<div id="looking-into-the-sentiment-of-each-article" class="section level3">
+<h3>Looking into the sentiment of each article</h3>
+<p>A common type of text analysis is <strong><em>sentiment analysis</em></strong> and a simple version of sentiment analysis is to lookup each word of text in a dictionary that labels it as either positive sentiment or negative sentiment. The <code>tidytext</code> package contains a number of different sentiment lexicons and in this analysis I’ll be using the <a href="https://www.cs.uic.edu/~liub/FBS/sentiment-analysis.html">Bing Liu lexicon</a>.</p>
+<p>In the following code block I am appending the sentiment labels to our existing data set. Since most of the words will not appear in the sentiment lexicon I’m setting the <code>NA</code> values to a label of “neutral”. Additionally, I’m creating numeric codes for positive words (+1), negative words (-1) and neutral words (0).</p>
+<pre class="r"><code>words_with_sentiment &lt;- words %&gt;% 
+  left_join(get_sentiments(&#39;bing&#39;)) %&gt;% 
+  mutate(
+    sentiment = if_else(is.na(sentiment), &#39;neutral&#39;, sentiment),
+    sentiment_numeric  = case_when(
+                sentiment == &#39;positive&#39; ~ 1,
+                sentiment == &#39;negative&#39; ~ -1,
+                sentiment == &#39;neutral&#39; ~ 0)
+  )</code></pre>
+<p>The first look at sentiment across the five articles is to look at an average sentiment score using the numeric coding above. Everything in this code block is either vanilla <code>dplyr</code> or <code>ggplot</code> or has been covered in other blog posts. New to this block is <code>scale_x_discrete(labels = icons)</code> which uses the named vector of <code>&lt;img&gt;</code> tags to apply the logos to the y-axis after the coordinate flip:</p>
+<pre class="r"><code>icons &lt;- c(
+  huffpo = &quot;&lt;img src=&#39;huffpost.jpg&#39; width = 130 /&gt;&quot;,
+  cnn = &quot;&lt;img src=&#39;CNN.png&#39; width=&#39;50&#39; /&gt;&quot;,
+  ap = &quot;&lt;img src=&#39;ap.png&#39; width=&#39;130&#39; /&gt;&quot;,
+  foxnews = &quot;&lt;img src=&#39;foxnews.jpg&#39; width=&#39;75&#39; /&gt;&quot;,
+  theblaze = &quot;&lt;img src=&#39;theblaze.jpeg&#39; width=&#39;75&#39; /&gt;&quot;
+  )
+
+words_with_sentiment %&gt;% 
+  group_by(source) %&gt;% 
+  summarise(
+    avg_sentiment = sum(sentiment_numeric, na.rm = T) / n()
+  ) %&gt;% 
+  ggplot(aes(
+    x = factor(source, 
+               levels = c(&#39;theblaze&#39;, &#39;foxnews&#39;, &#39;ap&#39;, &#39;cnn&#39;, &#39;huffpo&#39;)),
+    y = avg_sentiment
+  )) + 
+  geom_linerange(ymin = 0, aes(ymax = avg_sentiment)) + 
+  geom_point(size = 4, aes(color = ifelse(avg_sentiment &lt; 0, &#39;red&#39;, &#39;green&#39;))) + 
+  geom_text(aes(label = avg_sentiment %&gt;% round(2)), vjust = -1) + 
+  geom_hline(yintercept = 0) + 
+  labs(x = &quot;&quot;, 
+       y = expression(paste(&quot;Avg. Sentiment Scores (&quot;,
+                            Sigma,&quot; Positive - &quot;, 
+                            Sigma,&quot; Negative) / # Words&quot;)),
+       title = &quot;Total Sentiment of Articles About Trump&#39;s Positve COVID Test&quot;) + 
+  scale_x_discrete(labels = icons) + 
+  scale_y_continuous(labels = scales::percent) + 
+  scale_color_identity(guide = F) + 
+  coord_flip() + 
+  cowplot::theme_cowplot() + 
+  theme(
+    axis.line = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text.y = element_markdown(color = &quot;black&quot;, size = 11),
+    axis.text.x = element_blank(),
+    axis.title.x = element_text(size = 10),
+    plot.title.position = &#39;plot&#39;
+  )</code></pre>
+<p><img src="/post/2020-10-07-looking-for-media-bias-in-coverage-of-trump-s-covid-diagnosis/index_files/figure-html/sentiment_lollipop-1.png" width="672" /></p>
+<p>Most interesting about these results is that <strong>there is a rank ordering ranging from the most left-leaning article is the most negative and the most right-leaning is the most positive</strong>. Other interesting items of note is that the right-leaning articles have higher absolute sentiment scores than the left-leaning articles and that the Associated Press articles has an average sentiment score of nearly <strong>zero</strong>.</p>
+<p>While I went into this with no prior hypothesis, I’m guessing that the left-leaning articles are taking a more dire view of Trump’s COVID diagnosis while the right-leaning are focusing more on the hopeful recovery.</p>
+<p>An alternative lens is rather than looking at average sentiment scores, I can look at the distribution of Positive/Negative/Neutral words within each source.</p>
+<pre class="r"><code>words_with_sentiment %&gt;% 
+  count(source, sentiment) %&gt;% 
+  group_by(source) %&gt;% 
+  mutate(pct = n / sum(n)) %&gt;% 
+  ungroup() %&gt;% 
+  ggplot(aes(x = factor(source, 
+                        levels = c(&#39;theblaze&#39;, &#39;foxnews&#39;, &#39;ap&#39;, &#39;cnn&#39;, &#39;huffpo&#39;)),
+             y = pct, 
+             fill = factor(sentiment, 
+                           levels = c(&#39;negative&#39;, &#39;neutral&#39;, &#39;positive&#39;))
+             )
+         ) + 
+    geom_col() + 
+    geom_text(aes(label = pct %&gt;% scales::percent(accuracy = 1)), 
+              position = position_stack(vjust = .5)) + 
+    labs(x = &quot;&quot;, 
+         y = &quot;% of Words&quot;,
+         title = &quot;What is the Sentiment of Different Articles on Trump&#39;s Positive COVID Test?&quot;, 
+         fill = &quot;Sentiment&quot;) + 
+  scale_x_discrete(labels = icons) + 
+  guides(fill = guide_legend(reverse = T)) + 
+  coord_flip() + 
+  cowplot::theme_cowplot() + 
+  theme(
+    plot.title.position = &#39;plot&#39;,
+    legend.position = &#39;bottom&#39;,
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_markdown(),
+    plot.title = element_text(size = 12)
+  )</code></pre>
+<p><img src="/post/2020-10-07-looking-for-media-bias-in-coverage-of-trump-s-covid-diagnosis/index_files/figure-html/sentiment_dist-1.png" width="672" /></p>
+<p>While most words in all five articles are neutral this views lets us see the Positive vs. Negative Distribution in more detail. The left-leaning sources skew slightly towards negative sentiment with close to equal percentages of positive and negative while the right-leaning articles have a higher occurrence of positive terms and a decently lower occurrence of negative terms.</p>
+</div>
+<div id="determing-the-most-representitive-words-with-tf-idf" class="section level3">
+<h3>Determing the Most Representitive Words with TF-IDF</h3>
+<p><a href="https://en.wikipedia.org/wiki/Tf%E2%80%93idf">TF-IDF</a> or Term Frequency-Inverse Document Frequency produces a numeric value to represent “how important a word is to a document in a collection of documents”. Earlier in this post we looked at the most common words in each source. A problem with using <em>most frequent word</em> as a measure of importance is that if a word is very common everywhere then it can’t be really important. For example, the word “President” is likely not descriptive to any one document since all five are about President Trump’s COVID diagnosis. However, we should still consider frequency as part of the measure of importance. However, we can solve the common in all documents problem by weighting the metric by the inverse of the number of documents a word appears in. This is the IDF (inverse document frequency) portion of TF-IDF. In TF-IDF, the result is the product of the:</p>
+<ul>
+<li>Term Frequency (TF) - Within each document what % of words is word X?</li>
+<li>Inverse Document Frequency (IDF) - How many documents does word X appear in?
+<ul>
+<li>This is defined as Log(Total # of Documents / # of Documents with Word X)</li>
+</ul></li>
+</ul>
+<p>Calculating TF-IDF is easy with <code>tidytext::bind_tfidf()</code> which takes as parameters, the word column (word), the document column (source), and a counts column (n). The function appends the tf, idf, and tf_idf columns to the data set.</p>
+<pre class="r"><code>words %&gt;% 
+  add_count(word, name = &#39;total_count&#39;) %&gt;%
+  filter(total_count &gt;= 5) %&gt;% 
+  count(source, word) %&gt;% 
+  bind_tf_idf(word, source, n) %&gt;% 
+  mutate(icon = unname(icons_strip[source]),
+         icon = factor(icon, 
+                       levels = c(icons_strip[&#39;huffpo&#39;], icons_strip[&#39;cnn&#39;],
+                                  icons_strip[&#39;ap&#39;], icons_strip[&#39;foxnews&#39;],
+                                  icons_strip[&#39;theblaze&#39;]))
+         ) %&gt;% 
+  group_by(icon) %&gt;% 
+  slice_max(order_by = tf_idf, n = 10, with_ties = F) %&gt;% 
+  ggplot(aes(x = reorder_within(word, tf_idf, icon), 
+             y = tf_idf, 
+             fill = icon)) +
+    geom_col() +
+    scale_x_reordered() +
+    scale_fill_discrete(guide = F) +
+    labs(x = &quot;Words&quot;,
+         y = &quot;TF-IDF&quot;,
+         title = &quot;Most Characteristic Words For Each Source&quot;,
+         subtitle = &quot;Based on TF-IDF&quot;) +
+    facet_wrap(~icon, nrow = 2, scales = &quot;free_y&quot;) +
+    coord_flip() +
+    theme(
+      strip.text.x = element_markdown(),
+      strip.background.x = element_blank()
+    )</code></pre>
+<p><img src="/post/2020-10-07-looking-for-media-bias-in-coverage-of-trump-s-covid-diagnosis/index_files/figure-html/tfidf-1.png" width="672" /></p>
+<p>For the Huffington post article the most important word is “debate”, followed by “wearing”. Within the other documents the word "debate: does not appear at all in the right-leaning articles.</p>
+<p>In the Fox News article it shouldn’t be a surprise than the word “fox” has a higher importance to Fox News than to any other article.</p>
+<p>What was interesting was that the two right leaning articles’ most representative words were “tweeted”. In actually reading the articles, they both primarily were quoting the tweets from the President, Vice President, First Lady and various other White House spokespeople.</p>
+<p>Overall, the TF-IDF results weren’t particularly interesting besides the Huffington Post’s referencing the debates and the right-leaning articles relying on Twitter for much of the information.</p>
+<p>Content aside, I was a little confused how “tweeted” could be the most representative word for two different articles since importance is partially determined by the word NOT appearing in other articles. However, after thinking about this more it could be possible if one of the articles had a lot of word overlap with other articles. The Blaze article was already the shortest with only 135 words and perhaps it doesn’t add much new information.</p>
+</div>
+<div id="what-is-the-overlap-of-words-across-all-sources" class="section level3">
+<h3>What is the Overlap of Words Across All Sources?</h3>
+<p>In order to determine whether The Blaze just doesn’t have many unique words we’ll need to construct a way to see what sources contain each word. While with fewer numbers of sources tools like Venn Diagrams would be useful to determine overlaps, with 5 different sources there could be 32 different overlap combinations.</p>
+<p>A useful tool for viewing overlap of many groups in a simpler way is an “Upset” chart. In an upset chart the number of words occurring in each overlap group is displayed as a bar and what the group represents is shown in the box beneath the chart where a circle is filled in if the source is part of the group and not filled in otherwise. Shout out to <a href="https://soroosj.netlify.app/2020/07/07/cocktails-upset/">Joel Soroos, whose blog post helped me implement Upset charts in R</a>.</p>
+<p>There are a couple of packages that can make these charts but I’ll use <code>ggupset</code> since it works well with the tidy data format. In order to get the data in the proper format I’ll need to structure the data so that each row is a word and then there is a list-column containing all of the sources that contain that word. This can be done using <code>group_by</code> and <code>summarize</code> with <code>list()</code> as the aggregate function.</p>
+<p>Then a <code>ggplot</code> can be turned into an Upset chart through the use of <code>scale_x_upset()</code>. Another piece of this code that’s pretty new to me is <code>geom_text(stat='count', aes(label=after_stat(count)), nudge_y = 10)</code>. Since the data is structured as a list of words, I don’t have a column that represents the number of words in each group to pass into <code>geom_text()</code>. Therefore the line <code>after_stat</code> will tell <code>geom_text()</code> that we’re going to use the <code>count</code> statistic but also to set the label value <strong>after doing the stat calculation</strong>. Admittedly I’m not great with the <code>stat_*</code> aspects of ggplot and the <code>after_*</code> functions. But this is nice that I don’t have to do all the calculations before passing into <code>ggplot</code>.</p>
+<pre class="r"><code>words %&gt;% 
+  count(source, word) %&gt;%
+  group_by(word) %&gt;% 
+  summarize(sources = list(source)) %&gt;% 
+  ggplot(aes(x = sources)) + 
+    geom_bar() + 
+    geom_text(stat=&#39;count&#39;, aes(label=after_stat(count)), nudge_y = 10) +
+    scale_x_upset() + 
+    labs(x = &quot;Set of Sources&quot;, 
+         y = &quot;# of Unique Words&quot;,
+         title = &quot;How Many Sources Does Each Word Appear In?&quot;,
+         caption = &quot;Each column represents a unique combination of sources&quot;) + 
+    cowplot::theme_cowplot() </code></pre>
+<p><img src="/post/2020-10-07-looking-for-media-bias-in-coverage-of-trump-s-covid-diagnosis/index_files/figure-html/upset_chart-1.png" width="672" /></p>
+<p>To read the Upset chart, the first bar shows that the largest group is composed of 197 words and represents the words that are <strong>ONLY</strong> in the CNN article. The second bar is 186 words that <strong>ONLY</strong> appear in the Associated Press article. For an example of an overlap, the 5th bar represents the 40 words that appear in <strong>BOTH</strong> the AP and CNN article.</p>
+<p>To answer the original question of whether The Blaze’s high TF-IDF score for ‘tweeted’ is due to a low number of unique words in The Blaze article we can look for the group that is <strong>ONLY</strong> the Blaze words. Finding the column that contains only the one filled in circle for the Blaze we can see that there are only eight words that are unique to the Blaze article. Granted some of this is due to The Blaze being the shortest article and the AP article having the most words.</p>
+</div>
+</div>
+<div id="conclusion" class="section level2">
+<h2>Conclusion</h2>
+<p>This post looked at five articles about the event of President Trump’s COVID-19 diagnosis from different media sources to see how coverage might differ depending on each outlet’s bias. While I’m not an expert in bias and I don’t think any results here are so strong as to suggest obvious bias there were a few areas where the ordering does seem to indicate some amount of ‘slant’ in line with how <a href="https://www.allsides.com/">AllSides.com</a> rated the five outlets.</p>
+<ol style="list-style-type: decimal">
+<li>The level of bias (both left and right) of a media outlet correlated with shorter articles.</li>
+<li>For this particular event, based on sentiment analysis the left-leaning outlets took a slight negative slant while the right-leaning outlets took a more positive slant.</li>
+<li>The right-leaning articles appeared to rely more on tweets for the text-content of the article</li>
+</ol>
+</div>
+<div id="appendix-upset-charts-with-upsetr" class="section level2">
+<h2>Appendix: Upset Charts with UpSetR</h2>
+<p>There is an alternative implementation for Upset charts using the <code>UpSetR</code> package that doesn’t run through ggplot. In order to use this package each source needs to become its own column with a value of 1 if the word appears in the source and zero otherwise. Additionally, the data can’t be in the tibble format which is why <code>as.data.frame</code> is used before calling the <code>upset()</code> function.</p>
+<pre class="r"><code>words %&gt;% 
+  distinct(source, word) %&gt;% 
+  mutate(val = 1) %&gt;%
+  pivot_wider(
+    names_from = &#39;source&#39;,
+    values_from = &#39;val&#39;,
+    values_fill = 0
+  ) %&gt;%
+  as.data.frame %&gt;% 
+  upset(order.by = &#39;freq&#39;,
+        empty.intersections = T,
+        sets.x.label = &#39;Word Count&#39;,
+        text.scale = 1.25)</code></pre>
+<p><img src="/post/2020-10-07-looking-for-media-bias-in-coverage-of-trump-s-covid-diagnosis/index_files/figure-html/upset_chart2-1.png" width="672" /></p>
+<p>The two main advantages of UpSetR is the ability to show empty intersecting groups and the Word Count graph on the left. For example, with this version we can see that there are zero words that only appear in the Blaze and the Huffington Post article. Also, its clearer in this package that the AP and CNN have more words than the rest of the articles.</p>
+</div>
