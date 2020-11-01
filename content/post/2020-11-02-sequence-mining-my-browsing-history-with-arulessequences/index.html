@@ -1,0 +1,674 @@
+---
+title: Sequence Mining My Browsing History with arulesSequences
+author: JLaw
+date: '2020-11-02'
+slug: sequence-mining-my-browsing-history-with-arulessequences
+categories:
+  - R
+  - SequenceMining
+tags:
+  - arulesSequences
+  - tidygraph
+  - ggraph
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2020-11-01T04:24:01-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+
+
+<p>Typically when thinking of pattern mining people tend to think of Market Basket Analysis with the conventional example showing people typically buy both Beer and Diapers in the same trip. When order doesn’t matter this is called Association Rules Mining and is implemented by the <code>arules</code> package in R. In this example, the person is buying <strong>both</strong> diapers and beer. It doesn’t really matter if diapers led to the beer purchase or beer lead to the diaper purchased. However, there are instances where the order of events are important to what we’d consider a pattern. For example, “cause and effect” relationships imply order. Putting your hand on a hot stove leads to burning your hand. The reverse direction of burning your hand leading you to put your hand on a hot stove makes less sense. When the notion of order is applied to association rules mining it becomes “Sequence Mining”. And to do this, we’ll use the <code>arulesSequences</code> package to run the <a href="https://link.springer.com/article/10.1023/A:1007652502315">cSPADE</a> algorithm.</p>
+<p>Unfortunately, I don’t have access to grocery store data or much other data that would be an interesting use-case for sequence mining. But what I do have is access to my own browsing history. So for this post, I’ll be looking for common sequential patterns in my web own browsing habits.</p>
+<div id="getting-the-data" class="section level2">
+<h2>Getting the Data</h2>
+<p>I wasn’t able to figure out how to extract my browsing history directly from Chrome in a way that would easily be read into R. However, there are 3rd party programs that can extract browsing histories. In this case, I used a program called <a href="https://www.nirsoft.net/utils/browsing_history_view.html">BrowsingHistoryView</a> by Nir Sofer. The interface is very straight forward and allowed for extracting my browsing history to a CSV file.</p>
+<p><img src="chromehistorytool.PNG" /></p>
+<p>From this program I was able to extract 85 days worth of browsing history from 2020-06-13 through 2020-09-09.</p>
+</div>
+<div id="loading-libraries-and-reading-in-data" class="section level2">
+<h2>Loading Libraries and Reading in Data</h2>
+<p>The libraries used in this analysis are the usual gang of <code>tidyverse</code>, <code>lubridate</code>, <code>ggtext</code> which are often used in this blog. Some new ones specific for this analysis are:</p>
+<ul>
+<li><code>arulesSequences</code> - Which will run the sequence mining algorithm</li>
+<li><code>tidygraph</code> and <code>ggraph</code> - Which will allow for plotting my browsing history as a directed graph</li>
+</ul>
+<pre class="r"><code>library(tidyverse) #Data Manipulation and Plotting
+library(lubridate) #Date Manipulation
+library(arulesSequences) #Running the Sequence mining algorithm
+library(ggtext) #Making adding some flair to plots
+library(tidygraph)  ## Creating a Graph Structure
+library(ggraph) ## Plotting the Network Graph Structure</code></pre>
+<p>A .csv file was created from the Browsing History View software and read into R through <code>readr</code>.</p>
+<pre class="r"><code>browsing_history &lt;- read_csv(&#39;browsing_history_v2.csv&#39;)</code></pre>
+<p>The read-in data looks as follows:</p>
+<table style="width:100%;">
+<colgroup>
+<col width="41%" />
+<col width="14%" />
+<col width="7%" />
+<col width="4%" />
+<col width="4%" />
+<col width="3%" />
+<col width="3%" />
+<col width="2%" />
+<col width="4%" />
+<col width="5%" />
+<col width="8%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left">URL</th>
+<th align="left">Title</th>
+<th align="left">Visited On</th>
+<th align="right">Visit Count</th>
+<th align="right">Typed Count</th>
+<th align="left">Referrer</th>
+<th align="right">Visit ID</th>
+<th align="left">Profile</th>
+<th align="right">URL Length</th>
+<th align="left">Transition Type</th>
+<th align="left">Transition Qualifiers</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left"><a href="https://watch.wwe.com/original/undertaker-the-last-ride-134576" class="uri">https://watch.wwe.com/original/undertaker-the-last-ride-134576</a></td>
+<td align="left">wwe network - undertaker: the last ride</td>
+<td align="left">6/13/2020 2:59:23 PM</td>
+<td align="right">2</td>
+<td align="right">1</td>
+<td align="left">NA</td>
+<td align="right">331141</td>
+<td align="left">Default</td>
+<td align="right">62</td>
+<td align="left">Typed</td>
+<td align="left">Chain Start,Chain End</td>
+</tr>
+<tr class="even">
+<td align="left"><a href="https://watch.wwe.com/original/undertaker-the-last-ride-134576" class="uri">https://watch.wwe.com/original/undertaker-the-last-ride-134576</a></td>
+<td align="left">wwe network - undertaker: the last ride</td>
+<td align="left">6/13/2020 2:59:28 PM</td>
+<td align="right">2</td>
+<td align="right">1</td>
+<td align="left">NA</td>
+<td align="right">331142</td>
+<td align="left">Default</td>
+<td align="right">62</td>
+<td align="left">Link</td>
+<td align="left">Chain Start,Chain End</td>
+</tr>
+<tr class="odd">
+<td align="left"><a href="https://www.google.com/search?q=vtt+to+srt&amp;oq=vtt+to+srt&amp;aqs=chrome.0.69i59j0l7.1395j0j4&amp;sourceid=chrome&amp;ie=utf-8" class="uri">https://www.google.com/search?q=vtt+to+srt&amp;oq=vtt+to+srt&amp;aqs=chrome.0.69i59j0l7.1395j0j4&amp;sourceid=chrome&amp;ie=utf-8</a></td>
+<td align="left">vtt to srt - google search</td>
+<td align="left">6/13/2020 4:33:34 PM</td>
+<td align="right">2</td>
+<td align="right">0</td>
+<td align="left">NA</td>
+<td align="right">331157</td>
+<td align="left">Default</td>
+<td align="right">113</td>
+<td align="left">Generated</td>
+<td align="left">Chain Start,Chain End</td>
+</tr>
+<tr class="even">
+<td align="left"><a href="https://www.google.com/search?q=vtt+to+srt&amp;oq=vtt+to+srt&amp;aqs=chrome.0.69i59j0l7.1395j0j4&amp;sourceid=chrome&amp;ie=utf-8" class="uri">https://www.google.com/search?q=vtt+to+srt&amp;oq=vtt+to+srt&amp;aqs=chrome.0.69i59j0l7.1395j0j4&amp;sourceid=chrome&amp;ie=utf-8</a></td>
+<td align="left">vtt to srt - google search</td>
+<td align="left">6/13/2020 4:33:37 PM</td>
+<td align="right">2</td>
+<td align="right">0</td>
+<td align="left">NA</td>
+<td align="right">331158</td>
+<td align="left">Default</td>
+<td align="right">113</td>
+<td align="left">Link</td>
+<td align="left">Chain Start,Chain End</td>
+</tr>
+<tr class="odd">
+<td align="left"><a href="https://twitter.com/" class="uri">https://twitter.com/</a></td>
+<td align="left">home / twitter</td>
+<td align="left">6/13/2020 5:19:55 PM</td>
+<td align="right">98</td>
+<td align="right">90</td>
+<td align="left">NA</td>
+<td align="right">331167</td>
+<td align="left">Default</td>
+<td align="right">20</td>
+<td align="left">Typed</td>
+<td align="left">Chain Start,Chain End</td>
+</tr>
+<tr class="even">
+<td align="left"><a href="https://twitter.com/home" class="uri">https://twitter.com/home</a></td>
+<td align="left">home / twitter</td>
+<td align="left">6/13/2020 5:20:03 PM</td>
+<td align="right">414</td>
+<td align="right">0</td>
+<td align="left">NA</td>
+<td align="right">331168</td>
+<td align="left">Default</td>
+<td align="right">24</td>
+<td align="left">Link</td>
+<td align="left">Chain Start,Chain End</td>
+</tr>
+</tbody>
+</table>
+<p>Looking at the data there are a number of cleaning steps that will need to be done to make the sequence mining more useful.</p>
+<ol style="list-style-type: decimal">
+<li>The variable names are not machine friendly and contain spaces,</li>
+<li>Some of the URLs are redirects or generated and therefore not URLs I specifically went to. I’ll want to exclude those.</li>
+<li><em>Visited On</em> is a character rather than a date</li>
+<li>If we’re looking for common patterns, I should probably limit the URLs to just the domains as its very unlikely that I would read the same news articles multiple times.
+<ul>
+<li>Therefore I’ll shorten “<a href="https://twitter.com/home" class="uri">https://twitter.com/home</a>” to just “twitter.com/”</li>
+</ul></li>
+</ol>
+<p>The following code block carries out the cleaning steps outlined above:</p>
+<pre class="r"><code>browsing_history_cleaned &lt;- browsing_history %&gt;% 
+  #Make the names more R friendly
+  janitor::clean_names() %&gt;%
+  #Subset to URLs I either typed or 
+  #Linked to (excluding redirects/form submissions)
+  filter(transition_type %in% c(&#39;Link&#39;, &#39;Typed&#39;),
+         str_detect(transition_qualifiers, &#39;Chain Start&#39;)
+         )%&gt;% 
+  #Keep Only the Base URL and remove the prefix
+  mutate(base_url = str_remove(url, &#39;^https?:\\/\\/&#39;) %&gt;% 
+           str_remove(&#39;^www\\.&#39;) %&gt;% 
+           str_extract(., &#39;^.+?\\/&#39;),
+         #Parse the Date Format
+         dttm = mdy_hms(visited_on),
+         ds = as.Date(dttm)
+  ) %&gt;% 
+  select(base_url, dttm, title, ds)</code></pre>
+<p>The above block:</p>
+<ol style="list-style-type: decimal">
+<li>Uses <code>janitor::clean_names()</code> to convert the column names into an R-friendly format (Visited On -&gt; visited_on)</li>
+<li>Keeps only the ‘Typed’ and ‘Link’ transition types to keep only URLs I either typed to or clicked to</li>
+<li>Keep only ‘Chain Start’ qualifiers to remove URLs that came from redirects</li>
+<li>Create a <code>base_url</code> field by removing the “http[s]://” and “www.” strings if they exist.</li>
+<li>Converts <code>visited_on</code> into both a timestamp and a datestamp</li>
+<li>Only keeps the four columns we’re interested in.</li>
+</ol>
+<p>After these changes, the data looks like:</p>
+<table>
+<colgroup>
+<col width="17%" />
+<col width="23%" />
+<col width="46%" />
+<col width="12%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left">base_url</th>
+<th align="left">dttm</th>
+<th align="left">title</th>
+<th align="left">ds</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">watch.wwe.com/</td>
+<td align="left">2020-06-13 14:59:23</td>
+<td align="left">wwe network - undertaker: the last ride</td>
+<td align="left">2020-06-13</td>
+</tr>
+<tr class="even">
+<td align="left">watch.wwe.com/</td>
+<td align="left">2020-06-13 14:59:28</td>
+<td align="left">wwe network - undertaker: the last ride</td>
+<td align="left">2020-06-13</td>
+</tr>
+<tr class="odd">
+<td align="left">google.com/</td>
+<td align="left">2020-06-13 16:33:37</td>
+<td align="left">vtt to srt - google search</td>
+<td align="left">2020-06-13</td>
+</tr>
+<tr class="even">
+<td align="left">twitter.com/</td>
+<td align="left">2020-06-13 17:19:55</td>
+<td align="left">home / twitter</td>
+<td align="left">2020-06-13</td>
+</tr>
+<tr class="odd">
+<td align="left">twitter.com/</td>
+<td align="left">2020-06-13 17:20:03</td>
+<td align="left">home / twitter</td>
+<td align="left">2020-06-13</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="sessionizing-the-data" class="section level2">
+<h2>Sessionizing the Data</h2>
+<p>Even though I have a date field for my browsing history, the cSPADE algorithm is going to want to be able to differentiate between when one session begins and another session ends. While a reasonable choice might be to break things apart by day, it’s likely that on weekends I have multiple browsing sessions which can sometimes stretch past midnight. So a more reasonable choice might be to say a new session begins if there is a gap of at least 1 hour since the last page I browsed to.</p>
+<p>Another aspect of the data that I’d like to deal with is to eliminate when I go to multiple pages within the same domain. Having an eventual rule that “twitter.com/ -&gt; twitter.com” isn’t that interesting. So I will also remove any consecutive rows that have the same domain.</p>
+<pre class="r"><code>collapsed_history &lt;- browsing_history_cleaned %&gt;% 
+  #Order by Time
+  arrange(dttm) %&gt;% 
+  # Create a new marker every time a Page Browsing is more than 1 hour since
+  # the last one
+  # Also, create a segment_id to identify each session
+  mutate(time_diff = dttm-lag(dttm),
+         #Count Segments as more than an hour btw events
+         new_segment = if_else(is.na(time_diff) | time_diff &gt;= 60*60, 1, 0),
+         segment_id = cumsum(new_segment)
+  ) %&gt;% 
+  group_by(segment_id) %&gt;% 
+  arrange(dttm) %&gt;% 
+  #Remove Instances where the same baseurl appears consecutively
+  filter(base_url != lag(base_url) | is.na(lag(base_url))) %&gt;% 
+  #Create Within Segment ID
+  mutate(item_id = row_number()) %&gt;% 
+  select(segment_id, ds, dttm, item_id, base_url) %&gt;% 
+  ungroup() %&gt;% 
+  #Convert Everything to Factor
+  mutate(across(.cols = c(&quot;segment_id&quot;, &quot;base_url&quot;), .f = as.factor))</code></pre>
+<p>In order to create <code>segment_id</code>s to represent each session, I use <code>dplyr::lag()</code> to calculate the difference in seconds between each event. Then when the event occurs more than 1 hour after the prior event I mark it with a 1 in the <code>new_segment</code> column. Then using the <code>cumsum</code> option, I can fill down the segment_ids to all the other events in that session.</p>
+<p>Similarly I use the lag function to remove consecutively occurring identical <code>base_url</code>.</p>
+<p>Finally, a quirk of the <code>arulesSequences</code> package is that the “items” or the URLs in this case must be factors.</p>
+<p>The data for the 154 browsing sessions now looks like:</p>
+<pre class="r"><code>collapsed_history %&gt;% head(5) %&gt;% knitr::kable()</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">segment_id</th>
+<th align="left">ds</th>
+<th align="left">dttm</th>
+<th align="right">item_id</th>
+<th align="left">base_url</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">1</td>
+<td align="left">2020-06-13</td>
+<td align="left">2020-06-13 14:59:23</td>
+<td align="right">1</td>
+<td align="left">watch.wwe.com/</td>
+</tr>
+<tr class="even">
+<td align="left">2</td>
+<td align="left">2020-06-13</td>
+<td align="left">2020-06-13 16:33:37</td>
+<td align="right">1</td>
+<td align="left">google.com/</td>
+</tr>
+<tr class="odd">
+<td align="left">2</td>
+<td align="left">2020-06-13</td>
+<td align="left">2020-06-13 17:19:55</td>
+<td align="right">2</td>
+<td align="left">twitter.com/</td>
+</tr>
+<tr class="even">
+<td align="left">2</td>
+<td align="left">2020-06-13</td>
+<td align="left">2020-06-13 17:20:09</td>
+<td align="right">3</td>
+<td align="left">gmail.com/</td>
+</tr>
+<tr class="odd">
+<td align="left">2</td>
+<td align="left">2020-06-13</td>
+<td align="left">2020-06-13 17:24:14</td>
+<td align="right">4</td>
+<td align="left">twitter.com/</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="constructing-the-transactions-data-set-for-arulessequences" class="section level2">
+<h2>Constructing the Transactions Data Set for arulesSequences</h2>
+<p>I haven’t found a ton of resources online about using the <code>arulesSequences</code> package. This <a href="https://blog.revolutionanalytics.com/2019/02/sequential-pattern-mining-in-r.html">blog post from Revolution Analytics</a> has been one of the best that I’ve found. However, their process involves exporting to .csv and then reading back in to create the transactions data set. Personally, I’d like to avoid doing as much outside of R as possible.</p>
+<p>However, the blog post does provide a good amount of detail about how to properly get the data in the proper format. Using the <code>as</code> function, I can convert the previous data frame into a “transactions” format and set the following fields for use in cSPADE:</p>
+<ul>
+<li><strong>items</strong>: The elements that make up a sequence</li>
+<li><strong>sequenceID</strong>: The identifier for each sequence</li>
+<li><strong>eventID</strong>: The identifier for an item within a sequence</li>
+</ul>
+<pre class="r"><code>sessions &lt;-  as(collapsed_history %&gt;% transmute(items = base_url), &quot;transactions&quot;)
+transactionInfo(sessions)$sequenceID &lt;- collapsed_history$segment_id
+transactionInfo(sessions)$eventID = collapsed_history$item_id</code></pre>
+<p>If I wanted to use better controls around time gaps, I would need to provide better information about time. But since this is pretty basic, I don’t use that field as the differentiation between sessions is enough.</p>
+<p>The Transaction data class can be viewed with the <code>inspect()</code> function:</p>
+<pre class="r"><code>inspect(head(sessions))</code></pre>
+<pre><code>##     items                  transactionID sequenceID eventID
+## [1] {items=watch.wwe.com/} 1             1          1      
+## [2] {items=google.com/}    2             2          1      
+## [3] {items=twitter.com/}   3             2          2      
+## [4] {items=gmail.com/}     4             2          3      
+## [5] {items=twitter.com/}   5             2          4      
+## [6] {items=gothamist.com/} 6             2          5</code></pre>
+<p>Having the “items=” for every items is a little annoying so let’s remove that by altering the <code>itemLabels</code> for the transactions set:</p>
+<pre class="r"><code>itemLabels(sessions) &lt;- str_replace_all(itemLabels(sessions), &quot;items=&quot;, &quot;&quot;)
+inspect(head(sessions))</code></pre>
+<pre><code>##     items            transactionID sequenceID eventID
+## [1] {watch.wwe.com/} 1             1          1      
+## [2] {google.com/}    2             2          1      
+## [3] {twitter.com/}   3             2          2      
+## [4] {gmail.com/}     4             2          3      
+## [5] {twitter.com/}   5             2          4      
+## [6] {gothamist.com/} 6             2          5</code></pre>
+<p>Much better.</p>
+</div>
+<div id="running-the-cspade-algorithm" class="section level2">
+<h2>Running the cSPADE algorithm</h2>
+<p>The sequence mining algorithm can be run by using the <code>cspade()</code> function in the <code>arulesSequences</code> package. Before running the algorithm, I’ll need to explain the concept of <em>support</em>. <em>Support</em> can be best thought of as the proportion of sessions that contain a certain URL. Why that’s important is that the cSPADE algorithm works recursively to find the frequent patterns starting with 1-item sets, then moving to 2-items, etc. In order to limit how much time the algorithm will run for, you can set a minimum support threshold. Why this helps is that by definition the support of a 2-item set will be less than or equal to the support of either 1-item set. For example, if A occurs 40% of the time, A and B cannot occur more frequently.</p>
+<p>So if A alone does not meet the support threshold, then we don’t need to care about any 2 or more item subsets that contain A.</p>
+<p>For this purpose I’ll set a minimum support of 25%. The <code>cspade</code> function will return all of the frequent itemsets that occur in my browsing data.</p>
+<pre class="r"><code>itemsets &lt;- cspade(sessions, 
+                   parameter = list(support = 0.25), 
+                   control = list(verbose = FALSE))</code></pre>
+<p>The <code>summary()</code> function will provide a lot of useful information, but we’ll just look at the first few rows with <code>inspect()</code>:</p>
+<pre class="r"><code>inspect(head(itemsets))</code></pre>
+<pre><code>##    items                   support 
+##  1 &lt;{buzzfeed.com/}&gt;     0.4090909 
+##  2 &lt;{en.wikipedia.org/}&gt; 0.3311688 
+##  3 &lt;{facebook.com/}&gt;     0.3311688 
+##  4 &lt;{github.com/}&gt;       0.3051948 
+##  5 &lt;{google.com/}&gt;       0.8051948 
+##  6 &lt;{gothamist.com/}&gt;    0.4090909 
+## </code></pre>
+<p>Here we see the results of a series of 1-item sets where the support is the number of sessions containing at least 1 visit to that URL. <strong>Apparently I use google A LOT as it appears in 80% of my sessions</strong>.</p>
+<p>We can also convert the itemsets data back to a data frame using the <code>as()</code> function and go back to using the usual <code>dplyr</code> or <code>ggplot</code> functions. For example, I can visualize the 10 Most Frequent Sequences I visit based on the support metric:</p>
+<pre class="r"><code>#Convert Back to DS
+itemsets_df &lt;- as(itemsets, &quot;data.frame&quot;) %&gt;% as_tibble()
+
+#Top 10 Frequent Item Sets
+itemsets_df %&gt;%
+  slice_max(support, n = 10) %&gt;% 
+  ggplot(aes(x = fct_reorder(sequence, support),
+                    y = support,
+                    fill = sequence)) + 
+    geom_col() + 
+    geom_label(aes(label = support %&gt;% scales::percent()), hjust = 0.5) + 
+    labs(x = &quot;Site&quot;, y = &quot;Support&quot;, title = &quot;Most Frequently Visited Item Sets&quot;,
+         caption = &quot;**Support** is the percent of segments the contain the item set&quot;) + 
+    scale_fill_discrete(guide = F) +
+    scale_y_continuous(labels = scales::percent,
+                       expand = expansion(mult = c(0, .1))) + 
+    coord_flip() + 
+    cowplot::theme_cowplot() + 
+    theme(
+      plot.caption = element_markdown(hjust = 0),
+      plot.caption.position = &#39;plot&#39;,
+      plot.title.position = &#39;plot&#39;
+    )</code></pre>
+<p><img src="index_files/figure-html/top_by_support-1.png" width="768" /></p>
+<p>Now we see some of the 2-item sets. Not only do I use Google in 80% of sessions. In 66% of sessions I visit google twice!</p>
+</div>
+<div id="turning-frequent-sequences-into-rules" class="section level2">
+<h2>Turning Frequent Sequences into Rules</h2>
+<p>While knowing what URLs occur frequently is interesting, it would be more interesting if I could generate rules around what websites lead to visits to other websites.</p>
+<p>The <code>ruleInduction()</code> function will turn the item sets into “if A then B” style rules. To control the size of the output, I will introduce the concept of <em>confidence</em>. The <em>Confidence</em> of an “If A then B” rule is the % of the times the rule is true when A occurs. So if “if A then B” has a 50% confidence then when A occurs we have a 50% chance of seeing B vs. seeing anything other than B.</p>
+<p>For this post, I’ll use a minimum confidence of 60%.</p>
+<pre class="r"><code>rules &lt;- ruleInduction(itemsets, 
+                       confidence = 0.6, 
+                       control = list(verbose = FALSE))
+
+inspect(head(rules, 3))</code></pre>
+<pre><code>##    lhs                     rhs                    support confidence     lift 
+##  1 &lt;{gothamist.com/}&gt;   =&gt; &lt;{westsiderag.com/}&gt; 0.2727273  0.6666667 1.901235 
+##  2 &lt;{gothamist.com/}&gt;   =&gt; &lt;{twitter.com/}&gt;     0.2662338  0.6507937 1.113580 
+##  3 &lt;{t.co/}&gt;            =&gt; &lt;{twitter.com/}&gt;     0.3246753  0.7812500 1.336806 
+## </code></pre>
+<p>The returned data structure has 5 fields:</p>
+<ul>
+<li><strong>lhs</strong>: Left-hand side - The “A” in our “if A then B” rule</li>
+<li><strong>rhs</strong>: Right-hand side - The “B” in our “if A then B” rule</li>
+<li><strong>support</strong>: The % of sessions where “A then B” occurs</li>
+<li><strong>confidence</strong>: How often the rule is true (If A occurs the % of Time that B occurs)</li>
+<li><strong>lift</strong>: The strength of the association. Defined as the ratio of support “A then B” divided by the Support of A times the Support of B. In other words, how much more likely are we to see “A and B together” vs. what we would expect if A and B were completely independent of each other.</li>
+</ul>
+<p>The first row shows two NYC specific blogs, one of NYC overall and one for the Upper West Side. The support shows that 27% of my sessions include these two blogs. The confidence shows that if I visit Gothamist there’s 67% chance I’ll visit WestSideRag after. Finally, the lift shows that the likelihood of this rule is 90% higher than you’d expect if there was no relation between my visiting these sites.</p>
+<div id="redundant-rules" class="section level3">
+<h3>Redundant Rules</h3>
+<p>In order to create the most effective and simplest rules we’ll want to remove redundant rules. In this context a rule is <em>redundant</em> when a subset of the left-hand side has a higher confidence than the rule with more items on the left-hand side. In simpler terms, we want to simplest rule that doesn’t sacrifice information. For example, {A, B, C} -&gt; D is redundant of {A, B} -&gt; {D} if the confidence of the 2nd rule is greater than or equal to the 1st</p>
+<p>A real example from this data is:</p>
+<table>
+<thead>
+<tr class="header">
+<th align="left">lhs</th>
+<th align="left">rhs</th>
+<th align="right">support</th>
+<th align="right">confidence</th>
+<th align="right">lift</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">&lt;{t.co/}&gt;</td>
+<td align="left">=&gt; &lt;{twitter.com/}&gt;</td>
+<td align="right">0.3246753</td>
+<td align="right">0.7812500</td>
+<td align="right">1.336806</td>
+</tr>
+<tr class="even">
+<td align="left">&lt;{twitter.com/}, {t.co/}&gt;</td>
+<td align="left">=&gt; &lt;{twitter.com/}&gt;</td>
+<td align="right">0.3181818</td>
+<td align="right">0.7777778</td>
+<td align="right">1.330864</td>
+</tr>
+</tbody>
+</table>
+<p>The addition of “twitter.com” to the left-hand side does not make for a more confident rule so therefore it is redundant.</p>
+<p>Removing redundant rules can be done easily with the <code>is.redundant()</code> function:</p>
+<pre class="r"><code>rules_cleaned &lt;- rules[!is.redundant(rules)]</code></pre>
+<p>The rules class can also be converted back to a data.frame with the <code>as()</code> function. Then we can use <code>tidyr::separate()</code> to break apart the <code>rule</code> column into the <code>lhs</code> and <code>rhs</code> columns.</p>
+<pre class="r"><code>rules_df &lt;- as(rules_cleaned, &quot;data.frame&quot;) %&gt;% 
+  as_tibble() %&gt;% 
+  separate(col = rule, into = c(&#39;lhs&#39;, &#39;rhs&#39;), sep = &quot; =&gt; &quot;, remove = F)</code></pre>
+<p>Now we can look at the highest confidence rules:</p>
+<pre class="r"><code>rules_df %&gt;% 
+  arrange(-confidence) %&gt;% 
+  select(lhs, rhs, support, confidence, lift) %&gt;% 
+  head() %&gt;% 
+  knitr::kable()</code></pre>
+<table>
+<colgroup>
+<col width="55%" />
+<col width="15%" />
+<col width="9%" />
+<col width="10%" />
+<col width="8%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left">lhs</th>
+<th align="left">rhs</th>
+<th align="right">support</th>
+<th align="right">confidence</th>
+<th align="right">lift</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">&lt;{google.com/},{google.com/},{google.com/},{google.com/}&gt;</td>
+<td align="left">&lt;{google.com/}&gt;</td>
+<td align="right">0.3701299</td>
+<td align="right">0.9193548</td>
+<td align="right">1.141779</td>
+</tr>
+<tr class="even">
+<td align="left">&lt;{github.com/}&gt;</td>
+<td align="left">&lt;{google.com/}&gt;</td>
+<td align="right">0.2792208</td>
+<td align="right">0.9148936</td>
+<td align="right">1.136239</td>
+</tr>
+<tr class="odd">
+<td align="left">&lt;{buzzfeed.com/},{google.com/}&gt;</td>
+<td align="left">&lt;{google.com/}&gt;</td>
+<td align="right">0.2597403</td>
+<td align="right">0.8510638</td>
+<td align="right">1.056966</td>
+</tr>
+<tr class="even">
+<td align="left">&lt;{t.co/},{google.com/}&gt;</td>
+<td align="left">&lt;{google.com/}&gt;</td>
+<td align="right">0.2727273</td>
+<td align="right">0.8400000</td>
+<td align="right">1.043226</td>
+</tr>
+<tr class="odd">
+<td align="left">&lt;{lifehacker.com/}&gt;</td>
+<td align="left">&lt;{reddit.com/}&gt;</td>
+<td align="right">0.2532468</td>
+<td align="right">0.8297872</td>
+<td align="right">1.726854</td>
+</tr>
+<tr class="even">
+<td align="left">&lt;{google.com/}&gt;</td>
+<td align="left">&lt;{google.com/}&gt;</td>
+<td align="right">0.6623377</td>
+<td align="right">0.8225806</td>
+<td align="right">1.021592</td>
+</tr>
+</tbody>
+</table>
+<p>And this is pretty boring. I wind up on Google a lot, so it appears in a lot of the rules. So let’s make this more interesting by removing Google from the results and by also looking at both confidence and lift.</p>
+<pre class="r"><code>rules_df %&gt;% 
+  #Remove All Rules that Involve Google
+  filter(!str_detect(rule, &#39;\\{google.com\\/\\}&#39;)) %&gt;% 
+  #Keep only Rule, Confidence, and Lift - 1
+  transmute(rule, confidence, lift = lift - 1) %&gt;% 
+  #Pivot Lift and confidence into a single column
+  pivot_longer(cols = c(&#39;confidence&#39;,&#39;lift&#39;),
+               names_to = &quot;metric&quot;, 
+               values_to = &quot;value&quot;) %&gt;% 
+  group_by(metric) %&gt;% 
+  #Keep only the Top 10 Rules for Each Metric
+  top_n(10, value) %&gt;% 
+  ungroup() %&gt;% 
+  # Reorder so that order is independent for each metrics
+  ggplot(aes(x = tidytext::reorder_within(rule, value, metric),
+             y = value,
+             fill = rule)) + 
+    geom_col() + 
+    geom_label(aes(label = value %&gt;% scales::percent()), 
+               hjust = 0) +
+    scale_fill_discrete(guide = F) + 
+    tidytext::scale_x_reordered() + 
+    scale_y_continuous(label = scales::percent, 
+                       limits = c(0, 1),
+                       expand = expansion(mult = c(0, .1))) + 
+    labs(x = &quot;Rule&quot;, 
+         y = &quot;&quot;, 
+         title = &quot;Top Rules by Confidence and Lift&quot;,
+         caption = &quot;**Confidence** is the probability RHS occurs 
+         given LHS occurs &lt;br /&gt;
+         **Lift** is the increased liklihood of seeing LHS &amp; RHS together vs. independent&quot;) +
+    facet_wrap(~metric, ncol = 1, scales = &quot;free_y&quot;) +
+    coord_flip() +
+    theme_minimal() +
+    theme(
+      plot.caption = element_markdown(hjust = 0),
+      plot.caption.position = &#39;plot&#39;,
+      strip.text = element_textbox(
+        size = 12,
+        color = &quot;white&quot;, fill = &quot;#5D729D&quot;, box.color = &quot;#4A618C&quot;,
+        halign = 0.5, linetype = 1, r = unit(5, &quot;pt&quot;), width = unit(1, &quot;npc&quot;),
+        padding = margin(2, 0, 1, 0), margin = margin(3, 3, 3, 3)
+      )
+    )</code></pre>
+<p><img src="index_files/figure-html/top-confidence-lift-1.png" width="768" /></p>
+<p>Some of the high lift rules that occur are:</p>
+<ul>
+<li>I visit WestSideRag after Gothamist</li>
+<li>I visit Reddit after LifeHacker</li>
+<li>I visit Buzzfeed after Twitter.</li>
+</ul>
+<p>By the way, all this is true. My usually weekday pattern tends to be Twitter -&gt; Gothamist -&gt; WestSideRag -&gt; ILoveTheUpperWest -&gt; Buzzfeed -&gt; LifeHacker -&gt; Reddit.</p>
+<p>So it does appear that the Sequence Mining rules do in fact represent my browsing habits! But certain sites like the 2nd Upper West Side blog did not make the top rules.</p>
+</div>
+</div>
+<div id="visualizing-these-relationships-as-a-graph" class="section level2">
+<h2>Visualizing these relationships as a graph</h2>
+<p>Ultimately, my browsing habits can be restructured as a directed graph where each URL leads to another URL. Then rather than relying on statistical measures like Support, Confidence, and Lift, I can visualize my browsing as a network. However, to turn my data into an edge list I need to re-structure the URLs from a sequential list into a series of “Source/Destination” edges.</p>
+<p>To do this, I’ll group by each browsing session, setting the URL to the "source’ and using <code>dplyr::lead()</code> to grab the URL from the next row to form the destination. Then since for the last URL, the destination will be null, I’ll remove these endpoints from the data. Finally, to create edge weightings I’ll count the number of instances for each source/destination pair.</p>
+<pre class="r"><code>collapsed_history_graph_dt &lt;- collapsed_history %&gt;% 
+  group_by(segment_id) %&gt;% 
+  transmute(item_id, source = base_url) %&gt;% 
+  mutate(destination = lead(source)) %&gt;% 
+  ungroup() %&gt;%
+  filter(!is.na(destination)) %&gt;% 
+  select(source, destination, segment_id) %&gt;% 
+  count(source, destination, name = &#39;instances&#39;) </code></pre>
+<p>In order to create the graph, I’ll be using the <code>tidygraph</code> and <code>ggraph</code> packages to convert the data frame into the appropriate format and visualize the network in a ggplot style.</p>
+<p>To make the resulting network more readable, I’ll filter my edge list to only those with at least 15 occurrences and then use <code>tidygraph::as_tbl_graph</code> to convert to a graph-friendly data type.</p>
+<pre class="r"><code>g &lt;- collapsed_history_graph_dt %&gt;% 
+  filter(instances &gt; 14) %&gt;% 
+  as_tbl_graph()</code></pre>
+<div id="creating-graph-clusters" class="section level3">
+<h3>Creating Graph Clusters</h3>
+<p>To make the visualization a little more interesting I thought it would be fun to cluster the network. The <code>igraph::cluster_optimal</code> function will calculate the optimal community structure of the graph. This membership label then gets applied as a node attribute to the graph object <code>g</code> created in the prior code block.</p>
+<pre class="r"><code>clp &lt;- igraph::cluster_optimal(g)
+
+g &lt;- g %&gt;% 
+  activate(&quot;nodes&quot;) %&gt;% 
+  mutate(community = clp$membership)</code></pre>
+</div>
+<div id="plotting-the-network-with-ggraph" class="section level3">
+<h3>Plotting the Network WIth ggraph</h3>
+<p>Ggraph follows a similar syntax to ggplot where the data object is based in and then there are geoms to reflect the nodes/edges of the plot. The layout option specifies how the nodes and edges will be laid out. Here I’m using the results of the Fruchterman-Reingold algorithm for a force-directed layout. As used in this code block the relevant geoms are:</p>
+<ul>
+<li><code>geom_node_voronoi</code> - Used to plot the clustering as the background of the graph</li>
+<li><code>geom_edge_parallel</code> - Since this is a directional graph, it will draw separate parallel arrows for each direction. The shading will be based on the log number of instances.</li>
+<li><code>geom_node_point</code> - Plots a circle for each node</li>
+<li><code>geom_node_text</code> - Plots the names of the nodes and reduces overlap</li>
+</ul>
+<pre class="r"><code>set.seed(20201029)
+ggraph(g, layout = &#39;fr&#39;) + 
+  geom_node_voronoi(aes(fill = as.factor(community)), alpha = .4) + 
+  geom_edge_parallel(aes(edge_alpha = log(instances)),
+                  #color = &quot;#5851DB&quot;,
+                  edge_width = 1,
+                  arrow = arrow(length = unit(4, &#39;mm&#39;)),
+                  start_cap = circle(3, &#39;mm&#39;),
+                  end_cap = circle(3, &#39;mm&#39;)) +
+  geom_node_point(fill = &#39;orange&#39;, size = 5, pch = 21) + 
+  geom_node_text(aes(label = name), repel = T) + 
+  labs(title = &quot;My Browsing History&quot;,
+       caption = &quot;Minimum 15 Instances&quot;) + 
+  scale_fill_viridis_d(guide = F) + 
+  scale_edge_alpha_continuous(guide = F) + 
+  theme_graph()</code></pre>
+<p><img src="index_files/figure-html/unnamed-chunk-13-1.png" width="672" /></p>
+<p>This graph shows 5 clusters:</p>
+<ol style="list-style-type: decimal">
+<li>Twitter -&gt; Gothamist -&gt; WestSideRag -&gt; ILoveTheUpperWestSide
+<ul>
+<li>The websites I typically visit after work on weekdays</li>
+</ul></li>
+<li>Datacamp / Google Docs
+<ul>
+<li>When I did some Datacamp courses, I take notes in Google Docs so constantly switching back and forth makes sense.</li>
+</ul></li>
+<li>Facebook.com / l.facebook.com
+<ul>
+<li>This is just using Facebook. But interesting that Facebook has no frequent connection outside of the Facebook ecosystem.</li>
+</ul></li>
+<li>BuzzFeed/LifeHacker
+<ul>
+<li>This a the last piece of my usual post-work routine. But perhaps it occurs later after the Twitter/NYC Blog Cluster</li>
+</ul></li>
+<li>The Google Centered Cluster
+<ul>
+<li>Google is the center of my browsing universe but some fun connections here are 127.0.0.1:4321 which is the local instance when I’m developing this blog. This co-occurs with lots to trips to Google, Github, and Stack Overflow while I try to figure out / debug aspects of my blog development pipeline.</li>
+</ul></li>
+</ol>
+</div>
+</div>
+<div id="conclusion" class="section level1">
+<h1>Conclusion</h1>
+<p>There weren’t a ton of resources that showed how to use the <code>arulesSequences</code> package in my searches and most required dumping and rereading a .csv file. Hopefully, this post showed that it isn’t necessary to do that. Additionally, it shows an example of how sequence mining can be used to identify interesting patterns when the order is important. There is a lot of functionality of the <code>arulesSequences</code> package not touched upon in this post, but this should serve as good starting point.</p>
+<p>As for visualization, I’ve covered how to plot rules in the usual tabular structure with ggplot2 as well as a network using ggraph. I really like the way the network visualization worked out and in a future post I may go more in-depth to learn about how to best use <code>tidygraph</code> and <code>ggraph</code>.</p>
+</div>
