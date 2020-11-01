@@ -13,7 +13,7 @@ tags:
 subtitle: ''
 summary: ''
 authors: []
-lastmod: '2020-11-02T04:24:01-04:00'
+lastmod: '2020-11-01T04:24:01-04:00'
 featured: no
 image:
   caption: ''
@@ -114,7 +114,7 @@ head(browsing_history_cleaned, 5) %>% knitr::kable()
 
 ## Sessionizing the Data
 
-Even though I have a date field for my browsing history, the cSPADE algorithm is going to want to be able to differentiate between when one session begins and another session ends.  While a reasonable choice might be to break things apart by day, it likely that on weekends I have multiple browsing sessions which can sometimes stretch past midnight.  So a more reasonable choice might be to say a new session begins if there is a gap of at least 1 hour since the last page I browsed to.
+Even though I have a date field for my browsing history, the cSPADE algorithm is going to want to be able to differentiate between when one session begins and another session ends.  While a reasonable choice might be to break things apart by day, it's likely that on weekends I have multiple browsing sessions which can sometimes stretch past midnight.  So a more reasonable choice might be to say a new session begins if there is a gap of at least 1 hour since the last page I browsed to.
 
 Another aspect of the data that I'd like to deal with is to eliminate when I go to multiple pages within the same domain.  Having an eventual rule that "twitter.com/ -> twitter.com" isn't that interesting.  So I will also remove any consecutive rows that have the same domain.
 

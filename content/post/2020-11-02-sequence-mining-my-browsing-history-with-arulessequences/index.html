@@ -13,7 +13,7 @@ tags:
 subtitle: ''
 summary: ''
 authors: []
-lastmod: '2020-11-02T04:24:01-04:00'
+lastmod: '2020-11-01T04:24:01-04:00'
 featured: no
 image:
   caption: ''
@@ -247,7 +247,7 @@ library(ggraph) ## Plotting the Network Graph Structure</code></pre>
 </div>
 <div id="sessionizing-the-data" class="section level2">
 <h2>Sessionizing the Data</h2>
-<p>Even though I have a date field for my browsing history, the cSPADE algorithm is going to want to be able to differentiate between when one session begins and another session ends. While a reasonable choice might be to break things apart by day, it likely that on weekends I have multiple browsing sessions which can sometimes stretch past midnight. So a more reasonable choice might be to say a new session begins if there is a gap of at least 1 hour since the last page I browsed to.</p>
+<p>Even though I have a date field for my browsing history, the cSPADE algorithm is going to want to be able to differentiate between when one session begins and another session ends. While a reasonable choice might be to break things apart by day, it’s likely that on weekends I have multiple browsing sessions which can sometimes stretch past midnight. So a more reasonable choice might be to say a new session begins if there is a gap of at least 1 hour since the last page I browsed to.</p>
 <p>Another aspect of the data that I’d like to deal with is to eliminate when I go to multiple pages within the same domain. Having an eventual rule that “twitter.com/ -&gt; twitter.com” isn’t that interesting. So I will also remove any consecutive rows that have the same domain.</p>
 <pre class="r"><code>collapsed_history &lt;- browsing_history_cleaned %&gt;% 
   #Order by Time
@@ -401,7 +401,7 @@ itemsets_df %&gt;%
       plot.caption.position = &#39;plot&#39;,
       plot.title.position = &#39;plot&#39;
     )</code></pre>
-<p><img src="/post/2020-11-02-sequence-mining-my-browsing-history-with-arulessequences/index_files/figure-html/top_by_support-1.png" width="768" /></p>
+<p><img src="index_files/figure-html/top_by_support-1.png" width="768" /></p>
 <p>Now we see some of the 2-item sets. Not only do I use Google in 80% of sessions. In 66% of sessions I visit google twice!</p>
 </div>
 <div id="turning-frequent-sequences-into-rules" class="section level2">
@@ -579,7 +579,7 @@ inspect(head(rules, 3))</code></pre>
         padding = margin(2, 0, 1, 0), margin = margin(3, 3, 3, 3)
       )
     )</code></pre>
-<p><img src="/post/2020-11-02-sequence-mining-my-browsing-history-with-arulessequences/index_files/figure-html/top-confidence-lift-1.png" width="768" /></p>
+<p><img src="index_files/figure-html/top-confidence-lift-1.png" width="768" /></p>
 <p>Some of the high lift rules that occur are:</p>
 <ul>
 <li>I visit WestSideRag after Gothamist</li>
@@ -641,7 +641,7 @@ ggraph(g, layout = &#39;fr&#39;) +
   scale_fill_viridis_d(guide = F) + 
   scale_edge_alpha_continuous(guide = F) + 
   theme_graph()</code></pre>
-<p><img src="/post/2020-11-02-sequence-mining-my-browsing-history-with-arulessequences/index_files/figure-html/unnamed-chunk-13-1.png" width="672" /></p>
+<p><img src="index_files/figure-html/unnamed-chunk-13-1.png" width="672" /></p>
 <p>This graph shows 5 clusters:</p>
 <ol style="list-style-type: decimal">
 <li>Twitter -&gt; Gothamist -&gt; WestSideRag -&gt; ILoveTheUpperWestSide
