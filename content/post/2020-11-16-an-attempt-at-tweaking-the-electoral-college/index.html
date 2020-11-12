@@ -1,0 +1,1046 @@
+---
+title: An Attempt at Tweaking the Electoral College
+author: JLaw
+date: '2020-11-16'
+slug: an-attempt-at-tweaking-the-electoral-college
+categories:
+  - R
+tags:
+  - rvest
+  - httr
+  - sf
+  - kableExtra
+  - readxl
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2020-11-16T06:11:01-05:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+<script src="index_files/kePrint/kePrint.js"></script>
+<link href="index_files/lightable/lightable.css" rel="stylesheet" />
+
+
+<div id="motivation" class="section level1">
+<h1>Motivation</h1>
+<p>With the 2020 Election wrapping up and a renewed discussion about the merits of the Electoral College I’ve been thinking more about the system and why it might be the way it is. While I understand the rationale of why doing a complete popular vote would have unintended consequences, I personally feel like the current system has overly valued small states by virtue of having a minimum of 3 electoral votes. <strong>My personal hypothesis is that we have too many states.</strong> Therefore, my solution would be to start combining the small states that they meet a minimum threshold of the US population. I fully recognize that this would be <em>completely infeasible</em> in practice… but this is just a humble blog. So this analysis will attempt to accomplish three things:</p>
+<ol style="list-style-type: decimal">
+<li><p>When comparing the population from 1792 vs. 2020, do states generally represent smaller percentages of the US Population? (Do we have too many states from an Electoral College perspective?)</p></li>
+<li><p>How could a new system be devised by combining states to reach a minimum population threshold?</p></li>
+<li><p>Would this new system have impacted the results of the 2016 election? (At the time of writing, votes for the 2020 election are still being counted).</p></li>
+</ol>
+</div>
+<div id="gathering-data" class="section level1">
+<h1>Gathering Data</h1>
+<p>Throughout this post, a number of difference libraries will be used as outputs will include plots, maps, and tables:</p>
+<div id="loading-libraries" class="section level2">
+<h2>Loading Libraries</h2>
+<pre class="r"><code>library(rvest) #Web-Scraping
+library(tidyverse) #Data Cleaning and Plotting
+library(janitor) #Data Cleaning 
+library(sf) #Manipulate Geographic Objects
+library(httr) #Used to Download Excel File from Web
+library(readxl) #Read in Excel Files
+library(kableExtra) #Create HTML Tables</code></pre>
+<div id="getting-the-us-population-by-state-in-1790" class="section level3">
+<h3>Getting the US Population by State in 1790</h3>
+<p>Data from the 1790 US Census will be gathered from <a href="https://en.wikipedia.org/wiki/1790_United_States_Census">Wikipedia</a> and scraped using the <code>rvest</code> package. In the following code block, all <em>table</em> tags will be extracted from the webpage and then I guessed and checked until I found the table I was looking for (in this case what I wanted was the 3rd table). The <code>html_table()</code> function converts the HTML table into a data frame and <code>clean_names()</code> from the <code>janitor</code> package will change the column headers into an R friendly format.</p>
+<p>Finally, <code>stringr::str_remove_all()</code> will use regular expressions to remove the footnote notation “[X]” from the totals and <code>readr::parse_number()</code> will convert the character variable with commas into a numeric.</p>
+<pre class="r"><code>us_pop_1790 &lt;- read_html(&#39;https://en.wikipedia.org/wiki/1790_United_States_Census&#39;) %&gt;%
+  html_nodes(&quot;table&quot;) %&gt;% 
+  .[[3]] %&gt;% 
+  html_table() %&gt;% 
+  clean_names() %&gt;% 
+  filter(state_or_territory != &#39;Total&#39;) %&gt;% 
+  transmute(
+    state = state_or_territory,
+    population_1790 = str_remove_all(total, &#39;\\[.+\\]&#39;) %&gt;% 
+      parse_number(),
+    population_percent_1790 = population_1790/sum(population_1790)
+  )</code></pre>
+</div>
+<div id="getting-us-population-by-state-in-2019" class="section level3">
+<h3>Getting US Population by State in 2019</h3>
+<p>A similar process will be used to get the population estimates for 2019 from <a href="https://simple.wikipedia.org/wiki/List_of_U.S._states_by_population">Wikipedia</a>. In this case there is only 1 table on the page so <code>html_node('table')</code> can be used rather than <code>html_nodes('table')</code> like in the above code block for 1790.</p>
+<pre class="r"><code>us_pop_2019 &lt;- read_html(&#39;https://simple.wikipedia.org/wiki/List_of_U.S._states_by_population&#39;) %&gt;% 
+  html_node(&#39;table&#39;) %&gt;% 
+  html_table() %&gt;% 
+  clean_names() %&gt;% 
+  filter(!is.na(estimated_population_per_electoral_vote_2019_note_2),
+         !estimated_population_per_electoral_vote_2019_note_2 %in% c(&#39;&#39;, &#39;—&#39;),
+         rank_in_states_territories_2010 != &#39;—&#39;) %&gt;%
+  transmute(
+    state,
+    population_2019 = parse_number(population_estimate_july_1_2019_2),
+    population_percent_2019 = population_2019 / sum(population_2019)
+    )</code></pre>
+</div>
+<div id="getting-of-electoral-votes-for-each-state-by-year" class="section level3">
+<h3>Getting # of Electoral Votes for Each State by Year</h3>
+<p>Finally, the table containing number of electoral votes by state by year will be extracted from Wikipedia. New code pieces for this code block are the use of selecting columns by number in the <code>dplyr::select()</code> and <code>dplyr::rename()</code> calls. Also, the use of <code>dplyr::across()</code> which in this context is a replacement for <code>mutate_if</code>, <code>mutate_at</code>, and <code>mutate_all</code>. Here I tell the <code>mutate()</code> to take all variables that start with <em>“electoral votes”</em> and apply the <code>readr::parse_number()</code> function to them keeping the names the same. We’ll use this data set later on.</p>
+<pre class="r"><code>electoral_votes &lt;- read_html(&#39;https://en.wikipedia.org/wiki/United_States_Electoral_College&#39;) %&gt;% 
+  html_nodes(&quot;table&quot;) %&gt;% 
+  .[[5]] %&gt;% 
+  html_table(fill = T) %&gt;% 
+  select(2, 4, 36) %&gt;% 
+  filter(!Electionyear %in% c(&#39;Total&#39;, &#39;Electionyear&#39;, &quot;State&quot;)) %&gt;% 
+  rename(state = 1, electoral_votes_1792 = 2, electoral_votes_2020 = 3) %&gt;% 
+  mutate(across(starts_with(&#39;electoral_votes&#39;), parse_number))</code></pre>
+</div>
+</div>
+<div id="q1-do-states-today-represent-smaller-proportions-of-the-population-than-they-did-when-the-electoral-college-was-formed" class="section level2">
+<h2>Q1: Do states today represent smaller proportions of the population than they did when the Electoral College was formed?</h2>
+<p>My hypothesis is that the electoral college has become less effective because we’ve added too many small states that reflect minor amounts of the US population and that when the Electoral College was established the population distributions of states were more similar.</p>
+<p>To check this I’ll be comparing the distributions of State populations as a % of the Total US Population for 1790 and 2019. One note before getting into the code is that in the article for the 1790 state population, Maine is given its own row. However, Maine was a part of Massachusetts until 1820, so since we’re more focused on “electing blocks” rather than states I will merge Maine into Massachusetts.</p>
+<p>For this next code block, I join the two population data sets together and then all numeric variables summarized. Then, I melt the population percentages by year into a long-form data frame. Finally, I extract the numeric year from the variable names and compare the box plots of the % of Total Population for each State from 1790 and 2019.</p>
+<pre class="r"><code>us_pop_2019 %&gt;% 
+  left_join(
+    us_pop_1790 %&gt;% 
+      mutate(state = if_else(state == &#39;Maine&#39;, &#39;Massachusetts&#39;, state)) %&gt;% 
+      group_by(state) %&gt;% 
+      summarize(across(where(is.numeric), sum)),
+    by = &quot;state&quot;
+  ) %&gt;% 
+  pivot_longer(
+    cols = c(contains(&quot;percent&quot;)),
+    names_to = &quot;year&quot;,
+    values_to = &quot;population_dist&quot;
+  ) %&gt;% 
+  mutate(year = str_extract(year, &#39;\\d+&#39;) %&gt;% as.integer) %&gt;% 
+  ggplot(aes(x = fct_rev(factor(year)), y = population_dist, 
+             fill = factor(year))) + 
+    geom_boxplot() + 
+    labs(x = &quot;Year&quot;, y = &quot;Population Distribution&quot;, 
+         title = &quot;State Population Distribution by % of US Population&quot;) +
+    annotate(&#39;linerange&#39;, y = 1/nrow(us_pop_2019), 
+             xmin = .6, xmax = 1.45, lty = 2) + 
+    annotate(&#39;linerange&#39;, y = 1/(nrow(us_pop_1790)-1), 
+             xmin = 1.6, xmax = 2.45, lty = 2) + 
+    scale_y_continuous(label = scales::percent_format(accuracy = 1)) + 
+    scale_fill_discrete(guide = F) +
+    coord_flip() +
+    theme_bw()</code></pre>
+<p><img src="index_files/figure-html/population_changes-1.png" width="672" /></p>
+<p>In the chart above we’re looking at the distribution of states by the % of the total US population they make up. The dashed lines represent the expected values if all states had the same amount. For example, there are 51 “voting bodies” that make up 100% of the US population, so the “expected” amount would be 1/51 or 2.0%. In 1790, the largest state made up 19.2% and the smallest state made up 1.5% of the total population. In 2019, the largest state makes up 12% of the total population and the smallest makes up 0.2% of the total population.</p>
+<p>While some of this is due to having more states which means the same 100% is being cut into more pieces. Another way to see whether states are making up smaller pieces of the population today than back is to compare the data to those expected values from before. In the case of 1790, there are 15 voting bodies so on average we’d expected each state to make up 6.7%. And when looking the distribution of the states in 1790, 60% are below the expected amount of 6.7%. This is compared to the distribution in 2019 where 67% are below the expected amount of 2.0%.</p>
+<p>When asking whether or not there are more small states in 2019 vs. 1790, I find that 28 of the 51 states (with DC) [55%] have a % of the US Population smaller than the minimum state from 1790 [1.5%]. These 28 states make up 141 or 26% of the 538 electoral votes.</p>
+<p>So while there’s not a large difference between actual and expected it does seem that we have a greater concentration of smaller population states now than when the electoral college was first established based on the concentration that make up less than 1.5% of the US population.</p>
+</div>
+<div id="q2.-how-could-states-be-combined-to-ensure-each-voting-group-meets-a-minimum-population-threshold" class="section level2">
+<h2>Q2. How could states be combined to ensure each “voting group” meets a minimum population threshold?</h2>
+<p>The fact that 55% of states have a % of 2019 US Population smaller than the smallest percentage in 1790 gives promise to the idea that combining states could be feasible. So for this exercise, <strong>I’ll combine states together in order to ensure that each group has at least a minimum of 1.5% of the US Population</strong>.</p>
+<p>Originally I had wanted to come up with a cool algorithm to find the optimal solution to ensure that each state group hit the 1.5% while taking into account the location of the states being combined and the political culture of the states… but alas I couldn’t figure out how to do it. So I combined the states manually taking into account geography but completely ignoring how states usually vote. In my new construction the following states get combined:</p>
+<ul>
+<li>Alaska &amp; Oregon</li>
+<li>Arkansas &amp; Mississippi</li>
+<li>Connecticut &amp; Rhode Island</li>
+<li>Washington DC, Delaware, and West Virginia</li>
+<li>Hawaii &amp; Nevada</li>
+<li>Iowa &amp; Nebraska</li>
+<li>Idaho, Montana, North Dakota, South Dakota, and Wyoming</li>
+<li>Kansas &amp; Oklahoma</li>
+<li>New Hampshire, Maine, and Vermont</li>
+<li>New Mexico &amp; Utah</li>
+</ul>
+<pre class="r"><code>new_groupings &lt;- us_pop_2019 %&gt;% 
+  mutate(
+    state = if_else(state == &#39;D.C.&#39;, &#39;District of Columbia&#39;, state),
+    new_grouping = case_when(
+      state %in% c(&#39;New Hampshire&#39;, &#39;Maine&#39;, &#39;Vermont&#39;) ~ &#39;NH/ME/VT&#39;,
+      state %in% c(&#39;Rhode Island&#39;, &#39;Connecticut&#39;) ~ &#39;CT/RI&#39;,
+      state %in% c(&#39;West Virginia&#39;, &#39;Delaware&#39;, &#39;District of Columbia&#39;) ~ 
+        &#39;DC/DE/WV&#39;,
+      state %in% c(&#39;Alaska&#39;, &#39;Oregon&#39;) ~ &#39;AK/OR&#39;,
+      state %in% c(&#39;Utah&#39;, &#39;New Mexico&#39;) ~ &#39;NM/UT&#39;,
+      state %in% c(&#39;Hawaii&#39;, &#39;Nevada&#39;) ~ &#39;HI/NV&#39;,
+      state %in% c(&#39;Idaho&#39;, &#39;Montana&#39;, &#39;North Dakota&#39;, 
+                   &#39;South Dakota&#39;, &#39;Wyoming&#39;) ~ &#39;ID/MT/ND/SD/WY&#39;,
+      state %in% c(&#39;Iowa&#39;, &#39;Nebraska&#39;) ~ &#39;IA/NE&#39;,
+      state %in% c(&#39;Arkansas&#39;, &#39;Mississippi&#39;) ~ &#39;AR/MS&#39;,
+      state %in% c(&#39;Oklahoma&#39;, &#39;Kansas&#39;) ~ &#39;KS/OK&#39;,
+      TRUE ~ state
+    )
+  )</code></pre>
+<p>To display this brave new world, I will construct a map that shows my new compressed electoral map and the resulting changes in the number of electoral votes. The first step is adding the electoral votes into the data frame constructed in the last code block:</p>
+<pre class="r"><code>new_groupings &lt;- new_groupings %&gt;% 
+  left_join(
+    electoral_votes %&gt;% 
+      transmute(state = if_else(state == &#39;D.C.&#39;, &#39;District of Columbia&#39;, state),
+                electoral_votes_2020),
+    by = &quot;state&quot;
+  ) </code></pre>
+<p>Next, I need a mechanism to assign a number of electoral votes to my compressed map. Normally, there are 538 electoral votes representing the 435 voting members of Congress, the 100 Senators, and 3 additional electoral votes for Washington DC. Since I’m not trying to rock the boat too much. My new system will maintain the 2 votes per group represented by the Senate allocation and the population allocation from the Congressional side. In order to understand and apply this relationship I’m building a quick and dirty linear regression model to predict the population component for the new of electoral votes</p>
+<pre class="r"><code>electorial_vote_model &lt;- lm(electoral_votes_2020-2 ~ population_2019, 
+                            data = new_groupings)
+
+electorial_vote_model</code></pre>
+<pre><code>## 
+## Call:
+## lm(formula = electoral_votes_2020 - 2 ~ population_2019, data = new_groupings)
+## 
+## Coefficients:
+##     (Intercept)  population_2019  
+##     0.094428506      0.000001313</code></pre>
+<p>This model shows that there is 1.313 electoral votes per 1 million people.</p>
+<p>To visualize what this new electoral map will look map, I will use the <code>sf</code> package. While I’m not very familiar with this package (maybe a subject of a future post), I’ve tinkered around with the format before and have found it very compatible with tidy principles.</p>
+<p>The first step is getting a shape file. For the United States, I will leverage the <code>usa_sf</code> function from the <code>albersusa</code> package which will return a map as a simple feature. The “laea” represents the projection.</p>
+<pre class="r"><code>usa &lt;-  albersusa::usa_sf(&quot;laea&quot;) %&gt;% select(name, geometry)
+
+knitr::kable(head(usa))</code></pre>
+<table>
+<thead>
+<tr>
+<th style="text-align:left;">
+name
+</th>
+<th style="text-align:left;">
+geometry
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Arizona
+</td>
+<td style="text-align:left;">
+MULTIPOLYGON (((-1111066 -8…
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Arkansas
+</td>
+<td style="text-align:left;">
+MULTIPOLYGON (((557903.1 -1…
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+California
+</td>
+<td style="text-align:left;">
+MULTIPOLYGON (((-1853480 -9…
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Colorado
+</td>
+<td style="text-align:left;">
+MULTIPOLYGON (((-613452.9 -…
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Connecticut
+</td>
+<td style="text-align:left;">
+MULTIPOLYGON (((2226838 519…
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+District of Columbia
+</td>
+<td style="text-align:left;">
+MULTIPOLYGON (((1960720 -41…
+</td>
+</tr>
+</tbody>
+</table>
+<p>What makes the magic of the <code>sf</code> class is that the shape information is contained in the geometry column, but everything else can be operated on like a normal data frame. So for the next step, I’ll join the “state groupings” information to this shape file data using the “name” column from the shape data and the state column from the groupings data.</p>
+<p>Next, I summarize the data to “combined state groupings” level where I get the sums of the population and the number of original electoral votes. The two unique parts of this summarize statement are:</p>
+<ul>
+<li><code>st_union</code> which will combine geographic areas from the shape file into new shapes. If you wanted to combine the groups but maintain all original boundaries then <code>st_combine</code> would be used instead.</li>
+<li>Creating a better label for the combined state names by using <code>paste</code> in the summarize with the <code>collapse</code> option which concatenates the states in the aggregation.<br />
+</li>
+<li>The final mutate step uses the <code>predict</code> function to apply the regression model to compute the new electoral vote values for the combined states. Any state that wasn’t combined retained its original number of votes.</li>
+</ul>
+<p>Afterwards, the new data set looks like:</p>
+<pre class="r"><code>new_usa &lt;- usa %&gt;% 
+  left_join(new_groupings %&gt;% 
+              transmute(state, 
+                        new_grouping, 
+                        population_2019, 
+                        electoral_votes_2020
+                        ), 
+            by = c(&quot;name&quot; = &quot;state&quot;)
+  ) %&gt;% 
+  group_by(new_grouping) %&gt;% 
+  summarize(
+    geom = st_union(geometry),
+    population_2019 = sum(population_2019),
+    electoral_votes = sum(electoral_votes_2020),
+    states = paste(name, collapse = &#39;/&#39;)
+  ) %&gt;% 
+  mutate(
+    new_ev = if_else(
+      states == new_grouping,
+      electoral_votes,
+      ceiling(predict(electorial_vote_model, newdata = .) + 2)
+    ),
+    lbl = if_else(new_grouping == states, NA_character_, 
+                  paste0(new_grouping, &quot;: &quot;, new_ev - electoral_votes)))
+
+knitr::kable(head(new_usa))</code></pre>
+<table>
+<thead>
+<tr>
+<th style="text-align:left;">
+new_grouping
+</th>
+<th style="text-align:left;">
+geom
+</th>
+<th style="text-align:right;">
+population_2019
+</th>
+<th style="text-align:right;">
+electoral_votes
+</th>
+<th style="text-align:left;">
+states
+</th>
+<th style="text-align:right;">
+new_ev
+</th>
+<th style="text-align:left;">
+lbl
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+AK/OR
+</td>
+<td style="text-align:left;">
+MULTIPOLYGON (((-1899337 -2…
+</td>
+<td style="text-align:right;">
+4949282
+</td>
+<td style="text-align:right;">
+10
+</td>
+<td style="text-align:left;">
+Oregon/Alaska
+</td>
+<td style="text-align:right;">
+9
+</td>
+<td style="text-align:left;">
+AK/OR: -1
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Alabama
+</td>
+<td style="text-align:left;">
+MULTIPOLYGON (((1145349 -15…
+</td>
+<td style="text-align:right;">
+4903185
+</td>
+<td style="text-align:right;">
+9
+</td>
+<td style="text-align:left;">
+Alabama
+</td>
+<td style="text-align:right;">
+9
+</td>
+<td style="text-align:left;">
+NA
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+AR/MS
+</td>
+<td style="text-align:left;">
+MULTIPOLYGON (((1052956 -15…
+</td>
+<td style="text-align:right;">
+5993974
+</td>
+<td style="text-align:right;">
+12
+</td>
+<td style="text-align:left;">
+Arkansas/Mississippi
+</td>
+<td style="text-align:right;">
+10
+</td>
+<td style="text-align:left;">
+AR/MS: -2
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Arizona
+</td>
+<td style="text-align:left;">
+MULTIPOLYGON (((-1111066 -8…
+</td>
+<td style="text-align:right;">
+7278717
+</td>
+<td style="text-align:right;">
+11
+</td>
+<td style="text-align:left;">
+Arizona
+</td>
+<td style="text-align:right;">
+11
+</td>
+<td style="text-align:left;">
+NA
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+California
+</td>
+<td style="text-align:left;">
+MULTIPOLYGON (((-1853480 -9…
+</td>
+<td style="text-align:right;">
+39512223
+</td>
+<td style="text-align:right;">
+55
+</td>
+<td style="text-align:left;">
+California
+</td>
+<td style="text-align:right;">
+55
+</td>
+<td style="text-align:left;">
+NA
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Colorado
+</td>
+<td style="text-align:left;">
+MULTIPOLYGON (((-613452.9 -…
+</td>
+<td style="text-align:right;">
+5758736
+</td>
+<td style="text-align:right;">
+9
+</td>
+<td style="text-align:left;">
+Colorado
+</td>
+<td style="text-align:right;">
+9
+</td>
+<td style="text-align:left;">
+NA
+</td>
+</tr>
+</tbody>
+</table>
+<p>Now we’re ready to plot the map. Plotting <code>sf</code> geometries work within the <code>ggplot</code> paradigm where <code>geom_sf</code> will draw the geometries and <code>geom_sf_text</code> will handle the overlays for the given groups. <code>coord_sf</code> changes the coordinate system of the plot. And everything else should be familiar from vanilla ggplot.</p>
+<pre class="r"><code>new_usa %&gt;% 
+ggplot() +
+  geom_sf(color = &quot;#2b2b2b&quot;, size=0.125, aes(fill = lbl)) +
+  geom_sf_text(aes(label = lbl), check_overlap = T, size = 3) + 
+  coord_sf(crs = st_crs(&quot;+proj=laea +lat_0=45 +lon_0=-100 +x_0=0 +y_0=0 +a=6370997 +b=6370997 +units=m +no_defs&quot;), datum = NA) +
+  scale_fill_discrete(guide = F, na.value = &quot;grey90&quot;) + 
+  labs(title = &quot;Proposed Electoral Map&quot;,
+       subtitle = &quot;Combining States so each &#39;Group&#39; makes up at least ~1.5% of US Population&quot;,
+       caption = &quot;Number represents the change in Electoral Votes due to combining&quot;) + 
+  ggthemes::theme_map() + 
+  theme(
+    plot.title = element_text(size = 14)
+  )</code></pre>
+<p><img src="index_files/figure-html/build_map-1.png" width="672" /></p>
+<p>The states in gray remained unchanged and the filled in states represent our new groupings. The states that directly border each other have been combined into an “electoral grouping” with a newly assigned number of electoral votes. Since the electoral vote model was based on population, the change in the number of electoral votes comes primarily from the loss of the two senate votes for each combined state.</p>
+<p>For example, NH/ME/VT originally would have had 11 electoral votes and under the new system will have 7 for a net change of -4 due to the loss of two combined states 2 senate votes.</p>
+<p>Under the normal electoral college there were 538 votes and under this new system that number is reduced to 512.</p>
+<p>Now that we have our new electoral college, would it have made a difference in 2016?</p>
+</div>
+<div id="q3-would-this-new-system-have-impacted-the-results-of-the-2016-election" class="section level2">
+<h2>Q3: Would this new system have impacted the results of the 2016 election?</h2>
+<p>The 2016 election results between Donald Trump and Hillary Clinton is provided in great detail from the <a href="https://www.fec.gov/documents/1890/federalelections2016.xlsx">Federal Election Commission</a>. Surprisingly, it was difficult to find the number of votes by state in an easily consumable way where I wouldn’t have to recode all the state names. So the FEC data will have to do even if its took some complicated data manipulation.</p>
+<p>Since the FEC data comes from an Excel file, I first need to download the file from the FEC website. I’ll use the <code>GET</code> function from <code>httr</code> to download the Excel file to a temporary file and then will use <code>read_excel</code> from <code>readxl</code> to read in the file.</p>
+<p>Before data manipulation, but after filtering to just Trump and Clinton, the data looks like.</p>
+<pre class="r"><code>GET(&quot;https://www.fec.gov/documents/1890/federalelections2016.xlsx&quot;, 
+    write_disk(tf &lt;- tempfile(fileext = &quot;.xlsx&quot;)))</code></pre>
+<pre class="r"><code>results2016 &lt;- read_excel(tf, sheet = &#39;2016 Pres General Results&#39;) %&gt;% 
+  clean_names() %&gt;% 
+  filter(last_name %in% c(&#39;Trump&#39;, &#39;Clinton&#39;)) %&gt;% 
+  select(state, state_abbreviation, last_name, general_results)
+
+knitr::kable(head(results2016, 5))</code></pre>
+<table>
+<thead>
+<tr>
+<th style="text-align:left;">
+state
+</th>
+<th style="text-align:left;">
+state_abbreviation
+</th>
+<th style="text-align:left;">
+last_name
+</th>
+<th style="text-align:right;">
+general_results
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+Alabama
+</td>
+<td style="text-align:left;">
+AL
+</td>
+<td style="text-align:left;">
+Trump
+</td>
+<td style="text-align:right;">
+1318255
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Alabama
+</td>
+<td style="text-align:left;">
+AL
+</td>
+<td style="text-align:left;">
+Clinton
+</td>
+<td style="text-align:right;">
+729547
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Alaska
+</td>
+<td style="text-align:left;">
+AK
+</td>
+<td style="text-align:left;">
+Trump
+</td>
+<td style="text-align:right;">
+163387
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Alaska
+</td>
+<td style="text-align:left;">
+AK
+</td>
+<td style="text-align:left;">
+Clinton
+</td>
+<td style="text-align:right;">
+116454
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Arizona
+</td>
+<td style="text-align:left;">
+AZ
+</td>
+<td style="text-align:left;">
+Trump
+</td>
+<td style="text-align:right;">
+1252401
+</td>
+</tr>
+</tbody>
+</table>
+<p>There was a small data quirk with New York state where because the same candidate can appear on multiple party lines a single candidate appears in multiple rows (Clinton appears 4 times and Trump 3). Therefore a first group-by is done to make the data 2 rows per state. Then the data is cast to a wider format, the electoral votes are added back and allocated to the winning candidate (technically this is wrong since Nebraska and Maine do not use all-or-nothing allocations, but its close enough for this exercise).</p>
+<p>Then the data is aggregated to the new electoral groupings from the prior section and our “new” electoral votes are allocated in an all or nothing fashion to the candidate.</p>
+<pre class="r"><code>results2016 &lt;- results2016 %&gt;% 
+  group_by(state, state_abbreviation, last_name) %&gt;% 
+  summarize(general_results = sum(general_results, na.rm = T), 
+            .groups = &#39;drop&#39;) %&gt;% 
+  pivot_wider(
+    names_from = &quot;last_name&quot;,
+    values_from = &quot;general_results&quot;
+  ) %&gt;% 
+  left_join(
+    new_groupings %&gt;% 
+      select(state, new_grouping, electoral_votes_2020, population_2019),
+    by = &quot;state&quot;
+  ) %&gt;% 
+  mutate(trump_ev = (Trump &gt; Clinton)*electoral_votes_2020,
+         clinton_ev = (Clinton &gt; Trump)*electoral_votes_2020
+  ) %&gt;% 
+  group_by(new_grouping) %&gt;% 
+  summarize(across(where(is.numeric), sum, na.rm = T),
+            states = paste(state, collapse = &#39;/&#39;)) %&gt;% 
+  mutate(new_ev = if_else(
+              states == new_grouping,
+              electoral_votes_2020,
+              ceiling(predict(electorial_vote_model, newdata = .) + 2)
+            )) %&gt;% 
+  mutate(
+    new_trump_ev = if_else(Trump &gt; Clinton, new_ev, 0),
+    new_clinton_ev = if_else(Trump &lt; Clinton, new_ev, 0)
+  )
+
+knitr::kable(head(results2016, 5))</code></pre>
+<table>
+<thead>
+<tr>
+<th style="text-align:left;">
+new_grouping
+</th>
+<th style="text-align:right;">
+Clinton
+</th>
+<th style="text-align:right;">
+Trump
+</th>
+<th style="text-align:right;">
+electoral_votes_2020
+</th>
+<th style="text-align:right;">
+population_2019
+</th>
+<th style="text-align:right;">
+trump_ev
+</th>
+<th style="text-align:right;">
+clinton_ev
+</th>
+<th style="text-align:left;">
+states
+</th>
+<th style="text-align:right;">
+new_ev
+</th>
+<th style="text-align:right;">
+new_trump_ev
+</th>
+<th style="text-align:right;">
+new_clinton_ev
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+AK/OR
+</td>
+<td style="text-align:right;">
+1118560
+</td>
+<td style="text-align:right;">
+945790
+</td>
+<td style="text-align:right;">
+10
+</td>
+<td style="text-align:right;">
+4949282
+</td>
+<td style="text-align:right;">
+3
+</td>
+<td style="text-align:right;">
+7
+</td>
+<td style="text-align:left;">
+Alaska/Oregon
+</td>
+<td style="text-align:right;">
+9
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:right;">
+9
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Alabama
+</td>
+<td style="text-align:right;">
+729547
+</td>
+<td style="text-align:right;">
+1318255
+</td>
+<td style="text-align:right;">
+9
+</td>
+<td style="text-align:right;">
+4903185
+</td>
+<td style="text-align:right;">
+9
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:left;">
+Alabama
+</td>
+<td style="text-align:right;">
+9
+</td>
+<td style="text-align:right;">
+9
+</td>
+<td style="text-align:right;">
+0
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+AR/MS
+</td>
+<td style="text-align:right;">
+865625
+</td>
+<td style="text-align:right;">
+1385586
+</td>
+<td style="text-align:right;">
+12
+</td>
+<td style="text-align:right;">
+5993974
+</td>
+<td style="text-align:right;">
+12
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:left;">
+Arkansas/Mississippi
+</td>
+<td style="text-align:right;">
+10
+</td>
+<td style="text-align:right;">
+10
+</td>
+<td style="text-align:right;">
+0
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+Arizona
+</td>
+<td style="text-align:right;">
+1161167
+</td>
+<td style="text-align:right;">
+1252401
+</td>
+<td style="text-align:right;">
+11
+</td>
+<td style="text-align:right;">
+7278717
+</td>
+<td style="text-align:right;">
+11
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:left;">
+Arizona
+</td>
+<td style="text-align:right;">
+11
+</td>
+<td style="text-align:right;">
+11
+</td>
+<td style="text-align:right;">
+0
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+California
+</td>
+<td style="text-align:right;">
+8753792
+</td>
+<td style="text-align:right;">
+4483814
+</td>
+<td style="text-align:right;">
+55
+</td>
+<td style="text-align:right;">
+39512223
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:right;">
+55
+</td>
+<td style="text-align:left;">
+California
+</td>
+<td style="text-align:right;">
+55
+</td>
+<td style="text-align:right;">
+0
+</td>
+<td style="text-align:right;">
+55
+</td>
+</tr>
+</tbody>
+</table>
+<p>Finally to visualize the difference in electoral votes between the actual 2016 results and our new 2016 results, the prior data set will be summarized and reshaped to get the data back into a tidy format with the proper labeling. The plot is a simple stacked barplot.</p>
+<pre class="r"><code>results2016 %&gt;% 
+  summarize(across(contains(c(&quot;trump_ev&quot;, &quot;clinton_ev&quot;)), sum)) %&gt;% 
+  pivot_longer(cols = everything(),
+               names_to = &#39;variable&#39;,
+               values_to = &#39;electoral_votes&#39;) %&gt;% 
+  group_by(str_detect(variable, &#39;new&#39;)) %&gt;% 
+  mutate(
+    percents = electoral_votes/sum(electoral_votes),
+    old_v_new = if_else(str_detect(variable, &#39;new&#39;), &#39;New EC&#39;, &#39;Original EC&#39;),
+    candidate = case_when(
+       str_detect(variable, &#39;trump&#39;) ~ &quot;trump&quot;,
+       str_detect(variable, &#39;clinton&#39;) ~ &#39;clinton&#39;,
+       TRUE ~ &#39;total&#39;
+     ),
+    lbl = paste0(electoral_votes, 
+                 &#39;\n(&#39;, 
+                 scales::percent(percents, accuracy = .1) ,&#39;)&#39;)
+  ) %&gt;% 
+   ggplot(aes(y = old_v_new, x = percents, fill = candidate)) +
+    geom_col(width = .5) +
+    geom_text(aes(label = lbl), position = position_stack(vjust = .5)) + 
+    geom_vline(xintercept = .5, lty = 2) + 
+    scale_x_continuous(label = scales::percent, expand = c(0,0)) + 
+    scale_fill_manual(values = c(&#39;clinton&#39; = &#39;blue&#39;, &#39;trump&#39; = &#39;red&#39;)) + 
+    guides(fill = guide_legend(reverse = T)) + 
+    labs(x = &quot;% of Electoral Vote&quot;,
+         y = &quot;&quot;,
+         title = &quot;Comparing 2016 Election Results in the Original vs. New System&quot;,
+         fill = &quot;&quot;) + 
+    cowplot::theme_cowplot() + 
+    theme(
+      plot.title.position = &#39;plot&#39;,
+      axis.line = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.text.x = element_blank()
+    )</code></pre>
+<p><img src="index_files/figure-html/election_pt3-1.png" width="672" /></p>
+<p>With the new electoral grouping system the net change in percentage of electoral votes was only 0.3%, so the overall result wouldn’t have changed.</p>
+<div id="what-actually-changed-in-the-new-system" class="section level3">
+<h3>What Actually Changed in the New System?</h3>
+<p>The final question would be <strong>how did the electoral votes change between the old system and the new system</strong>. The tbl_dl data frame is restructuring the data into the table format which will only have rows for groupings where the number of electoral votes is different and I’m creating labels to include the “+” and “-” symbols.</p>
+<pre class="r"><code>tbl_dt &lt;- results2016 %&gt;% 
+  filter(trump_ev != new_trump_ev | clinton_ev != new_clinton_ev) %&gt;% 
+  transmute(
+    new_grouping,
+    clinton_delta = (new_clinton_ev - clinton_ev),
+    trump_delta = (new_trump_ev - trump_ev),
+    clinton_lbl = paste0(
+      if_else(clinton_delta &gt; 0, &quot;+&quot;, &quot;&quot;),
+      clinton_delta
+    ),
+    trump_lbl = paste0(
+      if_else(trump_delta &gt; 0, &quot;+&quot;, &quot;&quot;),
+      trump_delta
+    )
+  ) %&gt;%
+  select(new_grouping, clinton_lbl, trump_lbl)</code></pre>
+<p>To complete the table visualization I’m using the <code>kableExtra</code> package. The <code>kable_paper</code> argument is a style setting and the two uses of <code>column_spec</code> sets the cell background to either red or green if the label constructed above is non-zero and white otherwise (which will appear blank). This was my first experience with <code>kableExtra</code> and while I’m happy that I was able to get this to be how I wanted, I found certain parts of the syntax a little frustrating.</p>
+<pre class="r"><code>tbl_dt %&gt;% 
+  kbl(align = c(&#39;l&#39;, &#39;c&#39;, &#39;c&#39;),
+      col.names = c(&#39;&#39;, &#39;Clinton&#39;, &#39;Trump&#39;),
+      caption = &quot;Election 2016: Candidate&#39;s Change in Electoral Votes&quot;) %&gt;% 
+  kable_paper(full_width = F) %&gt;% 
+  column_spec(2, color = &#39;white&#39;, background = case_when(
+    str_detect(tbl_dt$clinton_lbl, &quot;\\+&quot;) ~ &#39;green&#39;,
+    str_detect(tbl_dt$clinton_lbl, &quot;\\-&quot;) ~ &#39;red&#39;,
+    TRUE ~ &#39;white&#39;
+    )
+  ) %&gt;% 
+  column_spec(3, color = &#39;white&#39;, background = case_when(
+    str_detect(tbl_dt$trump_lbl, &quot;\\+&quot;) ~ &#39;green&#39;,
+    str_detect(tbl_dt$trump_lbl, &quot;\\-&quot;) ~ &#39;red&#39;,
+    TRUE ~ &#39;white&#39;
+    )
+  )</code></pre>
+<table class=" lightable-paper" style='font-family: "Arial Narrow", arial, helvetica, sans-serif; width: auto !important; margin-left: auto; margin-right: auto;'>
+<caption>
+<span id="tab:tabletime">Table 1: </span>Election 2016: Candidate’s Change in Electoral Votes
+</caption>
+<thead>
+<tr>
+<th style="text-align:left;">
+</th>
+<th style="text-align:center;">
+Clinton
+</th>
+<th style="text-align:center;">
+Trump
+</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;">
+AK/OR
+</td>
+<td style="text-align:center;color: white !important;background-color: green !important;">
++2
+</td>
+<td style="text-align:center;color: white !important;background-color: red !important;">
+-3
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+AR/MS
+</td>
+<td style="text-align:center;color: white !important;background-color: white !important;">
+0
+</td>
+<td style="text-align:center;color: white !important;background-color: red !important;">
+-2
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+CT/RI
+</td>
+<td style="text-align:center;color: white !important;background-color: red !important;">
+-2
+</td>
+<td style="text-align:center;color: white !important;background-color: white !important;">
+0
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+DC/DE/WV
+</td>
+<td style="text-align:center;color: white !important;background-color: green !important;">
++1
+</td>
+<td style="text-align:center;color: white !important;background-color: red !important;">
+-5
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+HI/NV
+</td>
+<td style="text-align:center;color: white !important;background-color: red !important;">
+-2
+</td>
+<td style="text-align:center;color: white !important;background-color: white !important;">
+0
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+IA/NE
+</td>
+<td style="text-align:center;color: white !important;background-color: white !important;">
+0
+</td>
+<td style="text-align:center;color: white !important;background-color: red !important;">
+-2
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+ID/MT/ND/SD/WY
+</td>
+<td style="text-align:center;color: white !important;background-color: white !important;">
+0
+</td>
+<td style="text-align:center;color: white !important;background-color: red !important;">
+-7
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+KS/OK
+</td>
+<td style="text-align:center;color: white !important;background-color: white !important;">
+0
+</td>
+<td style="text-align:center;color: white !important;background-color: red !important;">
+-1
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+NH/ME/VT
+</td>
+<td style="text-align:center;color: white !important;background-color: red !important;">
+-4
+</td>
+<td style="text-align:center;color: white !important;background-color: white !important;">
+0
+</td>
+</tr>
+<tr>
+<td style="text-align:left;">
+NM/UT
+</td>
+<td style="text-align:center;color: white !important;background-color: red !important;">
+-5
+</td>
+<td style="text-align:center;color: white !important;background-color: green !important;">
++4
+</td>
+</tr>
+</tbody>
+</table>
+<p>In most cases, votes were lost due to the combining of smaller states into these groupings but in a few instances the combination of multiple states changed who won the popular vote. For example, in the Alaska/Oregon there were originally 10 electoral votes (3 from Alaska which went to Trump, 7 from Oregon that went to Clinton). The grouping lost vote in the combining and then the combined Oregon/Alaska went to Clinton overall. Therefore, Clinton gets all 9 new electoral votes (+2 from the initial 7) and Trump loses the 3 he had from Alaska.</p>
+</div>
+</div>
+<div id="wrapping-up" class="section level2">
+<h2>Wrapping Up</h2>
+<p>Back at the beginning of this analysis I hypothesized that the Electoral College had become more over-weighted towards smaller states than back in the 1790s during the early days of the electoral college. Based on comparing the % of the US Population of states from 1790 vs. 2019 I showed that this was true although not massively.</p>
+<p>I proposed an idea to revise the Electoral College by combining states to ensure that each grouping makes up at a minimum 1.5% of the US Population, which was the smallest share of population from 1790. This reduced the overall number of electoral votes due to the reduction of the automatic 2 votes per state for the combined states.</p>
+<p>Finally, I applied my new Electoral College to the 2016 election… it made almost no difference.</p>
+<p>So overall, this thought exercise was fun to work through but it winds up being an incredibly small change to the results from the current system.</p>
+</div>
+</div>
