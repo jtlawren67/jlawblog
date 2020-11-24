@@ -2,7 +2,7 @@
 title: What's the most successful Dancing With the Stars "Profession"? Visualizing
   with {gt}
 author: JLaw
-date: '2020-12-01'
+date: '2020-11-24'
 slug: what-s-the-most-successful-dancing-with-the-stars-profession-visualizing-with-gt
 categories:
   - R
@@ -13,7 +13,7 @@ tags:
 subtitle: ''
 summary: ''
 authors: []
-lastmod: '2020-12-01T18:05:43-05:00'
+lastmod: '2020-11-24T12:05:43-05:00'
 featured: no
 image:
   caption: ''
@@ -54,7 +54,7 @@ library(glue) #Text Manipulation</code></pre>
 <h2>Getting all the DWTS Contestants</h2>
 <p>In order to find the most successful star type, we need to get a list of all the contestants. Fortunately, Wikipedia has a page for every season and on those pages has a list of information about the contestants including, their name, what their known for, and their status from the season.</p>
 <p><img src="contestant_list_example.PNG" /></p>
-<p>Since there are 28 completed Dancing with the Stars seasons this seems like a job for a function to iterate through each season’s Wikipedia page to extract that table. One note is that Season 15 was an all-star season so it will be excluded from this analysis Unfortunately, the contestant table isn’t always in the same place on the page, so the function will need to be a little flexible.</p>
+<p>Since there are 29 completed Dancing with the Stars seasons this seems like a job for a function to iterate through each season’s Wikipedia page to extract that table. One note is that Season 15 was an all-star season so it will be excluded from this analysis Unfortunately, the contestant table isn’t always in the same place on the page, so the function will need to be a little flexible.</p>
 <pre class="r"><code>dwts_constants &lt;- function(season_number, tbl_number){
   read_html(glue(&#39;https://en.wikipedia.org/wiki/Dancing_with_the_Stars_(American_season_{season_number})&#39;)) %&gt;% 
     html_nodes(&#39;table&#39;) %&gt;% 
@@ -91,19 +91,21 @@ library(glue) #Text Manipulation</code></pre>
   bind_rows(dwts_constants(25, 2)) %&gt;% 
   bind_rows(dwts_constants(26, 2)) %&gt;% 
   bind_rows(dwts_constants(27, 2)) %&gt;% 
-  bind_rows(dwts_constants(28, 2))</code></pre>
+  bind_rows(dwts_constants(28, 2)) %&gt;% 
+  bind_rows(dwts_constants(29, 2))</code></pre>
 <p>Directly from this function the raw data looks like:</p>
 <table>
 <colgroup>
-<col width="11%" />
-<col width="13%" />
-<col width="13%" />
-<col width="19%" />
+<col width="10%" />
+<col width="12%" />
+<col width="12%" />
+<col width="17%" />
 <col width="4%" />
 <col width="4%" />
-<col width="14%" />
+<col width="13%" />
 <col width="2%" />
-<col width="15%" />
+<col width="14%" />
+<col width="9%" />
 </colgroup>
 <thead>
 <tr class="header">
@@ -116,6 +118,7 @@ library(glue) #Text Manipulation</code></pre>
 <th align="left">professional_partner_a</th>
 <th align="left">ref</th>
 <th align="left">professional_partner_a_7</th>
+<th align="left">celebrity_12_13</th>
 </tr>
 </thead>
 <tbody>
@@ -125,6 +128,7 @@ library(glue) #Text Manipulation</code></pre>
 <td align="left">Louis Van Amstel</td>
 <td align="left">Eliminated 1ston June 8, 2005</td>
 <td align="right">1</td>
+<td align="left">NA</td>
 <td align="left">NA</td>
 <td align="left">NA</td>
 <td align="left">NA</td>
@@ -140,6 +144,7 @@ library(glue) #Text Manipulation</code></pre>
 <td align="left">NA</td>
 <td align="left">NA</td>
 <td align="left">NA</td>
+<td align="left">NA</td>
 </tr>
 <tr class="odd">
 <td align="left">Rachel Hunter</td>
@@ -147,6 +152,7 @@ library(glue) #Text Manipulation</code></pre>
 <td align="left">Jonathan Roberts</td>
 <td align="left">Eliminated 3rdon June 22, 2005</td>
 <td align="right">1</td>
+<td align="left">NA</td>
 <td align="left">NA</td>
 <td align="left">NA</td>
 <td align="left">NA</td>
@@ -212,8 +218,11 @@ library(glue) #Text Manipulation</code></pre>
       TRUE ~ &quot;Other&quot;
     )
   ) %&gt;% 
+  # Fix Celebrity Column for Season 29
+  mutate(celebrity = if_else(is.na(celebrity), celebrity_12_13, celebrity)) %&gt;% 
   # Remove Unneeded Columns
-  select(-contains(&#39;professional&#39;), -ref, -status, -eliminated_state) %&gt;% 
+  select(-contains(&#39;professional&#39;), -ref, -status, 
+         -eliminated_state, -celebrity_12_13) %&gt;% 
   #Want Scores to be between 0 and 1 where 1 is Last Place and 0 is first place.
   mutate(scaled_place = (place-1)/(n_contestants-1))</code></pre>
 <p>The <code>scaled_place</code> variable will be used to create a standardized density plot by putting each season on a 1 (Last Place) to 0 (1st Place) scale regardless of the number of contestants in the season. The cleaned data now looks like:</p>
@@ -300,7 +309,7 @@ library(glue) #Text Manipulation</code></pre>
 </tr>
 </tbody>
 </table>
-<p>Using Regular Expressions, I’ve collapsed 230 different levels into 9 which are:</p>
+<p>Using Regular Expressions, I’ve collapsed 237 different levels into 9 which are:</p>
 <table>
 <thead>
 <tr class="header">
@@ -327,19 +336,19 @@ library(glue) #Text Manipulation</code></pre>
 </tr>
 <tr class="odd">
 <td align="left">Media Personality</td>
-<td align="left">Jerry Springer, Giselle Fernandez, Maria Menounos</td>
+<td align="left">Jerry Springer, Bobby Bones, Giselle Fernandez</td>
 </tr>
 <tr class="even">
 <td align="left">Model</td>
-<td align="left">Brooke Burke, Rachel Hunter, Petra Nemcová</td>
+<td align="left">Bonner Bolton, Shandi Finnessey, Sailor Brinkley-Cook</td>
 </tr>
 <tr class="odd">
 <td align="left">Musician</td>
-<td align="left">Gavin DeGraw, Nick Carter, Chuck Wicks</td>
+<td align="left">Joey McIntyre, Gavin DeGraw, Nick Carter</td>
 </tr>
 <tr class="even">
 <td align="left">Other</td>
-<td align="left">Sean Spicer, Noah Galloway, Chaz Bono</td>
+<td align="left">Sean Spicer, Buzz Aldrin, Noah Galloway</td>
 </tr>
 <tr class="odd">
 <td align="left">Reality TV Star</td>
@@ -730,27 +739,35 @@ library(glue) #Text Manipulation</code></pre>
   <tbody class="gt_table_body">
     <tr>
       <td class="gt_row gt_left">Athlete</td>
-      <td class="gt_row gt_center">76</td>
-      <td class="gt_row gt_right">0.14473684</td>
-      <td class="gt_row gt_right">0.10526316</td>
-      <td class="gt_row gt_right">0.06578947</td>
-      <td class="gt_row gt_right">0.09210526</td>
+      <td class="gt_row gt_center">79</td>
+      <td class="gt_row gt_right">0.13924051</td>
+      <td class="gt_row gt_right">0.10126582</td>
+      <td class="gt_row gt_right">0.06329114</td>
+      <td class="gt_row gt_right">0.10126582</td>
     </tr>
     <tr>
       <td class="gt_row gt_left">Musician</td>
-      <td class="gt_row gt_center">36</td>
-      <td class="gt_row gt_right">0.08333333</td>
-      <td class="gt_row gt_right">0.11111111</td>
-      <td class="gt_row gt_right">0.13888889</td>
-      <td class="gt_row gt_right">0.13888889</td>
+      <td class="gt_row gt_center">38</td>
+      <td class="gt_row gt_right">0.07894737</td>
+      <td class="gt_row gt_right">0.10526316</td>
+      <td class="gt_row gt_right">0.15789474</td>
+      <td class="gt_row gt_right">0.13157895</td>
     </tr>
     <tr>
       <td class="gt_row gt_left">Actor/Actress</td>
-      <td class="gt_row gt_center">125</td>
-      <td class="gt_row gt_right">0.08000000</td>
-      <td class="gt_row gt_right">0.09600000</td>
-      <td class="gt_row gt_right">0.07200000</td>
-      <td class="gt_row gt_right">0.04800000</td>
+      <td class="gt_row gt_center">130</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.09230769</td>
+      <td class="gt_row gt_right">0.06923077</td>
+      <td class="gt_row gt_right">0.04615385</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_left">Reality TV Star</td>
+      <td class="gt_row gt_center">26</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.03846154</td>
     </tr>
     <tr>
       <td class="gt_row gt_left">Model</td>
@@ -762,19 +779,11 @@ library(glue) #Text Manipulation</code></pre>
     </tr>
     <tr>
       <td class="gt_row gt_left">Media Personality</td>
-      <td class="gt_row gt_center">20</td>
-      <td class="gt_row gt_right">0.05000000</td>
-      <td class="gt_row gt_right">0.00000000</td>
-      <td class="gt_row gt_right">0.05000000</td>
-      <td class="gt_row gt_right">0.25000000</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_left">Reality TV Star</td>
-      <td class="gt_row gt_center">23</td>
-      <td class="gt_row gt_right">0.04347826</td>
-      <td class="gt_row gt_right">0.08695652</td>
-      <td class="gt_row gt_right">0.08695652</td>
-      <td class="gt_row gt_right">0.04347826</td>
+      <td class="gt_row gt_center">21</td>
+      <td class="gt_row gt_right">0.04761905</td>
+      <td class="gt_row gt_right">0.04761905</td>
+      <td class="gt_row gt_right">0.04761905</td>
+      <td class="gt_row gt_right">0.23809524</td>
     </tr>
     <tr>
       <td class="gt_row gt_left">Businessperson</td>
@@ -813,7 +822,7 @@ library(glue) #Text Manipulation</code></pre>
   tab_header(
     title = html(&#39;Most &lt;span style=&quot;color:#F2CB05&quot;&gt;Successful&lt;/span&gt; Dancing With the Stars &lt;i&gt;&quot;Professions&quot;&lt;/i&gt;&#39;),
     subtitle = html(
-      &quot;&lt;span style = &#39;color: grey&#39;&gt;Covering Seasons 1 to 28 (excluding All-Star Season 15)&lt;/span&gt;&quot;
+      &quot;&lt;span style = &#39;color: grey&#39;&gt;Covering Seasons 1 to 29 (excluding All-Star Season 15)&lt;/span&gt;&quot;
     )
   ))</code></pre>
 <style>html {
@@ -1158,7 +1167,7 @@ library(glue) #Text Manipulation</code></pre>
       <th colspan="6" class="gt_heading gt_title gt_font_normal" style>Most <span style="color:#F2CB05">Successful</span> Dancing With the Stars <i>"Professions"</i></th>
     </tr>
     <tr>
-      <th colspan="6" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border" style><span style = 'color: grey'>Covering Seasons 1 to 28 (excluding All-Star Season 15)</span></th>
+      <th colspan="6" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border" style><span style = 'color: grey'>Covering Seasons 1 to 29 (excluding All-Star Season 15)</span></th>
     </tr>
   </thead>
   <thead class="gt_col_headings">
@@ -1174,27 +1183,35 @@ library(glue) #Text Manipulation</code></pre>
   <tbody class="gt_table_body">
     <tr>
       <td class="gt_row gt_left">Athlete</td>
-      <td class="gt_row gt_center">76</td>
-      <td class="gt_row gt_right">0.14473684</td>
-      <td class="gt_row gt_right">0.10526316</td>
-      <td class="gt_row gt_right">0.06578947</td>
-      <td class="gt_row gt_right">0.09210526</td>
+      <td class="gt_row gt_center">79</td>
+      <td class="gt_row gt_right">0.13924051</td>
+      <td class="gt_row gt_right">0.10126582</td>
+      <td class="gt_row gt_right">0.06329114</td>
+      <td class="gt_row gt_right">0.10126582</td>
     </tr>
     <tr>
       <td class="gt_row gt_left">Musician</td>
-      <td class="gt_row gt_center">36</td>
-      <td class="gt_row gt_right">0.08333333</td>
-      <td class="gt_row gt_right">0.11111111</td>
-      <td class="gt_row gt_right">0.13888889</td>
-      <td class="gt_row gt_right">0.13888889</td>
+      <td class="gt_row gt_center">38</td>
+      <td class="gt_row gt_right">0.07894737</td>
+      <td class="gt_row gt_right">0.10526316</td>
+      <td class="gt_row gt_right">0.15789474</td>
+      <td class="gt_row gt_right">0.13157895</td>
     </tr>
     <tr>
       <td class="gt_row gt_left">Actor/Actress</td>
-      <td class="gt_row gt_center">125</td>
-      <td class="gt_row gt_right">0.08000000</td>
-      <td class="gt_row gt_right">0.09600000</td>
-      <td class="gt_row gt_right">0.07200000</td>
-      <td class="gt_row gt_right">0.04800000</td>
+      <td class="gt_row gt_center">130</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.09230769</td>
+      <td class="gt_row gt_right">0.06923077</td>
+      <td class="gt_row gt_right">0.04615385</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_left">Reality TV Star</td>
+      <td class="gt_row gt_center">26</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.03846154</td>
     </tr>
     <tr>
       <td class="gt_row gt_left">Model</td>
@@ -1206,19 +1223,11 @@ library(glue) #Text Manipulation</code></pre>
     </tr>
     <tr>
       <td class="gt_row gt_left">Media Personality</td>
-      <td class="gt_row gt_center">20</td>
-      <td class="gt_row gt_right">0.05000000</td>
-      <td class="gt_row gt_right">0.00000000</td>
-      <td class="gt_row gt_right">0.05000000</td>
-      <td class="gt_row gt_right">0.25000000</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_left">Reality TV Star</td>
-      <td class="gt_row gt_center">23</td>
-      <td class="gt_row gt_right">0.04347826</td>
-      <td class="gt_row gt_right">0.08695652</td>
-      <td class="gt_row gt_right">0.08695652</td>
-      <td class="gt_row gt_right">0.04347826</td>
+      <td class="gt_row gt_center">21</td>
+      <td class="gt_row gt_right">0.04761905</td>
+      <td class="gt_row gt_right">0.04761905</td>
+      <td class="gt_row gt_right">0.04761905</td>
+      <td class="gt_row gt_right">0.23809524</td>
     </tr>
     <tr>
       <td class="gt_row gt_left">Businessperson</td>
@@ -1252,7 +1261,7 @@ library(glue) #Text Manipulation</code></pre>
 <div id="step-3-adding-more-style-to-the-title" class="section level3">
 <h3>Step 3: Adding More Style to the Title</h3>
 <p>The <code>tab_style()</code> function adds various formatting to the table rows and cells. The style section of the arguments tells <code>gt</code> what the style will be and the location argument says where that style should be applied.</p>
-<p>The <code>google_font()</code> package allows access to all the fonts on the <a href="https://fonts.google.com/">Google Fonts</a> site.</p>
+<p>The <code>google_font()</code> function allows access to all the fonts on the <a href="https://fonts.google.com/">Google Fonts</a> site.</p>
 <p>In this step I’m making the title left-justified, size XX-Large, and using the Anton font.</p>
 <pre class="r"><code>(g3 &lt;- g2 %&gt;% 
   tab_style(
@@ -1607,7 +1616,7 @@ html {
       <th colspan="6" class="gt_heading gt_title gt_font_normal" style="font-family: Anton; font-size: xx-large; text-align: left;">Most <span style="color:#F2CB05">Successful</span> Dancing With the Stars <i>"Professions"</i></th>
     </tr>
     <tr>
-      <th colspan="6" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border" style><span style = 'color: grey'>Covering Seasons 1 to 28 (excluding All-Star Season 15)</span></th>
+      <th colspan="6" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border" style><span style = 'color: grey'>Covering Seasons 1 to 29 (excluding All-Star Season 15)</span></th>
     </tr>
   </thead>
   <thead class="gt_col_headings">
@@ -1623,27 +1632,35 @@ html {
   <tbody class="gt_table_body">
     <tr>
       <td class="gt_row gt_left">Athlete</td>
-      <td class="gt_row gt_center">76</td>
-      <td class="gt_row gt_right">0.14473684</td>
-      <td class="gt_row gt_right">0.10526316</td>
-      <td class="gt_row gt_right">0.06578947</td>
-      <td class="gt_row gt_right">0.09210526</td>
+      <td class="gt_row gt_center">79</td>
+      <td class="gt_row gt_right">0.13924051</td>
+      <td class="gt_row gt_right">0.10126582</td>
+      <td class="gt_row gt_right">0.06329114</td>
+      <td class="gt_row gt_right">0.10126582</td>
     </tr>
     <tr>
       <td class="gt_row gt_left">Musician</td>
-      <td class="gt_row gt_center">36</td>
-      <td class="gt_row gt_right">0.08333333</td>
-      <td class="gt_row gt_right">0.11111111</td>
-      <td class="gt_row gt_right">0.13888889</td>
-      <td class="gt_row gt_right">0.13888889</td>
+      <td class="gt_row gt_center">38</td>
+      <td class="gt_row gt_right">0.07894737</td>
+      <td class="gt_row gt_right">0.10526316</td>
+      <td class="gt_row gt_right">0.15789474</td>
+      <td class="gt_row gt_right">0.13157895</td>
     </tr>
     <tr>
       <td class="gt_row gt_left">Actor/Actress</td>
-      <td class="gt_row gt_center">125</td>
-      <td class="gt_row gt_right">0.08000000</td>
-      <td class="gt_row gt_right">0.09600000</td>
-      <td class="gt_row gt_right">0.07200000</td>
-      <td class="gt_row gt_right">0.04800000</td>
+      <td class="gt_row gt_center">130</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.09230769</td>
+      <td class="gt_row gt_right">0.06923077</td>
+      <td class="gt_row gt_right">0.04615385</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_left">Reality TV Star</td>
+      <td class="gt_row gt_center">26</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.03846154</td>
     </tr>
     <tr>
       <td class="gt_row gt_left">Model</td>
@@ -1655,19 +1672,11 @@ html {
     </tr>
     <tr>
       <td class="gt_row gt_left">Media Personality</td>
-      <td class="gt_row gt_center">20</td>
-      <td class="gt_row gt_right">0.05000000</td>
-      <td class="gt_row gt_right">0.00000000</td>
-      <td class="gt_row gt_right">0.05000000</td>
-      <td class="gt_row gt_right">0.25000000</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_left">Reality TV Star</td>
-      <td class="gt_row gt_center">23</td>
-      <td class="gt_row gt_right">0.04347826</td>
-      <td class="gt_row gt_right">0.08695652</td>
-      <td class="gt_row gt_right">0.08695652</td>
-      <td class="gt_row gt_right">0.04347826</td>
+      <td class="gt_row gt_center">21</td>
+      <td class="gt_row gt_right">0.04761905</td>
+      <td class="gt_row gt_right">0.04761905</td>
+      <td class="gt_row gt_right">0.04761905</td>
+      <td class="gt_row gt_right">0.23809524</td>
     </tr>
     <tr>
       <td class="gt_row gt_left">Businessperson</td>
@@ -2055,7 +2064,7 @@ html {
       <th colspan="6" class="gt_heading gt_title gt_font_normal" style="font-family: Anton; font-size: xx-large; text-align: left;">Most <span style="color:#F2CB05">Successful</span> Dancing With the Stars <i>"Professions"</i></th>
     </tr>
     <tr>
-      <th colspan="6" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border" style="font-family: Caveat; font-size: x-large; text-align: left;"><span style = 'color: grey'>Covering Seasons 1 to 28 (excluding All-Star Season 15)</span></th>
+      <th colspan="6" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border" style="font-family: Caveat; font-size: x-large; text-align: left;"><span style = 'color: grey'>Covering Seasons 1 to 29 (excluding All-Star Season 15)</span></th>
     </tr>
   </thead>
   <thead class="gt_col_headings">
@@ -2071,27 +2080,35 @@ html {
   <tbody class="gt_table_body">
     <tr>
       <td class="gt_row gt_left">Athlete</td>
-      <td class="gt_row gt_center">76</td>
-      <td class="gt_row gt_right">0.14473684</td>
-      <td class="gt_row gt_right">0.10526316</td>
-      <td class="gt_row gt_right">0.06578947</td>
-      <td class="gt_row gt_right">0.09210526</td>
+      <td class="gt_row gt_center">79</td>
+      <td class="gt_row gt_right">0.13924051</td>
+      <td class="gt_row gt_right">0.10126582</td>
+      <td class="gt_row gt_right">0.06329114</td>
+      <td class="gt_row gt_right">0.10126582</td>
     </tr>
     <tr>
       <td class="gt_row gt_left">Musician</td>
-      <td class="gt_row gt_center">36</td>
-      <td class="gt_row gt_right">0.08333333</td>
-      <td class="gt_row gt_right">0.11111111</td>
-      <td class="gt_row gt_right">0.13888889</td>
-      <td class="gt_row gt_right">0.13888889</td>
+      <td class="gt_row gt_center">38</td>
+      <td class="gt_row gt_right">0.07894737</td>
+      <td class="gt_row gt_right">0.10526316</td>
+      <td class="gt_row gt_right">0.15789474</td>
+      <td class="gt_row gt_right">0.13157895</td>
     </tr>
     <tr>
       <td class="gt_row gt_left">Actor/Actress</td>
-      <td class="gt_row gt_center">125</td>
-      <td class="gt_row gt_right">0.08000000</td>
-      <td class="gt_row gt_right">0.09600000</td>
-      <td class="gt_row gt_right">0.07200000</td>
-      <td class="gt_row gt_right">0.04800000</td>
+      <td class="gt_row gt_center">130</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.09230769</td>
+      <td class="gt_row gt_right">0.06923077</td>
+      <td class="gt_row gt_right">0.04615385</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_left">Reality TV Star</td>
+      <td class="gt_row gt_center">26</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.03846154</td>
     </tr>
     <tr>
       <td class="gt_row gt_left">Model</td>
@@ -2103,19 +2120,11 @@ html {
     </tr>
     <tr>
       <td class="gt_row gt_left">Media Personality</td>
-      <td class="gt_row gt_center">20</td>
-      <td class="gt_row gt_right">0.05000000</td>
-      <td class="gt_row gt_right">0.00000000</td>
-      <td class="gt_row gt_right">0.05000000</td>
-      <td class="gt_row gt_right">0.25000000</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_left">Reality TV Star</td>
-      <td class="gt_row gt_center">23</td>
-      <td class="gt_row gt_right">0.04347826</td>
-      <td class="gt_row gt_right">0.08695652</td>
-      <td class="gt_row gt_right">0.08695652</td>
-      <td class="gt_row gt_right">0.04347826</td>
+      <td class="gt_row gt_center">21</td>
+      <td class="gt_row gt_right">0.04761905</td>
+      <td class="gt_row gt_right">0.04761905</td>
+      <td class="gt_row gt_right">0.04761905</td>
+      <td class="gt_row gt_right">0.23809524</td>
     </tr>
     <tr>
       <td class="gt_row gt_left">Businessperson</td>
@@ -2499,7 +2508,7 @@ html {
       <th colspan="6" class="gt_heading gt_title gt_font_normal" style="font-family: Anton; font-size: xx-large; text-align: left;">Most <span style="color:#F2CB05">Successful</span> Dancing With the Stars <i>"Professions"</i></th>
     </tr>
     <tr>
-      <th colspan="6" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border" style="font-family: Caveat; font-size: x-large; text-align: left;"><span style = 'color: grey'>Covering Seasons 1 to 28 (excluding All-Star Season 15)</span></th>
+      <th colspan="6" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border" style="font-family: Caveat; font-size: x-large; text-align: left;"><span style = 'color: grey'>Covering Seasons 1 to 29 (excluding All-Star Season 15)</span></th>
     </tr>
   </thead>
   <thead class="gt_col_headings">
@@ -2520,27 +2529,35 @@ html {
   <tbody class="gt_table_body">
     <tr>
       <td class="gt_row gt_left">Athlete</td>
-      <td class="gt_row gt_center">76</td>
-      <td class="gt_row gt_right">0.14473684</td>
-      <td class="gt_row gt_right">0.10526316</td>
-      <td class="gt_row gt_right">0.06578947</td>
-      <td class="gt_row gt_right">0.09210526</td>
+      <td class="gt_row gt_center">79</td>
+      <td class="gt_row gt_right">0.13924051</td>
+      <td class="gt_row gt_right">0.10126582</td>
+      <td class="gt_row gt_right">0.06329114</td>
+      <td class="gt_row gt_right">0.10126582</td>
     </tr>
     <tr>
       <td class="gt_row gt_left">Musician</td>
-      <td class="gt_row gt_center">36</td>
-      <td class="gt_row gt_right">0.08333333</td>
-      <td class="gt_row gt_right">0.11111111</td>
-      <td class="gt_row gt_right">0.13888889</td>
-      <td class="gt_row gt_right">0.13888889</td>
+      <td class="gt_row gt_center">38</td>
+      <td class="gt_row gt_right">0.07894737</td>
+      <td class="gt_row gt_right">0.10526316</td>
+      <td class="gt_row gt_right">0.15789474</td>
+      <td class="gt_row gt_right">0.13157895</td>
     </tr>
     <tr>
       <td class="gt_row gt_left">Actor/Actress</td>
-      <td class="gt_row gt_center">125</td>
-      <td class="gt_row gt_right">0.08000000</td>
-      <td class="gt_row gt_right">0.09600000</td>
-      <td class="gt_row gt_right">0.07200000</td>
-      <td class="gt_row gt_right">0.04800000</td>
+      <td class="gt_row gt_center">130</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.09230769</td>
+      <td class="gt_row gt_right">0.06923077</td>
+      <td class="gt_row gt_right">0.04615385</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_left">Reality TV Star</td>
+      <td class="gt_row gt_center">26</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.03846154</td>
     </tr>
     <tr>
       <td class="gt_row gt_left">Model</td>
@@ -2552,19 +2569,11 @@ html {
     </tr>
     <tr>
       <td class="gt_row gt_left">Media Personality</td>
-      <td class="gt_row gt_center">20</td>
-      <td class="gt_row gt_right">0.05000000</td>
-      <td class="gt_row gt_right">0.00000000</td>
-      <td class="gt_row gt_right">0.05000000</td>
-      <td class="gt_row gt_right">0.25000000</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_left">Reality TV Star</td>
-      <td class="gt_row gt_center">23</td>
-      <td class="gt_row gt_right">0.04347826</td>
-      <td class="gt_row gt_right">0.08695652</td>
-      <td class="gt_row gt_right">0.08695652</td>
-      <td class="gt_row gt_right">0.04347826</td>
+      <td class="gt_row gt_center">21</td>
+      <td class="gt_row gt_right">0.04761905</td>
+      <td class="gt_row gt_right">0.04761905</td>
+      <td class="gt_row gt_right">0.04761905</td>
+      <td class="gt_row gt_right">0.23809524</td>
     </tr>
     <tr>
       <td class="gt_row gt_left">Businessperson</td>
@@ -2953,7 +2962,7 @@ html {
       <th colspan="6" class="gt_heading gt_title gt_font_normal" style="font-family: Anton; font-size: xx-large; text-align: left;">Most <span style="color:#F2CB05">Successful</span> Dancing With the Stars <i>"Professions"</i></th>
     </tr>
     <tr>
-      <th colspan="6" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border" style="font-family: Caveat; font-size: x-large; text-align: left;"><span style = 'color: grey'>Covering Seasons 1 to 28 (excluding All-Star Season 15)</span></th>
+      <th colspan="6" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border" style="font-family: Caveat; font-size: x-large; text-align: left;"><span style = 'color: grey'>Covering Seasons 1 to 29 (excluding All-Star Season 15)</span></th>
     </tr>
   </thead>
   <thead class="gt_col_headings">
@@ -2974,27 +2983,35 @@ html {
   <tbody class="gt_table_body">
     <tr>
       <td class="gt_row gt_left">Athlete</td>
-      <td class="gt_row gt_center">76</td>
-      <td class="gt_row gt_right">0.14473684</td>
-      <td class="gt_row gt_right">0.10526316</td>
-      <td class="gt_row gt_right">0.06578947</td>
-      <td class="gt_row gt_right">0.09210526</td>
+      <td class="gt_row gt_center">79</td>
+      <td class="gt_row gt_right">0.13924051</td>
+      <td class="gt_row gt_right">0.10126582</td>
+      <td class="gt_row gt_right">0.06329114</td>
+      <td class="gt_row gt_right">0.10126582</td>
     </tr>
     <tr>
       <td class="gt_row gt_left">Musician</td>
-      <td class="gt_row gt_center">36</td>
-      <td class="gt_row gt_right">0.08333333</td>
-      <td class="gt_row gt_right">0.11111111</td>
-      <td class="gt_row gt_right">0.13888889</td>
-      <td class="gt_row gt_right">0.13888889</td>
+      <td class="gt_row gt_center">38</td>
+      <td class="gt_row gt_right">0.07894737</td>
+      <td class="gt_row gt_right">0.10526316</td>
+      <td class="gt_row gt_right">0.15789474</td>
+      <td class="gt_row gt_right">0.13157895</td>
     </tr>
     <tr>
       <td class="gt_row gt_left">Actor/Actress</td>
-      <td class="gt_row gt_center">125</td>
-      <td class="gt_row gt_right">0.08000000</td>
-      <td class="gt_row gt_right">0.09600000</td>
-      <td class="gt_row gt_right">0.07200000</td>
-      <td class="gt_row gt_right">0.04800000</td>
+      <td class="gt_row gt_center">130</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.09230769</td>
+      <td class="gt_row gt_right">0.06923077</td>
+      <td class="gt_row gt_right">0.04615385</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_left">Reality TV Star</td>
+      <td class="gt_row gt_center">26</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.03846154</td>
     </tr>
     <tr>
       <td class="gt_row gt_left">Model</td>
@@ -3006,19 +3023,11 @@ html {
     </tr>
     <tr>
       <td class="gt_row gt_left">Media Personality</td>
-      <td class="gt_row gt_center">20</td>
-      <td class="gt_row gt_right">0.05000000</td>
-      <td class="gt_row gt_right">0.00000000</td>
-      <td class="gt_row gt_right">0.05000000</td>
-      <td class="gt_row gt_right">0.25000000</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_left">Reality TV Star</td>
-      <td class="gt_row gt_center">23</td>
-      <td class="gt_row gt_right">0.04347826</td>
-      <td class="gt_row gt_right">0.08695652</td>
-      <td class="gt_row gt_right">0.08695652</td>
-      <td class="gt_row gt_right">0.04347826</td>
+      <td class="gt_row gt_center">21</td>
+      <td class="gt_row gt_right">0.04761905</td>
+      <td class="gt_row gt_right">0.04761905</td>
+      <td class="gt_row gt_right">0.04761905</td>
+      <td class="gt_row gt_right">0.23809524</td>
     </tr>
     <tr>
       <td class="gt_row gt_left">Businessperson</td>
@@ -3410,7 +3419,7 @@ html {
       <th colspan="6" class="gt_heading gt_title gt_font_normal" style="font-family: Anton; font-size: xx-large; text-align: left;">Most <span style="color:#F2CB05">Successful</span> Dancing With the Stars <i>"Professions"</i></th>
     </tr>
     <tr>
-      <th colspan="6" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border" style="font-family: Caveat; font-size: x-large; text-align: left;"><span style = 'color: grey'>Covering Seasons 1 to 28 (excluding All-Star Season 15)</span></th>
+      <th colspan="6" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border" style="font-family: Caveat; font-size: x-large; text-align: left;"><span style = 'color: grey'>Covering Seasons 1 to 29 (excluding All-Star Season 15)</span></th>
     </tr>
   </thead>
   <thead class="gt_col_headings">
@@ -3431,27 +3440,35 @@ html {
   <tbody class="gt_table_body">
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Athlete</td>
-      <td class="gt_row gt_center">76</td>
-      <td class="gt_row gt_right">0.14473684</td>
-      <td class="gt_row gt_right">0.10526316</td>
-      <td class="gt_row gt_right">0.06578947</td>
-      <td class="gt_row gt_right">0.09210526</td>
+      <td class="gt_row gt_center">79</td>
+      <td class="gt_row gt_right">0.13924051</td>
+      <td class="gt_row gt_right">0.10126582</td>
+      <td class="gt_row gt_right">0.06329114</td>
+      <td class="gt_row gt_right">0.10126582</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Musician</td>
-      <td class="gt_row gt_center">36</td>
-      <td class="gt_row gt_right">0.08333333</td>
-      <td class="gt_row gt_right">0.11111111</td>
-      <td class="gt_row gt_right">0.13888889</td>
-      <td class="gt_row gt_right">0.13888889</td>
+      <td class="gt_row gt_center">38</td>
+      <td class="gt_row gt_right">0.07894737</td>
+      <td class="gt_row gt_right">0.10526316</td>
+      <td class="gt_row gt_right">0.15789474</td>
+      <td class="gt_row gt_right">0.13157895</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Actor/Actress</td>
-      <td class="gt_row gt_center">125</td>
-      <td class="gt_row gt_right">0.08000000</td>
-      <td class="gt_row gt_right">0.09600000</td>
-      <td class="gt_row gt_right">0.07200000</td>
-      <td class="gt_row gt_right">0.04800000</td>
+      <td class="gt_row gt_center">130</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.09230769</td>
+      <td class="gt_row gt_right">0.06923077</td>
+      <td class="gt_row gt_right">0.04615385</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Reality TV Star</td>
+      <td class="gt_row gt_center">26</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.07692308</td>
+      <td class="gt_row gt_right">0.03846154</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Model</td>
@@ -3463,19 +3480,11 @@ html {
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Media Personality</td>
-      <td class="gt_row gt_center">20</td>
-      <td class="gt_row gt_right">0.05000000</td>
-      <td class="gt_row gt_right">0.00000000</td>
-      <td class="gt_row gt_right">0.05000000</td>
-      <td class="gt_row gt_right">0.25000000</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Reality TV Star</td>
-      <td class="gt_row gt_center">23</td>
-      <td class="gt_row gt_right">0.04347826</td>
-      <td class="gt_row gt_right">0.08695652</td>
-      <td class="gt_row gt_right">0.08695652</td>
-      <td class="gt_row gt_right">0.04347826</td>
+      <td class="gt_row gt_center">21</td>
+      <td class="gt_row gt_right">0.04761905</td>
+      <td class="gt_row gt_right">0.04761905</td>
+      <td class="gt_row gt_right">0.04761905</td>
+      <td class="gt_row gt_right">0.23809524</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Businessperson</td>
@@ -3866,7 +3875,7 @@ html {
       <th colspan="6" class="gt_heading gt_title gt_font_normal" style="font-family: Anton; font-size: xx-large; text-align: left;">Most <span style="color:#F2CB05">Successful</span> Dancing With the Stars <i>"Professions"</i></th>
     </tr>
     <tr>
-      <th colspan="6" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border" style="font-family: Caveat; font-size: x-large; text-align: left;"><span style = 'color: grey'>Covering Seasons 1 to 28 (excluding All-Star Season 15)</span></th>
+      <th colspan="6" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border" style="font-family: Caveat; font-size: x-large; text-align: left;"><span style = 'color: grey'>Covering Seasons 1 to 29 (excluding All-Star Season 15)</span></th>
     </tr>
   </thead>
   <thead class="gt_col_headings">
@@ -3887,27 +3896,35 @@ html {
   <tbody class="gt_table_body">
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Athlete</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">76</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.14473684</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.10526316</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.06578947</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.09210526</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">79</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.13924051</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.10126582</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.06329114</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.10126582</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Musician</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">36</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.08333333</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.11111111</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.13888889</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.13888889</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">38</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.07894737</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.10526316</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.15789474</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.13157895</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Actor/Actress</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">125</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.08000000</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.09600000</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.07200000</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.04800000</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">130</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.07692308</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.09230769</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.06923077</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.04615385</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Reality TV Star</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">26</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.07692308</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.07692308</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.07692308</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.03846154</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Model</td>
@@ -3919,19 +3936,11 @@ html {
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Media Personality</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">20</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.05000000</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.00000000</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.05000000</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.25000000</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Reality TV Star</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">23</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.04347826</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.08695652</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.08695652</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.04347826</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">21</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.04761905</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.04761905</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.04761905</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0.23809524</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Businessperson</td>
@@ -4319,7 +4328,7 @@ html {
       <th colspan="6" class="gt_heading gt_title gt_font_normal" style="font-family: Anton; font-size: xx-large; text-align: left;">Most <span style="color:#F2CB05">Successful</span> Dancing With the Stars <i>"Professions"</i></th>
     </tr>
     <tr>
-      <th colspan="6" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border" style="font-family: Caveat; font-size: x-large; text-align: left;"><span style = 'color: grey'>Covering Seasons 1 to 28 (excluding All-Star Season 15)</span></th>
+      <th colspan="6" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border" style="font-family: Caveat; font-size: x-large; text-align: left;"><span style = 'color: grey'>Covering Seasons 1 to 29 (excluding All-Star Season 15)</span></th>
     </tr>
   </thead>
   <thead class="gt_col_headings">
@@ -4340,27 +4349,35 @@ html {
   <tbody class="gt_table_body">
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Athlete</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">76</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">14.5&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">10.5&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">6.6&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">9.2&percnt;</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">79</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">13.9&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">10.1&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">6.3&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">10.1&percnt;</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Musician</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">36</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">8.3&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">11.1&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">13.9&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">13.9&percnt;</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">38</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">7.9&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">10.5&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">15.8&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">13.2&percnt;</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Actor/Actress</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">125</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">8&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">9.6&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">7.2&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">4.8&percnt;</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">130</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">7.7&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">9.2&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">6.9&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">4.6&percnt;</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Reality TV Star</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">26</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">7.7&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">7.7&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">7.7&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">3.8&percnt;</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Model</td>
@@ -4372,19 +4389,11 @@ html {
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Media Personality</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">20</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">5&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">5&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">25&percnt;</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Reality TV Star</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">23</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">4.3&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">8.7&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">8.7&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">4.3&percnt;</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">21</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">4.8&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">4.8&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">4.8&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">23.8&percnt;</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Businessperson</td>
@@ -4775,7 +4784,7 @@ html {
       <th colspan="6" class="gt_heading gt_title gt_font_normal" style="font-family: Anton; font-size: xx-large; text-align: left;">Most <span style="color:#F2CB05">Successful</span> Dancing With the Stars <i>"Professions"</i></th>
     </tr>
     <tr>
-      <th colspan="6" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border" style="font-family: Caveat; font-size: x-large; text-align: left;"><span style = 'color: grey'>Covering Seasons 1 to 28 (excluding All-Star Season 15)</span></th>
+      <th colspan="6" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border" style="font-family: Caveat; font-size: x-large; text-align: left;"><span style = 'color: grey'>Covering Seasons 1 to 29 (excluding All-Star Season 15)</span></th>
     </tr>
   </thead>
   <thead class="gt_col_headings">
@@ -4796,27 +4805,35 @@ html {
   <tbody class="gt_table_body">
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Athlete</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">76</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">14.5&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">10.5&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">6.6&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">9.2&percnt;</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">79</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">13.9&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">10.1&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">6.3&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">10.1&percnt;</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Musician</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">36</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">8.3&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">11.1&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">13.9&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">13.9&percnt;</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">38</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">7.9&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">10.5&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">15.8&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">13.2&percnt;</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Actor/Actress</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">125</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">8&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">9.6&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">7.2&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">4.8&percnt;</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">130</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">7.7&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">9.2&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">6.9&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">4.6&percnt;</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Reality TV Star</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">26</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">7.7&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">7.7&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">7.7&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">3.8&percnt;</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Model</td>
@@ -4828,19 +4845,11 @@ html {
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Media Personality</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">20</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">5&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">5&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">25&percnt;</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Reality TV Star</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">23</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">4.3&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">8.7&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">8.7&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">4.3&percnt;</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">21</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">4.8&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">4.8&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">4.8&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">23.8&percnt;</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Businessperson</td>
@@ -5244,7 +5253,7 @@ html {
       <th colspan="6" class="gt_heading gt_title gt_font_normal" style="font-family: Anton; font-size: xx-large; text-align: left;">Most <span style="color:#F2CB05">Successful</span> Dancing With the Stars <i>"Professions"</i></th>
     </tr>
     <tr>
-      <th colspan="6" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border" style="font-family: Caveat; font-size: x-large; text-align: left;"><span style = 'color: grey'>Covering Seasons 1 to 28 (excluding All-Star Season 15)</span></th>
+      <th colspan="6" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border" style="font-family: Caveat; font-size: x-large; text-align: left;"><span style = 'color: grey'>Covering Seasons 1 to 29 (excluding All-Star Season 15)</span></th>
     </tr>
   </thead>
   <thead class="gt_col_headings">
@@ -5265,27 +5274,35 @@ html {
   <tbody class="gt_table_body">
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Athlete</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">76</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">14.5&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">10.5&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">6.6&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">9.2&percnt;</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">79</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">13.9&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">10.1&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">6.3&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">10.1&percnt;</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Musician</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">36</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">8.3&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">11.1&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">13.9&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">13.9&percnt;</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">38</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">7.9&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">10.5&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">15.8&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">13.2&percnt;</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Actor/Actress</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">125</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">8&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">9.6&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">7.2&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">4.8&percnt;</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">130</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">7.7&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">9.2&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">6.9&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">4.6&percnt;</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Reality TV Star</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">26</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">7.7&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">7.7&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">7.7&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">3.8&percnt;</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Model</td>
@@ -5297,19 +5314,11 @@ html {
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Media Personality</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">20</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">5&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">0&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">5&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">25&percnt;</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Reality TV Star</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">23</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">4.3&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">8.7&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">8.7&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">4.3&percnt;</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">21</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">4.8&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">4.8&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">4.8&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center;">23.8&percnt;</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Businessperson</td>
@@ -5713,7 +5722,7 @@ html {
       <th colspan="6" class="gt_heading gt_title gt_font_normal" style="font-family: Anton; font-size: xx-large; text-align: left;">Most <span style="color:#F2CB05">Successful</span> Dancing With the Stars <i>"Professions"</i></th>
     </tr>
     <tr>
-      <th colspan="6" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border" style="font-family: Caveat; font-size: x-large; text-align: left;"><span style = 'color: grey'>Covering Seasons 1 to 28 (excluding All-Star Season 15)</span></th>
+      <th colspan="6" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border" style="font-family: Caveat; font-size: x-large; text-align: left;"><span style = 'color: grey'>Covering Seasons 1 to 29 (excluding All-Star Season 15)</span></th>
     </tr>
   </thead>
   <thead class="gt_col_headings">
@@ -5734,51 +5743,51 @@ html {
   <tbody class="gt_table_body">
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Athlete</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">76</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #3FC1C9;">14.5&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #4FC4CC;">10.5&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #E7F6F7;">6.6&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #DAF1F2;">9.2&percnt;</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">79</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #3FC1C9;">13.9&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #4BC3CB;">10.1&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #E8F6F7;">6.3&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #D6F0F1;">10.1&percnt;</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Musician</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">36</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #9EDCE0;">8.3&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #3FC1C9;">11.1&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #CCECEE;">13.9&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #C6EAEC;">13.9&percnt;</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">38</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #A0DCE0;">7.9&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #3FC1C9;">10.5&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #C5E9EC;">15.8&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #C9EBED;">13.2&percnt;</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Actor/Actress</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">125</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #A2DDE1;">8&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #64CAD0;">9.6&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #E5F5F6;">7.2&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #ECF8F8;">4.8&percnt;</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">130</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #A2DDE1;">7.7&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #61C9D0;">9.2&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #E6F6F6;">6.9&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #ECF8F9;">4.6&percnt;</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Reality TV Star</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">26</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #A2DDE1;">7.7&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #81D2D7;">7.7&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #E3F4F5;">7.7&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #EFF9FA;">3.8&percnt;</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Model</td>
       <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">14</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #ADE1E4;">7.1&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #92D7DC;">7.1&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #A9E0E3;">7.1&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #8BD5DA;">7.1&percnt;</td>
       <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #FFFFFF;">0&percnt;</td>
       <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #E2F4F5;">7.1&percnt;</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Media Personality</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">20</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #C6EAEC;">5&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #FFFFFF;">0&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #EDF8F9;">5&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #95D9DD;">25&percnt;</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Reality TV Star</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">23</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #CEEDEF;">4.3&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #76CFD5;">8.7&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #DFF3F4;">8.7&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #EDF8F9;">4.3&percnt;</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">21</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #C7EAEC;">4.8&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #B4E3E6;">4.8&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #EEF8F9;">4.8&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #9BDADF;">23.8&percnt;</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Businessperson</td>
@@ -5882,14 +5891,14 @@ html {
           height = px(120), aspect_ratio = 1.5)
     }
   )</code></pre>
-<p>Now we can put it all together. Besides adding in the plots, there’s a few steps at formatting the Most Recent Winner cell. But nothing that hasn’t been covered earlier.</p>
+<p>Now we can put it all together. Besides adding in the plots, there’s a few steps to format the Most Recent Winner cell. But nothing that hasn’t been covered earlier.</p>
 <pre class="r"><code>#Base Table
 gt(contestant_summary_with_graph) %&gt;% 
   #Add Titles
   tab_header(
     title = html(&#39;Most &lt;span style=&quot;color:#F2CB05&quot;&gt;Successful&lt;/span&gt; Dancing With the Stars &lt;i&gt;&quot;Professions&quot;&lt;/i&gt;&#39;),
     subtitle = html(
-      &quot;&lt;span style = &#39;color: grey&#39;&gt;Covering Seasons 1 to 28 (excluding All-Star Season 15)&lt;/span&gt;&quot;
+      &quot;&lt;span style = &#39;color: grey&#39;&gt;Covering Seasons 1 to 29 (excluding All-Star Season 15)&lt;/span&gt;&quot;
     )
   ) %&gt;% 
   #Format Title
@@ -6364,7 +6373,7 @@ html {
       <th colspan="8" class="gt_heading gt_title gt_font_normal" style="font-family: Anton; font-size: xx-large; text-align: left;">Most <span style="color:#F2CB05">Successful</span> Dancing With the Stars <i>"Professions"</i></th>
     </tr>
     <tr>
-      <th colspan="8" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border" style="font-family: Caveat; font-size: x-large; text-align: left;"><span style = 'color: grey'>Covering Seasons 1 to 28 (excluding All-Star Season 15)</span></th>
+      <th colspan="8" class="gt_heading gt_subtitle gt_font_normal gt_bottom_border" style="font-family: Caveat; font-size: x-large; text-align: left;"><span style = 'color: grey'>Covering Seasons 1 to 29 (excluding All-Star Season 15)</span></th>
     </tr>
   </thead>
   <thead class="gt_col_headings">
@@ -6387,63 +6396,63 @@ html {
   <tbody class="gt_table_body">
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Athlete</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">76</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #3FC1C9;">14.5&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #4FC4CC;">10.5&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #E7F6F7;">6.6&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #DAF1F2;">9.2&percnt;</td>
-      <td class="gt_row gt_center"><img cid="pkcyvjeqdgnm__temp_ggplot.png" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAu4AAAH0CAMAAABVZliYAAAAulBMVEUAAABmZmZmZoFmZp1mgYFmgZ1mgbZmnc+BZmaBgWaBgYGBgZ2BgbaBnbaBnc+Bts+BtuedZmadgWadgYGdnZ2dnbadts+dtuedz+edz/+2gWa2nYG2nZ22tp22ts+2z8+2z+e25//PnWbPnYHPtoHPtp3Pz7bPz8/P5+fP5//P///ntoHntp3nz53nz7bnz8/n57bn58/n5+fn5//n/+fn////z53/1wD/57b/58//5+f//8///+f///+NxnQNAAAACXBIWXMAAA9hAAAPYQGoP6dpAAAOSklEQVR4nO3de3/T9hXAYZxyCWSsrBd6ZzSMdjQr7drBgDnv/20N+SonNiGxjnSs8zx/9JPYov4p+UrWLdatcyjj1tADgP7InULkTiFypxC5U4jcKUTuFCJ3CpE7hcidQuROIXKnELlTiNwpRO4UIncKkTuFyJ1C5E4hcqcQuVNI1txvbRh6NIxEvpLmgf93g+zpRKqCtoS+JfuhR8nhShTPh0vXPPvL0s0Vq/WtzQ89Zg5Ojmau2fo6+aEHzmFJEMx1V+xW8tzU4LHs0bqVPNc0dCl7x654Pt6wmey/am8XL3muMGgi3cW+Sn7I2SG94frYZw9V8dzIYHFEtL4qXvJsNVQYcbUvkx9oxshsoCqCa58XP8yskdggTYRstW8LXvJsGKKHfmJfJT/AHJLUADH0Wbviaeu/hL5rXxSvefrPvafN9h3N9zyzZNNzAcPFrnj6zn3g2hfFa76sXn/zCWqfU3xRff7a09TesJavqMffeKra5yRfTO3cG1bzhfT3i05a+1yW5m9dx9CDPUC9/cxS1z43REQXCr7BeOV/DX39jA6g9oXwcm7e98eMXPsf0tOP5XBqn+s8mqDCr54D5bf187M4tNpX9mkmbC1+85koX34vP4CDrb3lQ/uK254btvBdqoffx2yn/MV3IXPYV6nZfQ9ze5A11FEq+/i5VPthKFF9+Oyp/bCMu3q5s81Io4+eI7UfstE1Hzwzaj98Y1rRy52PMo7kY2dB7aNy+MnHXgw19O+Hzh128pFDP8zTjVzpcIsPHLfYR+xAV/KBYx76N0KwAwxe7tzcwa3i5c5eDit4ubOnQ9qMlzsdOJTg5U4nDiN4udORQwhe7nQm/0a83OlS8uDlTrdSBy93upa4d7nTubwreLkTIGvwcidEzuDlTpCMwcudMPl6lztx0vUudwJl26CRO6FyBS93gmUKXu6Ey9O73ImXpne504MsvcudPiTZgJc7/UjRu9zpSYYVvNzpzfC9y53+DN673OnR0L3LnT4N3Lvc6dWwvcudfg16gEbu9G3A3uVO74ZbwcudAQzVu9wZwkC9y51BDNO73BnGIL3LnYEM0bvcGYjcqWSA3uXOYPrvXe4Mp/fe5c6A+j6/KncG1W/vcmdYvfYudwbWZ+9yZ2g99i53hiZ3Kumvd7kzvN56lzsJ9NW73Mmgp97lTgr9nF+VOznInUr66F3uZNFD73Injfje5U4e4b3LnTzkTiXRvcudTIJ7lzupxPYud3IJ7V3uJBPZu9zJJrBJuZNNXJJyJ524JOVOOnFJyp104pKUO+nEJSl30olLUu6kE5ek3EknLkm5k05cknInnbgk5U46cUnKnXTikpQ76cQlKXfSiUtS7qQTl6TcSScuSbmTTlyScieduCTlTjpxScqddOKSlDvpxCUpd9KJS1LupBOXpNxJJy5JuZNOXJJyJ524JOVOOnFJyp104pKUO+nEJSl30olLUu6kE5ek3EknLkm5k05cknInnbgk5U46cUnKnXTikpQ76cQlKXfSiUtS7qQTl6TcSScuSbmTTlyScieduCTlTjpxScqddOKSlDvpxCUpd9KJS1LupBOXpNxJJy5JuZNOXJJyJ524JOVOOnFJyp104pKUO+nEJSl30olLUu6kE5ek3EknLkm5k05cknInnbgk5U46cUnKnXTikpQ76cQlKXfSiUtS7qQTl6TcSScuSbmTTlyScieduCTlTjpxScqddOKSlDvpxCUpd9KJS1LupBOXpNxJJy5JuZNOXJJyJ524JOVOOnFJyp104pKUO+nEJSl30olLUu6kE5ek3EknLkm5k05cknInnbgk5U46cUnKnXTikpQ76cQlKXfSiUtS7qQTl6TcSScuSbmTTlyScieduCTlTjpxScqddOKSlDvpxCUpd9KJS1LupBOXpNxJJy5JuZNOXJJyJ524JOVOOnFJyp104pKUO+nEJSl30olLUu6kE5ek3EknLkm5k05cknInnbgk5U46cUnKnXTikpQ76cQlKXfSiUtS7qQTl6TcSScuSbmTTlyScieduCTlTjpxScqddOKSlDvp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" style="height:120px;"></td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">79</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #3FC1C9;">13.9&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #4BC3CB;">10.1&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #E8F6F7;">6.3&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #D6F0F1;">10.1&percnt;</td>
+      <td class="gt_row gt_center"><img cid="pkcyvjeqdgnm__temp_ggplot.png" src="data:image/png;base64,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" style="height:120px;"></td>
       <td class="gt_row gt_left" style="font-size: 13px; text-align: left; vertical-align: middle; font-style: italic;">Adam Rippon<br> (Season 26)</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Musician</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">36</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #9EDCE0;">8.3&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #3FC1C9;">11.1&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #CCECEE;">13.9&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #C6EAEC;">13.9&percnt;</td>
-      <td class="gt_row gt_center"><img cid="rgoufbwhykzt__temp_ggplot.png" src="data:image/png;base64,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" style="height:120px;"></td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">38</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #A0DCE0;">7.9&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #3FC1C9;">10.5&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #C5E9EC;">15.8&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #C9EBED;">13.2&percnt;</td>
+      <td class="gt_row gt_center"><img cid="rgoufbwhykzt__temp_ggplot.png" src="data:image/png;base64,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" style="height:120px;"></td>
       <td class="gt_row gt_left" style="font-size: 13px; text-align: left; vertical-align: middle; font-style: italic;">Kellie Pickler<br> (Season 16)</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Actor/Actress</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">125</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #A2DDE1;">8&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #64CAD0;">9.6&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #E5F5F6;">7.2&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #ECF8F8;">4.8&percnt;</td>
-      <td class="gt_row gt_center"><img cid="ofhjcdsqubvr__temp_ggplot.png" src="data:image/png;base64,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" style="height:120px;"></td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">130</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #A2DDE1;">7.7&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #61C9D0;">9.2&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #E6F6F6;">6.9&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #ECF8F9;">4.6&percnt;</td>
+      <td class="gt_row gt_center"><img cid="ofhjcdsqubvr__temp_ggplot.png" src="data:image/png;base64,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" style="height:120px;"></td>
       <td class="gt_row gt_left" style="font-size: 13px; text-align: left; vertical-align: middle; font-style: italic;">Jordan Fisher<br> (Season 25)</td>
+    </tr>
+    <tr>
+      <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Reality TV Star</td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">26</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #A2DDE1;">7.7&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #81D2D7;">7.7&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #E3F4F5;">7.7&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #EFF9FA;">3.8&percnt;</td>
+      <td class="gt_row gt_center"><img cid="kgwaihvujrxc__temp_ggplot.png" src="data:image/png;base64,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" style="height:120px;"></td>
+      <td class="gt_row gt_left" style="font-size: 13px; text-align: left; vertical-align: middle; font-style: italic;">Kaitlyn Bristowe<br> (Season 29)</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Model</td>
       <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">14</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #ADE1E4;">7.1&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #92D7DC;">7.1&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #A9E0E3;">7.1&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #8BD5DA;">7.1&percnt;</td>
       <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #FFFFFF;">0&percnt;</td>
       <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #E2F4F5;">7.1&percnt;</td>
-      <td class="gt_row gt_center"><img cid="kgwaihvujrxc__temp_ggplot.png" src="data:image/png;base64,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" style="height:120px;"></td>
+      <td class="gt_row gt_center"><img cid="vrtukcawgqsn__temp_ggplot.png" src="data:image/png;base64,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" style="height:120px;"></td>
       <td class="gt_row gt_left" style="font-size: 13px; text-align: left; vertical-align: middle; font-style: italic;">Brooke Burke<br> (Season 7)</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Media Personality</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">20</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #C6EAEC;">5&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #FFFFFF;">0&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #EDF8F9;">5&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #95D9DD;">25&percnt;</td>
-      <td class="gt_row gt_center"><img cid="vrtukcawgqsn__temp_ggplot.png" src="data:image/png;base64,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" style="height:120px;"></td>
+      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">21</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #C7EAEC;">4.8&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #B4E3E6;">4.8&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #EEF8F9;">4.8&percnt;</td>
+      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #9BDADF;">23.8&percnt;</td>
+      <td class="gt_row gt_center"><img cid="hlpufxbiwaqd__temp_ggplot.png" src="data:image/png;base64,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" style="height:120px;"></td>
       <td class="gt_row gt_left" style="font-size: 13px; text-align: left; vertical-align: middle; font-style: italic;">Bobby Bones<br> (Season 27)</td>
-    </tr>
-    <tr>
-      <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Reality TV Star</td>
-      <td class="gt_row gt_center" style="font-family: Spartan; font-size: medium; text-align: center;">23</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #CEEDEF;">4.3&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #76CFD5;">8.7&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #DFF3F4;">8.7&percnt;</td>
-      <td class="gt_row gt_right" style="font-family: Spartan; font-size: medium; text-align: center; color: #000000; background-color: #EDF8F9;">4.3&percnt;</td>
-      <td class="gt_row gt_center"><img cid="hlpufxbiwaqd__temp_ggplot.png" src="data:image/png;base64,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" style="height:120px;"></td>
-      <td class="gt_row gt_left" style="font-size: 13px; text-align: left; vertical-align: middle; font-style: italic;">Hannah Brown<br> (Season 28)</td>
     </tr>
     <tr>
       <td class="gt_row gt_left" style="font-family: &#39;Secular One&#39;; font-size: large;">Businessperson</td>
@@ -6488,5 +6497,5 @@ html {
 </div>
 <div id="so-what-is-the-most-successful-profession-in-dwts" class="section level1">
 <h1>So what is the most successful “profession” in DWTS?</h1>
-<p>Seems pretty clearly to be the athletes as close to 15% of the Athletes have wound up winner. On the other end of the spectrum, the Reality TV stars and Media Personalities have faired less well… although they have gotten their first wins in the last two seasons.</p>
+<p>Seems pretty clearly to be the athletes as close to 14% of the Athletes have wound up winning. On the other end of the spectrum, the Media Personalities have faired less well with the lowest winning percentage of a group with 10+ stars and nearly 1 in 4 coming in last place… Reality TV Stars, while in the middle of the pack has been surging with ex-Bachelorettes winning the last two seasons (28 and 29).</p>
 </div>

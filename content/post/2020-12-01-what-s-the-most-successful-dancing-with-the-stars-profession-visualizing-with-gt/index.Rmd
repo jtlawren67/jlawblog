@@ -2,7 +2,7 @@
 title: What's the most successful Dancing With the Stars "Profession"? Visualizing
   with {gt}
 author: JLaw
-date: '2020-12-01'
+date: '2020-11-24'
 slug: what-s-the-most-successful-dancing-with-the-stars-profession-visualizing-with-gt
 categories:
   - R
@@ -13,7 +13,7 @@ tags:
 subtitle: ''
 summary: ''
 authors: []
-lastmod: '2020-12-01T18:05:43-05:00'
+lastmod: '2020-11-24T12:05:43-05:00'
 featured: no
 image:
   caption: ''
@@ -63,7 +63,7 @@ In order to find the most successful star type, we need to get a list of all the
 
 ![](contestant_list_example.PNG)
 
-Since there are 28 completed Dancing with the Stars seasons this seems like a job for a function to iterate through each season's Wikipedia page to extract that table.  One note is that Season 15 was an all-star season so it will be excluded from this analysis  Unfortunately, the contestant table isn't always in the same place on the page, so the function will need to be a little flexible.
+Since there are 29 completed Dancing with the Stars seasons this seems like a job for a function to iterate through each season's Wikipedia page to extract that table.  One note is that Season 15 was an all-star season so it will be excluded from this analysis  Unfortunately, the contestant table isn't always in the same place on the page, so the function will need to be a little flexible.
 
 ```{r define_scrape_function}
 dwts_constants <- function(season_number, tbl_number){
@@ -107,7 +107,8 @@ contestants <- dwts_constants(1, 2) %>%
   bind_rows(dwts_constants(25, 2)) %>% 
   bind_rows(dwts_constants(26, 2)) %>% 
   bind_rows(dwts_constants(27, 2)) %>% 
-  bind_rows(dwts_constants(28, 2))
+  bind_rows(dwts_constants(28, 2)) %>% 
+  bind_rows(dwts_constants(29, 2))
 ```
 
 Directly from this function the raw data looks like:
@@ -178,8 +179,11 @@ contestant_clean <- contestants %>%
       TRUE ~ "Other"
     )
   ) %>% 
+  # Fix Celebrity Column for Season 29
+  mutate(celebrity = if_else(is.na(celebrity), celebrity_12_13, celebrity)) %>% 
   # Remove Unneeded Columns
-  select(-contains('professional'), -ref, -status, -eliminated_state) %>% 
+  select(-contains('professional'), -ref, -status, 
+         -eliminated_state, -celebrity_12_13) %>% 
   #Want Scores to be between 0 and 1 where 1 is Last Place and 0 is first place.
   mutate(scaled_place = (place-1)/(n_contestants-1))
 ```
@@ -257,7 +261,7 @@ The `tab_header()` function allows alterations to the header of the table.  The 
   tab_header(
     title = html('Most <span style="color:#F2CB05">Successful</span> Dancing With the Stars <i>"Professions"</i>'),
     subtitle = html(
-      "<span style = 'color: grey'>Covering Seasons 1 to 28 (excluding All-Star Season 15)</span>"
+      "<span style = 'color: grey'>Covering Seasons 1 to 29 (excluding All-Star Season 15)</span>"
     )
   ))
 ```
@@ -266,7 +270,7 @@ The `tab_header()` function allows alterations to the header of the table.  The 
 
 The `tab_style()` function adds various formatting to the table rows and cells.  The style section of the arguments tells `gt` what the style will be and the location argument says where that style should be applied.
 
-The `google_font()` package allows access to all the fonts on the [Google Fonts](https://fonts.google.com/) site.
+The `google_font()` function allows access to all the fonts on the [Google Fonts](https://fonts.google.com/) site.
 
 In this step I'm making the title left-justified, size XX-Large, and using the Anton font.
 
@@ -525,7 +529,7 @@ text_transform(
   )
 ```
 
-Now we can put it all together.  Besides adding in the plots, there's a few steps at formatting the Most Recent Winner cell.  But nothing that hasn't been covered earlier.
+Now we can put it all together.  Besides adding in the plots, there's a few steps to format the Most Recent Winner cell.  But nothing that hasn't been covered earlier.
 
 
 ```{r final_table}
@@ -535,7 +539,7 @@ gt(contestant_summary_with_graph) %>%
   tab_header(
     title = html('Most <span style="color:#F2CB05">Successful</span> Dancing With the Stars <i>"Professions"</i>'),
     subtitle = html(
-      "<span style = 'color: grey'>Covering Seasons 1 to 28 (excluding All-Star Season 15)</span>"
+      "<span style = 'color: grey'>Covering Seasons 1 to 29 (excluding All-Star Season 15)</span>"
     )
   ) %>% 
   #Format Title
@@ -658,4 +662,4 @@ gt(contestant_summary_with_graph) %>%
 
 # So what is the most successful "profession" in DWTS?
 
-Seems pretty clearly to be the athletes as close to 15% of the Athletes have wound up winner.  On the other end of the spectrum, the Reality TV stars and Media Personalities have faired less well... although they have gotten their first wins in the last two seasons.
+Seems pretty clearly to be the athletes as close to 14% of the Athletes have wound up winning.  On the other end of the spectrum, the Media Personalities have faired less well with the lowest winning percentage of a group with 10+ stars and nearly 1 in 4 coming in last place... Reality TV Stars, while in the middle of the pack has been surging with ex-Bachelorettes winning the last two seasons (28 and 29).
