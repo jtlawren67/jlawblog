@@ -16,7 +16,7 @@ tags:
 subtitle: ''
 summary: ''
 authors: []
-lastmod: '2020-12-01T03:33:25-05:00'
+lastmod: '2020-12-06T03:33:25-05:00'
 featured: no
 image:
   caption: ''
@@ -75,15 +75,15 @@ nhl_data <- read_html('https://www.hockey-reference.com/awards/stanley.html') %>
 
 ### Getting Data on Team Colors
 
-For one of the future plots I want to use each team's color to for their data.  This information comes from [teamcolorcodes.com](https://teamcolorcodes.com).  Each team page has a formulaic URL where the team name is '-' delimited.  Since this page only has information on current teams older teams like the Toronto Arenas or Montreal Maroons will not appear.  Typically, these names might wind up breaking a loop when they throw an error.  However, the use of the `possibly()` function from `purrr` will accommodate the error handling.  The `possibly()` function wraps another function and has an `otherwise` parameter that allows the user to say what the function should provide in case of an error.
+For one of the future plots I want to use each team's color to represent their data.  This information comes from [teamcolorcodes.com](https://teamcolorcodes.com).  Each team page has a formulaic URL where the team name is '-' delimited.  Since this page only has information on current teams, older teams like the Toronto Arenas or Montreal Maroons will not appear.  Typically, these names might wind up breaking a loop when they throw an error.  However, the use of the `possibly()` function from `purrr` will accommodate the error handling.  The `possibly()` function wraps another function and has an `otherwise` parameter that allows the user to say what the function should provide in case of an error.
 
 In this case, the `possibly()` function wraps an anonymous function that:
 
-* Takes a string for a team name, t, which is converted to lower-case and has the spaces replaced with dashes
+* Takes a string for a team name, `t`, which is converted to lower-case and has the spaces replaced with dashes
 * Scrapes the first instance of the `.colorblock` CSS class from the [teamcolorcodes.com](https://teamcolorcodes.com) webpage for the specific team as text.
 * Performance a regular expression map for the HEX code for the color
 * Since `str_match` returns a list where the first element is the entire match and each additional element represents a capture group, pulls the 2nd element from the list.
-* Finally, the function returns a 1-row tibble with the team name, t, and the HEX code, color.
+* Finally, the function returns a 1-row tibble with the team name, `t`, and the HEX code, named `color.`
 * In the case that there's an error, the function will return a 1-row tibble with the team value set to 'non-match' and the color value set to `NA`.
 
 The `map_dfr` function from `purrr` is used to run the above function for all unique team names and appends the results into a data.frame.
@@ -383,7 +383,7 @@ The `ggplot2` ecosystem is quite impressive and this post hardly scratches the s
 * `geom_quasirandom` from `ggbeeswarm` will make a 'violin-type' plot but with specific points that can then be operated on.
 * Finally, `ggimage` can change the geom to reference image URLs.
 
-And as a bonus, I dynamically generates the tabsets for all the teams.
+And as a bonus, I dynamically generated the tabsets for all the teams!
 
 ## Appendix: Code for Dynamic Tab Generation in Blogdown
 

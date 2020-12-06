@@ -16,7 +16,7 @@ tags:
 subtitle: ''
 summary: ''
 authors: []
-lastmod: '2020-12-01T03:33:25-05:00'
+lastmod: '2020-12-06T03:33:25-05:00'
 featured: no
 image:
   caption: ''
@@ -62,14 +62,14 @@ loadfonts(device = &quot;win&quot;) # Actually loads the fonts</code></pre>
 </div>
 <div id="getting-data-on-team-colors" class="section level3">
 <h3>Getting Data on Team Colors</h3>
-<p>For one of the future plots I want to use each team’s color to for their data. This information comes from <a href="https://teamcolorcodes.com">teamcolorcodes.com</a>. Each team page has a formulaic URL where the team name is ‘-’ delimited. Since this page only has information on current teams older teams like the Toronto Arenas or Montreal Maroons will not appear. Typically, these names might wind up breaking a loop when they throw an error. However, the use of the <code>possibly()</code> function from <code>purrr</code> will accommodate the error handling. The <code>possibly()</code> function wraps another function and has an <code>otherwise</code> parameter that allows the user to say what the function should provide in case of an error.</p>
+<p>For one of the future plots I want to use each team’s color to represent their data. This information comes from <a href="https://teamcolorcodes.com">teamcolorcodes.com</a>. Each team page has a formulaic URL where the team name is ‘-’ delimited. Since this page only has information on current teams, older teams like the Toronto Arenas or Montreal Maroons will not appear. Typically, these names might wind up breaking a loop when they throw an error. However, the use of the <code>possibly()</code> function from <code>purrr</code> will accommodate the error handling. The <code>possibly()</code> function wraps another function and has an <code>otherwise</code> parameter that allows the user to say what the function should provide in case of an error.</p>
 <p>In this case, the <code>possibly()</code> function wraps an anonymous function that:</p>
 <ul>
-<li>Takes a string for a team name, t, which is converted to lower-case and has the spaces replaced with dashes</li>
+<li>Takes a string for a team name, <code>t</code>, which is converted to lower-case and has the spaces replaced with dashes</li>
 <li>Scrapes the first instance of the <code>.colorblock</code> CSS class from the <a href="https://teamcolorcodes.com">teamcolorcodes.com</a> webpage for the specific team as text.</li>
 <li>Performance a regular expression map for the HEX code for the color</li>
 <li>Since <code>str_match</code> returns a list where the first element is the entire match and each additional element represents a capture group, pulls the 2nd element from the list.</li>
-<li>Finally, the function returns a 1-row tibble with the team name, t, and the HEX code, color.</li>
+<li>Finally, the function returns a 1-row tibble with the team name, <code>t</code>, and the HEX code, named <code>color.</code></li>
 <li>In the case that there’s an error, the function will return a 1-row tibble with the team value set to ‘non-match’ and the color value set to <code>NA</code>.</li>
 </ul>
 <p>The <code>map_dfr</code> function from <code>purrr</code> is used to run the above function for all unique team names and appends the results into a data.frame.</p>
@@ -438,7 +438,7 @@ I would have expected there to be a trend of some sort but there’s not a very 
 <li><code>geom_quasirandom</code> from <code>ggbeeswarm</code> will make a ‘violin-type’ plot but with specific points that can then be operated on.</li>
 <li>Finally, <code>ggimage</code> can change the geom to reference image URLs.</li>
 </ul>
-<p>And as a bonus, I dynamically generates the tabsets for all the teams.</p>
+<p>And as a bonus, I dynamically generated the tabsets for all the teams!</p>
 </div>
 <div id="appendix-code-for-dynamic-tab-generation-in-blogdown" class="section level2">
 <h2>Appendix: Code for Dynamic Tab Generation in Blogdown</h2>
