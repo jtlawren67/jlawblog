@@ -1,0 +1,498 @@
+---
+title: Exploring NHL Stanley Cup Champion's Points Percentage In Four GGPlots
+author: JLaw
+date: '2020-12-01'
+slug: exploring-nhl-stanley-cup-champion-s-points-percentage-in-four-ggplots
+categories:
+  - R
+  - DataViz
+tags:
+  - rvest
+  - ggbeeswarm
+  - ggridges
+  - ggimage
+  - extrafont
+  - purrr
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2020-12-06T03:33:25-05:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+
+
+<div id="motivation" class="section level2">
+<h2>Motivation</h2>
+<p>While browsing Reddit’s <a href="https://www.reddit.com/r/dataisbeautiful/">r/DataIsBeautiful</a> sub-reddit I came across a post from Fabio Votta showing a <a href="https://www.reddit.com/r/dataisbeautiful/comments/jwzsm6/oc_countylevel_results_of_us_2020_election/">beeswarm plot of US County vote share in the 2020 Election</a>. Having never seen a beeswarm plot before I wanted to come up with an excuse to try it out. <strong>As an NHL fan, I decided to look at the Points Percentage of NHL Stanley Cup champions</strong>. This analysis will use information from <a href="https://www.hockey-reference.com/awards/stanley.html">hockey-reference.com</a> and <code>ggplot</code> to visualize the information.</p>
+<div id="sidebar-what-is-a-points-percentage" class="section level3">
+<h3>Sidebar: What is a Points Percentage?</h3>
+<p>In the NHL a win is worth 2 points, a loss with worth 0 points, and a tie (or Overtime Loss beginning in the 2005-2006 season) is worth one point. The Points Percentage is the number of points earned by the team (2*Wins + 1*(Ties + OTL)) divided the number of potential points (2*Games Played).</p>
+</div>
+</div>
+<div id="getting-the-data" class="section level2">
+<h2>Getting the Data</h2>
+<p>The data for this analysis will come from <a href="https://www.hockey-reference.com/awards/stanley.html">hockey-reference.com</a> which provides statistics on the Stanley Cup Champion teams from 1918 through 2020 (with some exceptions). The points percentage is provided as a direct column in the table.</p>
+<div id="setting-up-libraries" class="section level3">
+<h3>Setting Up Libraries</h3>
+<p>The libraries used in this analysis include stalwarts like tidyverse as well as ggplot extensions such as <code>ggtext</code>, <code>ggbeeswarm</code>, <code>ggridges</code>, <code>ggimage</code> to do different visualizations. The <a href="https://github.com/wch/extrafont/"><code>extrafont</code></a> package enables the use of the fonts installed on my machine in ggplots. The <code>loadfonts(device = "win")</code> function loads the additional fonts (if running for the first time the <code>font_import()</code> function needs to be called to build the references).</p>
+<pre class="r"><code>library(tidyverse) # Data Manipulation and Visualizations
+library(rvest) # Web Scraping the NHL Champion Data &amp; Team Colors
+library(ggbeeswarm) # Creating Beeswarm Plots
+library(ggtext) # Enabling Use of Markdown in ggplots
+library(ggridges) # Creating Ridge Density Plots
+library(ggimage) # Creating Plots with Images as the Points 
+library(glue) # Package for String Manipulation
+library(extrafont) # Package to enable use of additional fonts for plotting
+loadfonts(device = &quot;win&quot;) # Actually loads the fonts</code></pre>
+</div>
+<div id="getting-the-data-on-the-champions" class="section level3">
+<h3>Getting the Data on the Champions</h3>
+<p>The points data for the Stanley Cup Champions comes from <a href="https://www.hockey-reference.com/awards/stanley.html">hockey-reference.com</a>. I’ll scrape the table from this website by using <code>rvest</code> and referencing the CSS class <code>.stats_table</code>. Since there’s only one table on the page I can use <code>html_node</code> vs. <code>html_nodes</code>. Eventually I’m planning on joining some additional data to this data frame so I’m doing a minimal amount of data cleaning such as changing the Chicago Blackhawks to 1 word so that it matches the second data set. Additionally I’m renaming the points percentage column to something more R friendly.</p>
+<pre class="r"><code>nhl_data &lt;- read_html(&#39;https://www.hockey-reference.com/awards/stanley.html&#39;) %&gt;% 
+  html_node(css = &#39;.stats_table&#39;) %&gt;% 
+  html_table() %&gt;% 
+  mutate(Team = str_replace_all(Team, &quot;Black Hawks&quot;, &quot;Blackhawks&quot;)) %&gt;% 
+  rename(pts_pct = `PTS%`)</code></pre>
+</div>
+<div id="getting-data-on-team-colors" class="section level3">
+<h3>Getting Data on Team Colors</h3>
+<p>For one of the future plots I want to use each team’s color to represent their data. This information comes from <a href="https://teamcolorcodes.com">teamcolorcodes.com</a>. Each team page has a formulaic URL where the team name is ‘-’ delimited. Since this page only has information on current teams, older teams like the Toronto Arenas or Montreal Maroons will not appear. Typically, these names might wind up breaking a loop when they throw an error. However, the use of the <code>possibly()</code> function from <code>purrr</code> will accommodate the error handling. The <code>possibly()</code> function wraps another function and has an <code>otherwise</code> parameter that allows the user to say what the function should provide in case of an error.</p>
+<p>In this case, the <code>possibly()</code> function wraps an anonymous function that:</p>
+<ul>
+<li>Takes a string for a team name, <code>t</code>, which is converted to lower-case and has the spaces replaced with dashes</li>
+<li>Scrapes the first instance of the <code>.colorblock</code> CSS class from the <a href="https://teamcolorcodes.com">teamcolorcodes.com</a> webpage for the specific team as text.</li>
+<li>Performance a regular expression map for the HEX code for the color</li>
+<li>Since <code>str_match</code> returns a list where the first element is the entire match and each additional element represents a capture group, pulls the 2nd element from the list.</li>
+<li>Finally, the function returns a 1-row tibble with the team name, <code>t</code>, and the HEX code, named <code>color.</code></li>
+<li>In the case that there’s an error, the function will return a 1-row tibble with the team value set to ‘non-match’ and the color value set to <code>NA</code>.</li>
+</ul>
+<p>The <code>map_dfr</code> function from <code>purrr</code> is used to run the above function for all unique team names and appends the results into a data.frame.</p>
+<pre class="r"><code>get_color &lt;-  possibly(
+  function(t){
+    tibble(
+      team = t,
+      color = glue(&quot;https://teamcolorcodes.com/{t}-color-codes/&quot;, 
+                   t = str_replace_all(
+                     str_to_lower(t), &#39; &#39;, &#39;-&#39;)
+                   ) %&gt;% 
+              read_html() %&gt;% 
+              html_node(css = &quot;.colorblock&quot;) %&gt;% 
+              html_text() %&gt;% 
+              str_match(&quot;Hex Color: (#[0-9A-Za-z]{6})&quot;) %&gt;% 
+              .[, 2]
+    )
+  },
+  otherwise = tibble(team = &quot;non-match&quot;, color = NA_character_))
+
+nhl_colors &lt;- map_dfr(unique(nhl_data$Team), get_color)</code></pre>
+</div>
+<div id="combining-the-data" class="section level3">
+<h3>Combining the Data</h3>
+<p>Finally, the color data is joined to the Champions data. In the cases where there were not matches in the color data, I’m using <em>black</em> as a default color.</p>
+<pre class="r"><code>nhl_w_color &lt;- nhl_data %&gt;% 
+  left_join(nhl_colors, by = c(&quot;Team&quot; = &quot;team&quot;)) %&gt;% 
+  mutate(
+    color = if_else(is.na(color), &quot;black&quot;, color)
+  ) </code></pre>
+</div>
+</div>
+<div id="visualizations" class="section level2">
+<h2>Visualizations</h2>
+<div id="the-overall-distribution-of-points-percentage-for-nhl-stanley-cup-champions" class="section level3">
+<h3>The Overall Distribution of Points Percentage for NHL Stanley Cup Champions</h3>
+<p>This code block is a doozy as I did a lot of annotations to add error bars, text labels, arrows, and theme formatting to change what at its heart is a standard density plot.</p>
+<pre class="r"><code>nhl_w_color %&gt;% 
+  ggplot(aes(x = pts_pct)) + 
+    geom_density(fill = &#39;#8394A1&#39;) + 
+    annotate(&quot;errorbarh&quot;,
+            xmin = quantile(nhl_w_color$pts_pct, .10),
+            xmax = quantile(nhl_w_color$pts_pct, .90),
+            y = 6,
+            color = &quot;#e6e7eb&quot;) + 
+    annotate(&quot;linerange&quot;,
+             x = median(nhl_w_color$pts_pct),
+             ymin = 0,
+             ymax = 5,
+             color = &quot;#e6e7eb&quot;,
+             lty = 2
+    ) + 
+    annotate(&quot;text&quot;,
+             label = &quot;Middle 80% and Median&quot;,
+             y = 6.45,
+             x = median(nhl_w_color$pts_pct),
+             color = &quot;#e6e7eb&quot;) + 
+    annotate(&quot;text&quot;,
+             label = quantile(nhl_w_color$pts_pct, .10) %&gt;% 
+               scales::percent(accuracy = 1),
+             y = 5.2,
+             x = quantile(nhl_w_color$pts_pct, .10),
+             color = &quot;#e6e7eb&quot;) + 
+    annotate(&quot;text&quot;,
+             label = quantile(nhl_w_color$pts_pct, .90) %&gt;% 
+               scales::percent(accuracy = 1),
+             y = 5.2,
+             x = quantile(nhl_w_color$pts_pct, .90),
+             color = &quot;#e6e7eb&quot;) + 
+    geom_curve(
+      x = median(nhl_w_color$pts_pct),
+      xend = median(nhl_w_color$pts_pct)-.005,
+      y = 6,
+      yend = 3,
+      color = &quot;#e6e7eb&quot;,
+      arrow = arrow(length = unit(0.03, &quot;npc&quot;)),
+      size = 1
+    ) + 
+    annotate(&quot;text&quot;, x = median(nhl_w_color$pts_pct)-.02, y = 3.3,
+             label = median(nhl_w_color$pts_pct) %&gt;% 
+               scales::percent(accuracy = 1),
+             color =  &quot;#e6e7eb&quot;) + 
+    labs(title = &quot;Points Percentage of Stanley Cup Champions (1918 - 2020)&quot;,
+         caption = &quot;*Source: hockey-reference.com*&quot;,
+         x = &quot;Points %&quot;,
+         y = &quot;&quot;
+    ) + 
+    scale_x_continuous(labels = scales::percent_format(accuracy = 1)) + 
+    
+    cowplot::theme_cowplot() + 
+    theme(
+      text = element_text(color = &quot;#e6e7eb&quot;, family = &#39;BentonSans Regular&#39;),
+      plot.background = element_rect(fill = &quot;#1a1c2e&quot;),
+      axis.text = element_text(color = &quot;#e6e7eb&quot;),
+      axis.ticks = element_line(color = &quot;#e6e7eb&quot;),
+      axis.line = element_line(color = &quot;#878890&quot;),
+      plot.caption = element_markdown(),
+      axis.title.y = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.line.y = element_blank(),
+      plot.title = element_text(hjust = .5)
+    )</code></pre>
+<p><img src="index_files/figure-html/overall_density-1.png" width="768" /></p>
+<p>Of the 100 champions that there is data for, the median points percentage is 63% while the middle 80% spans 54% - 74%. <strong>Ultimately this makes sense since you’d expect a champion to do better than just 50%</strong>. However, there are some teams that are really great and have &gt;80% points percentages and a few instances of unlikely champions with a points percentage in the 40s.</p>
+</div>
+<div id="has-the-distribution-of-champions-points-percentages-changed-by-decade" class="section level3">
+<h3>Has the Distribution of Champion’s Points Percentages Changed By Decade</h3>
+<p>To see the density curves over time one approach would be to facet by decade and show each decade in its own panel. Another approach is to use the <code>ggridges</code> package to make a ridge density plot to have each density curve on its own line. The package is very easy to use as its primarily adding a <code>y</code> value and then using <code>geom_density_ridges</code> vs. <code>geom_density</code>.</p>
+<div id="sidebar-computing-decades-from-years" class="section level4">
+<h4>Sidebar: Computing Decades from Years</h4>
+<p>In order to create the decade variable I use a trick I learned from <a href="https://www.youtube.com/channel/UCeiiqmVK07qhY-wvg3IZiZQ">David Robinson’s TidyTuesday videos</a> which is to divide the number by bucket width, take the floor of the result, and then multiply it back by the bucket width.</p>
+<p>For example, 2016 divided by 10 is 201.6, which after taking the floor is 201, then multiplying back by 10 is 2010. So 2016 is in the 2010s decade.</p>
+<pre class="r"><code>nhl_w_color %&gt;% 
+  mutate(decade = str_sub(Season, 1, 4),
+         decade = as.integer(decade),
+         decade = floor(decade/10)*10
+  ) %&gt;% 
+  ggplot(aes(x = pts_pct, y = factor(decade), fill = factor(decade))) + 
+    geom_density_ridges() + 
+    geom_vline(xintercept = median(nhl_w_color$pts_pct), lty = 2, color = &#39;white&#39;) + 
+    scale_x_continuous(labels = scales::percent_format(accuracy = 1)) + 
+    scale_fill_viridis_d(option = &quot;C&quot;, guide = F) + 
+    labs(
+      x = &quot;Points %&quot;,
+      y = &quot;Decade&quot;,
+      title = &quot;Points Percentage of Stanley Cup Champions (1918 - 2020)&quot;,
+      subtitle = &quot;*By Decade*&quot;,
+      caption = &quot;*Source: hockey-reference.com*&quot;
+    ) + 
+    cowplot::theme_cowplot() +
+    theme(
+      plot.caption = element_markdown(),
+      plot.subtitle = element_markdown(),
+      text = element_text(color = &quot;#e6e7eb&quot;,  family = &#39;BentonSans Regular&#39;),
+      plot.background = element_rect(fill = &quot;#1a1c2e&quot;),
+      axis.text = element_text(color = &quot;#e6e7eb&quot;),
+      axis.ticks = element_line(color = &quot;#e6e7eb&quot;),
+      axis.line = element_line(color = &quot;#878890&quot;)
+    )</code></pre>
+<p><img src="index_files/figure-html/ridgelines-1.png" width="768" />
+I would have expected there to be a trend of some sort but there’s not a very common story from this chart. The main takeaways are:</p>
+<ul>
+<li>The 1970s seems to have had the most dominant teams from a points percentage standpoint</li>
+<li>There appears to be a large shift from the 1990s to the 2000s which might be due to the introduction of the shootout and the overtime loss concept which meant that three points could be awarded in a (2 for the winner, 1 for the loser) vs. always being two.</li>
+</ul>
+</div>
+</div>
+<div id="looking-the-points-percentage-for-each-team" class="section level3">
+<h3>Looking the Points Percentage for Each Team</h3>
+<p>At the beginning of the post I mentioned that seeing a beeswarm plot provided the motivation for this post. Now I’ll actually create it. The following plot will have one point for each champion which will be highlighted by the team’s colors when that team’s tab is selected.</p>
+<p>The two things to note in this code block is:</p>
+<ul>
+<li>The tabset is dynamically generated by the markdown by setting the chunk setting to <code>results='asis'</code> and then using <code>cat()</code> to add the HTML for the tabs through a for-loop.</li>
+<li>In vanilla RMarkdown, the tabset effect is really easy to do with <code>{.tabset}</code> but in Blogdown/Hugo its a bit trickier to nail the formatting. But its doable by referencing the <a href="https://getbootstrap.com/docs/4.0/components/navs/">bootstrap.js documentation</a> To make things look decent, I’m omitting the code chunk but will include it at the bottom.</li>
+</ul>
+<style type="text/css">
+.nav-pills li a {
+  font-size:14px;
+  }
+</style>
+<ul class="nav nav-pills nav-fill">
+<li class="nav-item">
+<a class = "nav-link active" data-toggle="tab" href="#anaheimducks">   Anaheim Ducks    </a>
+</li>
+<li class="nav-item">
+<a class = "nav-link " data-toggle="tab" href="#bostonbruins">   Boston Bruins    </a>
+</li>
+<li class="nav-item">
+<a class = "nav-link " data-toggle="tab" href="#calgaryflames">   Calgary Flames   </a>
+</li>
+<li class="nav-item">
+<a class = "nav-link " data-toggle="tab" href="#carolinahurricanes">Carolina Hurricanes </a>
+</li>
+<li class="nav-item">
+<a class = "nav-link " data-toggle="tab" href="#chicagoblackhawks"> Chicago Blackhawks </a>
+</li>
+<li class="nav-item">
+<a class = "nav-link " data-toggle="tab" href="#coloradoavalanche"> Colorado Avalanche </a>
+</li>
+<li class="nav-item">
+<a class = "nav-link " data-toggle="tab" href="#dallasstars">    Dallas Stars    </a>
+</li>
+<li class="nav-item">
+<a class = "nav-link " data-toggle="tab" href="#detroitredwings"> Detroit Red Wings  </a>
+</li>
+<li class="nav-item">
+<a class = "nav-link " data-toggle="tab" href="#edmontonoilers">  Edmonton Oilers   </a>
+</li>
+<li class="nav-item">
+<a class = "nav-link " data-toggle="tab" href="#losangeleskings"> Los Angeles Kings  </a>
+</li>
+<li class="nav-item">
+<a class = "nav-link " data-toggle="tab" href="#montrealcanadiens"> Montreal Canadiens </a>
+</li>
+<li class="nav-item">
+<a class = "nav-link " data-toggle="tab" href="#montrealmaroons">  Montreal Maroons  </a>
+</li>
+<li class="nav-item">
+<a class = "nav-link " data-toggle="tab" href="#newjerseydevils"> New Jersey Devils  </a>
+</li>
+<li class="nav-item">
+<a class = "nav-link " data-toggle="tab" href="#newyorkislanders"> New York Islanders </a>
+</li>
+<li class="nav-item">
+<a class = "nav-link " data-toggle="tab" href="#newyorkrangers">  New York Rangers  </a>
+</li>
+<li class="nav-item">
+<a class = "nav-link " data-toggle="tab" href="#ottawasenators">  Ottawa Senators   </a>
+</li>
+<li class="nav-item">
+<a class = "nav-link " data-toggle="tab" href="#philadelphiaflyers">Philadelphia Flyers </a>
+</li>
+<li class="nav-item">
+<a class = "nav-link " data-toggle="tab" href="#pittsburghpenguins">Pittsburgh Penguins </a>
+</li>
+<li class="nav-item">
+<a class = "nav-link " data-toggle="tab" href="#stlouisblues">  St. Louis Blues   </a>
+</li>
+<li class="nav-item">
+<a class = "nav-link " data-toggle="tab" href="#tampabaylightning">Tampa Bay Lightning </a>
+</li>
+<li class="nav-item">
+<a class = "nav-link " data-toggle="tab" href="#torontoarenas">   Toronto Arenas   </a>
+</li>
+<li class="nav-item">
+<a class = "nav-link " data-toggle="tab" href="#torontomapleleafs">Toronto Maple Leafs </a>
+</li>
+<li class="nav-item">
+<a class = "nav-link " data-toggle="tab" href="#torontostpatricks">Toronto St. Patricks</a>
+</li>
+<li class="nav-item">
+<a class = "nav-link " data-toggle="tab" href="#washingtoncapitals">Washington Capitals </a>
+</li>
+</ul>
+<div class="tab-content">
+<div id="anaheimducks" class="tab-pane show active">
+<img src="index_files/figure-html/unnamed-chunk-2-1.png" width="768" />
+</div>
+<div id="bostonbruins" class="tab-pane">
+<img src="index_files/figure-html/unnamed-chunk-2-2.png" width="768" />
+</div>
+<div id="calgaryflames" class="tab-pane">
+<img src="index_files/figure-html/unnamed-chunk-2-3.png" width="768" />
+</div>
+<div id="carolinahurricanes" class="tab-pane">
+<img src="index_files/figure-html/unnamed-chunk-2-4.png" width="768" />
+</div>
+<div id="chicagoblackhawks" class="tab-pane">
+<img src="index_files/figure-html/unnamed-chunk-2-5.png" width="768" />
+</div>
+<div id="coloradoavalanche" class="tab-pane">
+<img src="index_files/figure-html/unnamed-chunk-2-6.png" width="768" />
+</div>
+<div id="dallasstars" class="tab-pane">
+<img src="index_files/figure-html/unnamed-chunk-2-7.png" width="768" />
+</div>
+<div id="detroitredwings" class="tab-pane">
+<img src="index_files/figure-html/unnamed-chunk-2-8.png" width="768" />
+</div>
+<div id="edmontonoilers" class="tab-pane">
+<img src="index_files/figure-html/unnamed-chunk-2-9.png" width="768" />
+</div>
+<div id="losangeleskings" class="tab-pane">
+<img src="index_files/figure-html/unnamed-chunk-2-10.png" width="768" />
+</div>
+<div id="montrealcanadiens" class="tab-pane">
+<img src="index_files/figure-html/unnamed-chunk-2-11.png" width="768" />
+</div>
+<div id="montrealmaroons" class="tab-pane">
+<img src="index_files/figure-html/unnamed-chunk-2-12.png" width="768" />
+</div>
+<div id="newjerseydevils" class="tab-pane">
+<img src="index_files/figure-html/unnamed-chunk-2-13.png" width="768" />
+</div>
+<div id="newyorkislanders" class="tab-pane">
+<img src="index_files/figure-html/unnamed-chunk-2-14.png" width="768" />
+</div>
+<div id="newyorkrangers" class="tab-pane">
+<img src="index_files/figure-html/unnamed-chunk-2-15.png" width="768" />
+</div>
+<div id="ottawasenators" class="tab-pane">
+<img src="index_files/figure-html/unnamed-chunk-2-16.png" width="768" />
+</div>
+<div id="philadelphiaflyers" class="tab-pane">
+<img src="index_files/figure-html/unnamed-chunk-2-17.png" width="768" />
+</div>
+<div id="pittsburghpenguins" class="tab-pane">
+<img src="index_files/figure-html/unnamed-chunk-2-18.png" width="768" />
+</div>
+<div id="stlouisblues" class="tab-pane">
+<img src="index_files/figure-html/unnamed-chunk-2-19.png" width="768" />
+</div>
+<div id="tampabaylightning" class="tab-pane">
+<img src="index_files/figure-html/unnamed-chunk-2-20.png" width="768" />
+</div>
+<div id="torontoarenas" class="tab-pane">
+<img src="index_files/figure-html/unnamed-chunk-2-21.png" width="768" />
+</div>
+<div id="torontomapleleafs" class="tab-pane">
+<img src="index_files/figure-html/unnamed-chunk-2-22.png" width="768" />
+</div>
+<div id="torontostpatricks" class="tab-pane">
+<img src="index_files/figure-html/unnamed-chunk-2-23.png" width="768" />
+</div>
+<div id="washingtoncapitals" class="tab-pane">
+<img src="index_files/figure-html/unnamed-chunk-2-24.png" width="768" />
+</div>
+</div>
+<p>Looking at the results of this plot we see that the Montreal Canadiens have been the most frequent winner as well as the team that makes up most of those 80%+ seasons. On the other hand, the Chicago Blackhawks have the honor of being the overachieving team that won despite having a sub-40% points percentage.</p>
+</div>
+<div id="making-a-histogram-with-team-logos" class="section level3">
+<h3>Making a Histogram with Team Logos</h3>
+<p>An alternative view to the one above that doesn’t require highlighting would be to make a conventional histogram but using the team icons rather than points or bars. The <code>ggimage</code> package allows for a <code>geom_image</code> to be used by referencing a URL for an image. Fortunately the <code>teamcolors</code> package contains a dataset with links to logos for current NHL team. However, for some of the champion teams that no longer exist I needed to manually add their logos.</p>
+<p>In this code block I manually create bin widths of 2.5% using the floor trick mentioned above and make use to a dummy variable to create the stacking effect for each of the logos. Then the <code>geom_image</code> references the URLs contained in the ‘logo’ column.</p>
+<pre class="r"><code>nhl_w_color %&gt;% 
+  left_join(teamcolors::teamcolors %&gt;% select(name, logo), 
+            by = c(&#39;Team&#39; = &#39;name&#39;)) %&gt;% 
+  mutate(
+    logo = case_when(
+      Team == &#39;Montreal Maroons&#39; ~ &#39;https://content.sportslogos.net/logos/1/40/thumbs/4039161926.gif&#39;,
+      Team == &#39;Toronto Arenas&#39; ~ &#39;https://content.sportslogos.net/logos/1/996/thumbs/lgtkven0lgs74prrf26p6rmes.gif&#39;,
+      Team == &#39;Toronto St. Patricks&#39; ~ &#39;https://content.sportslogos.net/logos/1/997/thumbs/6438.gif&#39;,
+      TRUE ~ logo
+    ),
+    point_pct_bckt = floor(pts_pct*100/2.5)*2.5/100
+  ) %&gt;% 
+  arrange(point_pct_bckt, desc(Team)) %&gt;% 
+  group_by(point_pct_bckt) %&gt;% 
+  mutate(
+    dummy = 1,
+    y_val = (cumsum(dummy)-1)*3
+  ) %&gt;% 
+  ggplot(aes(x = point_pct_bckt, y = y_val)) + 
+    geom_image(aes(image = logo),
+               asp = 1.5,
+               size = .05
+               ) +
+    geom_vline(xintercept = quantile(nhl_data$pts_pct, .5), lty = 2) + 
+    labs(x = &quot;Points %&quot;, y = &quot;&quot;, 
+         title = &quot;Points Percentage of Stanley Cup Champions (1918 - 2020)&quot;,
+         caption = &quot;*Source: hockey-reference.com*&quot;) + 
+    scale_x_continuous(labels = scales::percent_format(accuracy =)) + 
+    cowplot::theme_cowplot() + 
+    theme(
+      text = element_text( family = &#39;BentonSans Regular&#39;),
+      axis.title.y = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.line.y = element_blank(),
+      plot.caption = element_markdown(),
+      plot.subtitle = element_markdown(),
+      plot.margin = unit(rep(1.2, 4), &quot;cm&quot;),
+      plot.title = element_text(hjust = .7)
+  )</code></pre>
+<p><img src="index_files/figure-html/hist_with_images-1.png" width="768" /></p>
+<p>Now its much easier to see that Montreal makes up most of the dominant teams while Chicago has been both dominant and on the lower ends of the distribution.</p>
+</div>
+</div>
+<div id="concluding-thoughts" class="section level2">
+<h2>Concluding Thoughts</h2>
+<p>The <code>ggplot2</code> ecosystem is quite impressive and this post hardly scratches the surface of all the possible options. However, in this post I show 4 ways a single variable, points percentage of NHL Stanley Cup Champions, can be represented.</p>
+<ul>
+<li>First, <code>geom_density</code> creates a baseline distribution</li>
+<li><code>geom_density_ridge</code> from <code>ggridges</code> can stratify that initial density plot over another variable</li>
+<li><code>geom_quasirandom</code> from <code>ggbeeswarm</code> will make a ‘violin-type’ plot but with specific points that can then be operated on.</li>
+<li>Finally, <code>ggimage</code> can change the geom to reference image URLs.</li>
+</ul>
+<p>And as a bonus, I dynamically generated the tabsets for all the teams!</p>
+</div>
+<div id="appendix-code-for-dynamic-tab-generation-in-blogdown" class="section level2">
+<h2>Appendix: Code for Dynamic Tab Generation in Blogdown</h2>
+<pre class="r"><code>##Construct Tabs
+cat(&#39;&lt;ul class=&quot;nav nav-pills nav-fill&quot;&gt; \n&#39;)
+for(t in sort(unique(nhl_data$Team))){
+  tid = str_to_lower(str_remove_all(t, &#39; |\\.&#39;))
+  cat(glue(&#39;&lt;li class=&quot;nav-item&quot;&gt;&lt;a class = &quot;nav-link {active}&quot; data-toggle=&quot;tab&quot; href=&quot;#{tid}&quot;&gt;{t}&lt;/a&gt;&lt;/li&gt; \n&#39;,
+      active = if_else(t == sort(unique(nhl_data$Team))[1], &quot;active&quot;, &quot;&quot;)))
+}
+cat(&#39;&lt;/ul&gt; \n&#39;)
+
+cat(&#39;&lt;div class=&quot;tab-content&quot;&gt; \n&#39;)
+
+for(t in sort(unique(nhl_data$Team))){
+  tid = str_to_lower(str_remove_all(t, &#39; |\\.&#39;))
+  cat(glue(&#39;&lt;div id=&quot;{tid}&quot; class=&quot;tab-pane {active}&quot;&gt; \n&#39;,
+           active = if_else(t == sort(unique(nhl_data$Team))[1], &quot;show active&quot;, &quot;&quot;)))
+  set.seed(20201121)
+  
+  g &lt;- nhl_w_color %&gt;% 
+      mutate(color = if_else(Team == glue(&#39;{t}&#39;), 
+                             color, 
+                             alpha(&quot;grey&quot;, 0.7))) %&gt;% 
+    ggplot(aes(y = 1, x = pts_pct, color = color)) + 
+    geom_quasirandom(method = &quot;tukeyDense&quot;, groupOnX=F, size = 3, width = 0.2) +
+    geom_vline(xintercept = quantile(nhl_data$pts_pct, .5), lty = 2) + 
+    labs(x = &quot;Points %&quot;, y = &quot;&quot;, 
+         title = &quot;Points Percentage of Stanley Cup Champions (1918 - 2020)&quot;,
+         subtitle = glue(&quot;&lt;span style=&#39;color:{col};&#39;&gt;&lt;b&gt;&lt;i&gt;{t}&lt;/i&gt;&lt;/b&gt;&lt;/span&gt; Championships Highlighted&quot;,
+                         col = nhl_w_color %&gt;% 
+                           filter(Team == glue(&#39;{t}&#39;)) %&gt;% 
+                           pull(color) %&gt;% 
+                           unique
+                         ),
+         caption = &quot;*Source: hockey-reference.com*&quot;) + 
+    scale_color_identity(guide = F) + 
+    scale_x_continuous(labels = scales::percent_format(accuracy = 1)) + 
+    cowplot::theme_cowplot() + 
+    theme(
+      text = element_text( family = &#39;BentonSans Regular&#39;),
+      axis.title.y = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.line.y = element_blank(),
+      plot.caption = element_markdown(),
+      plot.subtitle = element_markdown(),
+      plot.margin = unit(rep(1.2, 4), &quot;cm&quot;),
+
+    )
+  
+  print(g)
+  
+  cat(&quot;&lt;/div&gt; \n&quot;) 
+}
+cat(&quot;&lt;/div&gt; \n&quot;)</code></pre>
+</div>
