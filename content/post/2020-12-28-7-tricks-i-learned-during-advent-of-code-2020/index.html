@@ -11,7 +11,7 @@ tags:
 subtitle: ''
 summary: ''
 authors: []
-lastmod: '2020-12-25T19:52:31-05:00'
+lastmod: '2020-12-28T00:15:15-05:00'
 featured: no
 image:
   caption: ''
@@ -22,7 +22,7 @@ projects: []
 
 
 
-<p>I got into the <a href="https://adventofcode.com/">Advent of Code</a> through some co-workers for the first time this year. For those not familiar its a series of programming puzzles created by <a href="http://was.tl/">Eric Wastl</a> released once a day for the first 25 days of December. The puzzles are programming language agnostic so some use it to learn new a language and others , like myself, just thought it would be something fun to do. So while I use R often in my job and for writing this blog, the Advent of Code puzzles are quite different from how I usually use R. So I kept track of some tricks that I learned that I thought were useful (I learned <strong>a lot</strong> of things but to keep things short, I’ll only list a couple). test</p>
+<p>I got into the <a href="https://adventofcode.com/">Advent of Code</a> through some co-workers for the first time this year. For those not familiar, its a series of programming puzzles created by <a href="http://was.tl/">Eric Wastl</a> released once a day for the first 25 days of December. The puzzles are programming language agnostic so some use it to learn new a language and others, like myself, just thought it would be something fun to do. While I use R often in my job and for writing this blog, the Advent of Code puzzles are quite different my usual use case. As I did the puzzles, I kept track of some tricks that I learned that I thought were useful (I learned <strong>a lot</strong> of things but to keep things short, I’ll only list a couple).</p>
 <div id="not-a-trick..-but-credit-where-credit-is-due" class="section level2">
 <h2>Not A Trick.. But Credit Where Credit Is Due</h2>
 <p><strong>I can’t imagine the amount of work that goes into creating these puzzles.</strong></p>
@@ -35,16 +35,16 @@ projects: []
 <p>Suppose there is an input like:</p>
 <pre><code>....#..
 </code></pre>
-<p>and we want to have each character as a vector element . A function like <code>readLines</code> will input each row as a vector, but in order to split the string into each element we’ll call upon <code>str_split()</code> to break apart the string by a delimiter. Using the empty string ’’ will separate each character to create a list. An then <code>unlist()</code> will break each character into its own item into the vector</p>
+<p>and we want to have each character as a vector element . A function like <code>readLines</code> will input each row as a vector, but in order to split the string into each element we’ll call upon <code>str_split()</code> to break apart the string by a delimiter. Using the empty string (’’) will separate each character to create a list. Then <code>unlist()</code> will break each character into its own element in the vector</p>
 <pre class="r"><code>input &lt;- &quot;....#...&quot;
 
 print(str_split(input, &#39;&#39;) %&gt;% unlist())</code></pre>
 <pre><code>## [1] &quot;.&quot; &quot;.&quot; &quot;.&quot; &quot;.&quot; &quot;#&quot; &quot;.&quot; &quot;.&quot; &quot;.&quot;</code></pre>
-<p>Now as opposed to having 1 string, we have a character vector with each character as its own element</p>
+<p>Now as opposed to having 1 string, we have a character vector with each character as its own element.</p>
 </div>
 <div id="trick-2-combining-str_split-with-unnest-can-turn-a-vector-of-strings-into-a-tidy-data-frame." class="section level2">
 <h2>Trick #2: Combining <code>str_split()</code> with <code>unnest()</code> can turn a vector of strings into a tidy data frame.</h2>
-<p>One thing that I worked with more in Advent of code than I have in the last few years have been <strong>matrices</strong>. As shown before, most of the input comes as a flat file needing to be processed. Sometimes it was helpful to represent the matrix as a tidy data-set with columns for <code>row_id</code>, <code>col_id</code>, and <code>value</code> vs. the traditional matrix format. The <code>unnest()</code> function will break apart each element of a list into its own row. Using a using a similar input to before but with more rows.</p>
+<p>One thing that I worked with more in Advent of Code than I have in the last few years have been <strong>matrices</strong>. As shown before, most of the input comes as a flat file needing to be processed. Sometimes it was helpful to represent the matrix as a tidy data-set with columns for <code>row_id</code>, <code>col_id</code>, and <code>value</code> vs. the traditional matrix format. The <code>unnest()</code> function will break apart each element of a list into its own row. Using a using a similar input to before but with more rows.</p>
 <pre class="r"><code>input &lt;- c(&quot;....#.......&quot;,
            &quot;.#..#....###&quot;,
            &quot;....###.....&quot;)
@@ -58,76 +58,76 @@ tibble(raw = input) %&gt;%
   group_by(row_id) %&gt;% 
   mutate(col_id = row_number()) %&gt;% #Create Column ID
   head(10) %&gt;% 
-  kable()</code></pre>
+  kable(align = &#39;c&#39;)</code></pre>
 <table>
 <thead>
 <tr class="header">
-<th align="left">raw</th>
-<th align="right">row_id</th>
-<th align="left">value</th>
-<th align="right">col_id</th>
+<th align="center">raw</th>
+<th align="center">row_id</th>
+<th align="center">value</th>
+<th align="center">col_id</th>
 </tr>
 </thead>
 <tbody>
 <tr class="odd">
-<td align="left">….#…….</td>
-<td align="right">1</td>
-<td align="left">.</td>
-<td align="right">1</td>
+<td align="center">….#…….</td>
+<td align="center">1</td>
+<td align="center">.</td>
+<td align="center">1</td>
 </tr>
 <tr class="even">
-<td align="left">….#…….</td>
-<td align="right">1</td>
-<td align="left">.</td>
-<td align="right">2</td>
+<td align="center">….#…….</td>
+<td align="center">1</td>
+<td align="center">.</td>
+<td align="center">2</td>
 </tr>
 <tr class="odd">
-<td align="left">….#…….</td>
-<td align="right">1</td>
-<td align="left">.</td>
-<td align="right">3</td>
+<td align="center">….#…….</td>
+<td align="center">1</td>
+<td align="center">.</td>
+<td align="center">3</td>
 </tr>
 <tr class="even">
-<td align="left">….#…….</td>
-<td align="right">1</td>
-<td align="left">.</td>
-<td align="right">4</td>
+<td align="center">….#…….</td>
+<td align="center">1</td>
+<td align="center">.</td>
+<td align="center">4</td>
 </tr>
 <tr class="odd">
-<td align="left">….#…….</td>
-<td align="right">1</td>
-<td align="left">#</td>
-<td align="right">5</td>
+<td align="center">….#…….</td>
+<td align="center">1</td>
+<td align="center">#</td>
+<td align="center">5</td>
 </tr>
 <tr class="even">
-<td align="left">….#…….</td>
-<td align="right">1</td>
-<td align="left">.</td>
-<td align="right">6</td>
+<td align="center">….#…….</td>
+<td align="center">1</td>
+<td align="center">.</td>
+<td align="center">6</td>
 </tr>
 <tr class="odd">
-<td align="left">….#…….</td>
-<td align="right">1</td>
-<td align="left">.</td>
-<td align="right">7</td>
+<td align="center">….#…….</td>
+<td align="center">1</td>
+<td align="center">.</td>
+<td align="center">7</td>
 </tr>
 <tr class="even">
-<td align="left">….#…….</td>
-<td align="right">1</td>
-<td align="left">.</td>
-<td align="right">8</td>
+<td align="center">….#…….</td>
+<td align="center">1</td>
+<td align="center">.</td>
+<td align="center">8</td>
 </tr>
 <tr class="odd">
-<td align="left">….#…….</td>
-<td align="right">1</td>
-<td align="left">.</td>
-<td align="right">9</td>
+<td align="center">….#…….</td>
+<td align="center">1</td>
+<td align="center">.</td>
+<td align="center">9</td>
 </tr>
 <tr class="even">
-<td align="left">….#…….</td>
-<td align="right">1</td>
-<td align="left">.</td>
-<td align="right">10</td>
+<td align="center">….#…….</td>
+<td align="center">1</td>
+<td align="center">.</td>
+<td align="center">10</td>
 </tr>
 </tbody>
 </table>
@@ -135,11 +135,11 @@ tibble(raw = input) %&gt;%
 </div>
 <div id="trick-3-extract-is-a-powerhouse-function-for-working-with-strings" class="section level2">
 <h2>Trick #3: <code>extract()</code> is a powerhouse function for working with strings</h2>
-<p>I’ve mentioned before that I think regular expressions are amazing and opens up a world of possibilities. <code>extract()</code> allows for the use to regular expression and capture groups to create any number of new columns. Its similar to <code>separate()</code> but to me seems more customizable. Imagine the inputs:</p>
+<p>I’ve mentioned before that I think regular expressions are amazing and opens up a world of possibilities. <code>extract()</code> allows for the use to regular expressions and capture groups to create any number of new columns. Its similar to <code>separate()</code> but to me seems more customizable. Given the inputs:</p>
 <pre><code>6-7 z: dqzzzjbzz 67
 13-16 j: jjjvjmjjkjjjjjjj 123
 5-6 m: mmbmmlvmbmmgmmf 5</code></pre>
-<p>And you wanted to create a data.frame that had columns for the number range, the character before the ‘:’, the series of characters after the ‘:’ and a final digit . This could be done with <code>str_match()</code> or similar but <code>extract()</code> just makes it so <strong><em>easy</em></strong>.</p>
+<p>And you wanted to create a data.frame that had columns for the number range, the character before the ‘:’, the series of characters after the ‘:’ and a final digit . This could be done with <code>str_match()</code> or similar but <code>extract()</code> just makes it so <strong><em>easy</em></strong>. Just give <code>extract()</code> a regular expression and capture in parentheses the things to turn into columns.</p>
 <pre class="r"><code>input &lt;- c(&quot;6-7 z: dqzzzjbzz 67&quot;,
            &quot;13-16 j: jjjvjmjjkjjjjjjj 123&quot;,
            &quot;5-6 m: mmbmmlvmbmmgmmf 5&quot;)
@@ -185,7 +185,7 @@ tibble(raw = input) %&gt;%
 </div>
 <div id="trick-4-memoization" class="section level2">
 <h2>Trick #4: Memoization</h2>
-<p>Some of the puzzles in AoC use programming concepts I haven’t thought about in a long-term (linked lists) and required some I didn’t know existed. Memoization is one of those terms that I’d heard before but had no idea what it meant. There were a number of puzzles where my initial brute force solutions would take hours or days to complete. But in certain cases, memoization sped things up immensely.</p>
+<p>Some of the puzzles in AoC use programming concepts I haven’t thought about in a long-term (linked lists) and some used concepts I didn’t know existed. Memoization is one of those terms that I’d heard before but had no idea what it meant. There were a number of puzzles where my initial brute force solutions would take hours or days to complete. But in certain cases, memoization sped things up immensely.</p>
 <p>Memoization caches the results of function calls so that if the same call happens a second time, rather than doing the work again, the program can just recall the value from the cache.</p>
 <p>Functions can be memoised in R using the <code>memoise::memoise()</code> function to wrap the function.</p>
 <p>For this example, I’m borrowing the Fibonacci example from this post on <a href="https://www.inwt-statistics.com/read-blog/optimize-your-r-code-using-memoization.html">IWNT Statistics</a>.</p>
@@ -209,20 +209,20 @@ memo_fib &lt;- memoise(function(x){
 fibb(35)</code></pre>
 <pre><code>## [1] 14930352</code></pre>
 <pre class="r"><code>tictoc::toc()</code></pre>
-<pre><code>## 50.47 sec elapsed</code></pre>
+<pre><code>## 26.58 sec elapsed</code></pre>
 <p>And the memoised version:</p>
 <pre class="r"><code>tictoc::tic()
 memo_fib(35)</code></pre>
 <pre><code>## [1] 14930352</code></pre>
 <pre class="r"><code>tictoc::toc()</code></pre>
-<pre><code>## 0.16 sec elapsed</code></pre>
-<p>The memoised version produces a <strong><em>way</em></strong> faster result!</p>
+<pre><code>## 0.08 sec elapsed</code></pre>
+<p>The memoised version produces a <strong><em>way</em></strong> faster result! While hard to believe, the original function makes close to 30 million calls on its way to finding <code>fibb(35)</code>. However, the memoised version, only needs to solve for the 35 unique function calls and can recall the answer from cache for the recursive calls.</p>
 </div>
 <div id="trick-5---string-replacement-with-back-references" class="section level2">
 <h2>Trick #5 - String Replacement with Back References</h2>
 <p>Back to string manipulation!</p>
 <p>Within regular expressions there is a concept of “capture groups” which is when you wrap something in parenthesis and then are able to extract it from the string match (like how <code>str_match()</code> can work). However, you can also reference what is in the capture group to use it for replacement in functions like <code>str_replace_all()</code>.</p>
-<p>In our example, image we have a string of animals, <code>"the cat, a bird, the dog, ze goat"</code> and we want to insert the adjective red between “the” and each animal. There are many ways to do this, but I will use back-references, which will reference the contents of the capture group without knowing specifically what’s in it.</p>
+<p>In our example, image we have a string of animals, <code>"the cat, a bird, the dog, ze goat"</code> and we want to insert the adjective <strong>red</strong> between “the” and each animal. There are many ways to do this, but I will use back-references, which will reference the contents of the capture group without knowing specifically what’s in it.</p>
 <pre class="r"><code>input &lt;- &quot;the cat, a bird, the dog, ze goat&quot;
 
 str_replace_all(input, &#39;(\\w+) (\\w+)&#39;, &#39;\\1 red \\2&#39;)</code></pre>
@@ -335,5 +335,5 @@ print(player_1)</code></pre>
 </div>
 <div id="thanks-for-reading" class="section level2">
 <h2>Thanks for Reading!</h2>
-<p>I would highly encourage everyone to try <a href="https://adventofcode.com/">Advent of Code</a> at some point. I found it really enjoyable to do a different type of programming from my day to day. Although there were instances where doing it in R made things difficult. Namely, R being a 1-indexed language and the lack of a hash table object introduced some difficulties (although you can use environments to mimic the hash table behavior).</p>
+<p>I would highly encourage everyone to try <a href="https://adventofcode.com/">Advent of Code</a> at some point. I found it really enjoyable to do a different type of programming from my day to day. Although there were instances where doing it in R made things difficult (mainly R being a 1-indexed language) I found the experience really enjoyable.</p>
 </div>

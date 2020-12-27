@@ -11,7 +11,7 @@ tags:
 subtitle: ''
 summary: ''
 authors: []
-lastmod: '2020-12-25T19:52:31-05:00'
+lastmod: '2020-12-28T00:15:15-05:00'
 featured: no
 image:
   caption: ''
@@ -27,7 +27,7 @@ library(tidyverse)
 library(knitr)
 ```
 
-I got into the [Advent of Code](https://adventofcode.com/) through some co-workers for the first time this year.  For those not familiar its a series of programming puzzles created by [Eric Wastl](http://was.tl/) released once a day for the first 25 days of December.  The puzzles are programming language agnostic so some use it to learn new a language and others , like myself, just thought it would be something fun to do.  So while I use R often in my job and for writing this blog, the Advent of Code puzzles are quite different from how I usually use R.  So I kept track of some tricks that I learned that I thought were useful (I learned **a lot** of things but to keep things short, I'll only list a couple). test
+I got into the [Advent of Code](https://adventofcode.com/) through some co-workers for the first time this year.  For those not familiar, its a series of programming puzzles created by [Eric Wastl](http://was.tl/) released once a day for the first 25 days of December.  The puzzles are programming language agnostic so some use it to learn new a language and others, like myself, just thought it would be something fun to do.  While I use R often in my job and for writing this blog, the Advent of Code puzzles are quite different my usual use case.  As I did the puzzles, I kept track of some tricks that I learned that I thought were useful (I learned **a lot** of things but to keep things short, I'll only list a couple). 
 
 ## Not A Trick.. But Credit Where Credit Is Due
 
@@ -48,7 +48,7 @@ Suppose there is an input like:
 
 ```
 
-and we want to have each character as a vector element .  A function like `readLines` will input each row as a vector, but in order to split the string into each element  we'll call upon `str_split()` to break apart the string by a delimiter. Using the empty string '' will separate each character to create a list.  An then `unlist()` will break each character into its own item into the vector
+and we want to have each character as a vector element .  A function like `readLines` will input each row as a vector, but in order to split the string into each element  we'll call upon `str_split()` to break apart the string by a delimiter. Using the empty string ('') will separate each character to create a list.  Then `unlist()` will break each character into its own element in the vector
 
 
 
@@ -58,11 +58,11 @@ input <- "....#..."
 print(str_split(input, '') %>% unlist())
 
 ```
-Now as opposed to having 1 string, we have a character vector with each character as its own element
+Now as opposed to having 1 string, we have a character vector with each character as its own element.
 
 ## Trick #2: Combining `str_split()`  with `unnest()` can turn a vector of strings into a tidy data frame.
 
-One thing that I worked with more in Advent of code than I have in the last few years have been **matrices**.  As shown before, most of the input comes as a flat file needing to be processed.  Sometimes it was helpful to represent the matrix as a tidy data-set with columns for `row_id`, `col_id`, and `value` vs. the traditional matrix format.  The `unnest()` function will break apart each element of a list into its own row.  Using a using a similar input to before but with more rows.
+One thing that I worked with more in Advent of Code than I have in the last few years have been **matrices**.  As shown before, most of the input comes as a flat file needing to be processed.  Sometimes it was helpful to represent the matrix as a tidy data-set with columns for `row_id`, `col_id`, and `value` vs. the traditional matrix format.  The `unnest()` function will break apart each element of a list into its own row.  Using a using a similar input to before but with more rows.
 
 ```{r}
 
@@ -79,7 +79,7 @@ tibble(raw = input) %>%
   group_by(row_id) %>% 
   mutate(col_id = row_number()) %>% #Create Column ID
   head(10) %>% 
-  kable()
+  kable(align = 'c')
 
 
 ```
@@ -88,7 +88,7 @@ Now each element of the character vector is its own row its with own `row_id` an
 
 ## Trick #3: `extract()` is a powerhouse function for working with strings
 
-I've mentioned before that I think regular expressions are amazing and opens up a world of possibilities.  `extract()` allows for the use to regular expression and capture groups to create any number of new columns.  Its similar to `separate()` but to me seems more customizable.  Imagine the inputs:
+I've mentioned before that I think regular expressions are amazing and opens up a world of possibilities.  `extract()` allows for the use to regular expressions and capture groups to create any number of new columns.  Its similar to `separate()` but to me seems more customizable.  Given the inputs:
 
 ```
 6-7 z: dqzzzjbzz 67
@@ -96,7 +96,7 @@ I've mentioned before that I think regular expressions are amazing and opens up 
 5-6 m: mmbmmlvmbmmgmmf 5
 ```
 
-And you wanted to create a data.frame that had columns for the number range, the character before the ':', the series of characters after the ':' and a final digit .  This could be done with `str_match()` or similar but `extract()` just makes it so ***easy***.
+And you wanted to create a data.frame that had columns for the number range, the character before the ':', the series of characters after the ':' and a final digit .  This could be done with `str_match()` or similar but `extract()` just makes it so ***easy***.  Just give `extract()` a regular expression and capture in parentheses the things to turn into columns.
 
 ```{r}
 input <- c("6-7 z: dqzzzjbzz 67",
@@ -117,7 +117,7 @@ Done and Done (and with convert=T it even turned the `single_digit` into an int)
 
 ## Trick #4: Memoization 
 
-Some of the puzzles in AoC use programming concepts I haven't thought about in a long-term (linked lists) and required some I didn't know existed.  Memoization is one of those terms that I'd heard before but had no idea what it meant.  There were a number of puzzles where my initial brute force solutions would take hours or days to complete.  But in certain cases, memoization sped things up immensely.
+Some of the puzzles in AoC use programming concepts I haven't thought about in a long-term (linked lists) and some used concepts I didn't know existed.  Memoization is one of those terms that I'd heard before but had no idea what it meant.  There were a number of puzzles where my initial brute force solutions would take hours or days to complete.  But in certain cases, memoization sped things up immensely.
 
 Memoization caches the results of function calls so that if the same call happens a second time, rather than doing the work again, the program can just recall the value from the cache.
 
@@ -158,7 +158,7 @@ tictoc::toc()
 ```
 
 
-The memoised version produces a ***way*** faster result!
+The memoised version produces a ***way*** faster result!  While hard to believe, the original function makes close to 30 million calls on its way to finding `fibb(35)`.  However, the memoised version, only needs to solve for the 35 unique function calls and can recall the answer from cache for the recursive calls.
 
 ## Trick #5 - String Replacement with Back References
 
@@ -166,7 +166,7 @@ Back to string manipulation!
 
 Within regular expressions there is a concept of "capture groups" which is when you wrap something in parenthesis and then are able to extract it from the string match (like how `str_match()` can work).  However, you can also reference what is in the capture group to use it for replacement in functions like `str_replace_all()`.  
 
-In our example, image we have a string of animals, `"the cat, a bird, the dog, ze goat"` and we want to insert the adjective red between "the" and each animal.  There are many ways to do this, but I will use back-references, which will reference the contents of the capture group without knowing specifically what's in it.
+In our example, image we have a string of animals, `"the cat, a bird, the dog, ze goat"` and we want to insert the adjective **red** between "the" and each animal.  There are many ways to do this, but I will use back-references, which will reference the contents of the capture group without knowing specifically what's in it.
 
 ```{r}
 input <- "the cat, a bird, the dog, ze goat"
@@ -243,5 +243,5 @@ Now there are two objected in the environment with names "player_1" and "player_
 
 ## Thanks for Reading!
 
-I would highly encourage everyone to try [Advent of Code](https://adventofcode.com/) at some point.  I found it really enjoyable to do a different type of programming from my day to day.  Although there were instances where doing it in R made things difficult.  Namely, R being a 1-indexed language and the lack of a hash table object introduced some difficulties (although you can use environments to mimic the hash table behavior).
+I would highly encourage everyone to try [Advent of Code](https://adventofcode.com/) at some point.  I found it really enjoyable to do a different type of programming from my day to day.  Although there were instances where doing it in R made things difficult (mainly R being a 1-indexed language) I found the experience really enjoyable.
 
