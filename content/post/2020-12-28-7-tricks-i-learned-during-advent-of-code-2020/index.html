@@ -1,0 +1,339 @@
+---
+title: 7 Tricks I Learned During Advent of Code 2020
+author: JLaw
+date: '2020-12-28'
+slug: 7-tricks-i-learned-during-advent-of-code-2020
+categories:
+  - R
+tags:
+  - stringr
+  - memoise
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2020-12-28T00:15:15-05:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+
+
+<p>I got into the <a href="https://adventofcode.com/">Advent of Code</a> through some co-workers for the first time this year. For those not familiar, its a series of programming puzzles created by <a href="http://was.tl/">Eric Wastl</a> released once a day for the first 25 days of December. The puzzles are programming language agnostic so some use it to learn new a language and others, like myself, just thought it would be something fun to do. While I use R often in my job and for writing this blog, the Advent of Code puzzles are quite different my usual use case. As I did the puzzles, I kept track of some tricks that I learned that I thought were useful (I learned <strong>a lot</strong> of things but to keep things short, I’ll only list a couple).</p>
+<div id="not-a-trick..-but-credit-where-credit-is-due" class="section level2">
+<h2>Not A Trick.. But Credit Where Credit Is Due</h2>
+<p><strong>I can’t imagine the amount of work that goes into creating these puzzles.</strong></p>
+<p>A bit a cop-out that the first item has nothing to do with R. But I did want to specifically give props to <a href="http://was.tl/">Eric Wastl</a> for making these puzzles. As hard as it was at times to complete the puzzles, I found myself constantly thinking how difficult it must be to <em>create</em> them and ensure that they are solvable.</p>
+<p>Now onto the R.</p>
+</div>
+<div id="trick-1-break-apart-a-string-of-text-into-a-vector-with-str_split-and-unlist" class="section level2">
+<h2>Trick #1: Break apart a string of text into a vector with <code>str_split()</code> and <code>unlist()</code></h2>
+<p>The inputs for Advent of Code are usually flat files and its often necessary to break up the input in order to fill out a matrix or columns in a data frame.</p>
+<p>Suppose there is an input like:</p>
+<pre><code>....#..
+</code></pre>
+<p>and we want to have each character as a vector element . A function like <code>readLines</code> will input each row as a vector, but in order to split the string into each element we’ll call upon <code>str_split()</code> to break apart the string by a delimiter. Using the empty string (’’) will separate each character to create a list. Then <code>unlist()</code> will break each character into its own element in the vector</p>
+<pre class="r"><code>input &lt;- &quot;....#...&quot;
+
+print(str_split(input, &#39;&#39;) %&gt;% unlist())</code></pre>
+<pre><code>## [1] &quot;.&quot; &quot;.&quot; &quot;.&quot; &quot;.&quot; &quot;#&quot; &quot;.&quot; &quot;.&quot; &quot;.&quot;</code></pre>
+<p>Now as opposed to having 1 string, we have a character vector with each character as its own element.</p>
+</div>
+<div id="trick-2-combining-str_split-with-unnest-can-turn-a-vector-of-strings-into-a-tidy-data-frame." class="section level2">
+<h2>Trick #2: Combining <code>str_split()</code> with <code>unnest()</code> can turn a vector of strings into a tidy data frame.</h2>
+<p>One thing that I worked with more in Advent of Code than I have in the last few years have been <strong>matrices</strong>. As shown before, most of the input comes as a flat file needing to be processed. Sometimes it was helpful to represent the matrix as a tidy data-set with columns for <code>row_id</code>, <code>col_id</code>, and <code>value</code> vs. the traditional matrix format. The <code>unnest()</code> function will break apart each element of a list into its own row. Using a using a similar input to before but with more rows.</p>
+<pre class="r"><code>input &lt;- c(&quot;....#.......&quot;,
+           &quot;.#..#....###&quot;,
+           &quot;....###.....&quot;)
+
+tibble(raw = input) %&gt;% 
+  mutate(
+    row_id = row_number(), #Create Row ID
+    value = str_split(raw, &#39;&#39;) #Break Each Row Into A List Of Elements
+  ) %&gt;% 
+  unnest(value) %&gt;% #Break Each Element Into Its Own Row
+  group_by(row_id) %&gt;% 
+  mutate(col_id = row_number()) %&gt;% #Create Column ID
+  head(10) %&gt;% 
+  kable(align = &#39;c&#39;)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="center">raw</th>
+<th align="center">row_id</th>
+<th align="center">value</th>
+<th align="center">col_id</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="center">….#…….</td>
+<td align="center">1</td>
+<td align="center">.</td>
+<td align="center">1</td>
+</tr>
+<tr class="even">
+<td align="center">….#…….</td>
+<td align="center">1</td>
+<td align="center">.</td>
+<td align="center">2</td>
+</tr>
+<tr class="odd">
+<td align="center">….#…….</td>
+<td align="center">1</td>
+<td align="center">.</td>
+<td align="center">3</td>
+</tr>
+<tr class="even">
+<td align="center">….#…….</td>
+<td align="center">1</td>
+<td align="center">.</td>
+<td align="center">4</td>
+</tr>
+<tr class="odd">
+<td align="center">….#…….</td>
+<td align="center">1</td>
+<td align="center">#</td>
+<td align="center">5</td>
+</tr>
+<tr class="even">
+<td align="center">….#…….</td>
+<td align="center">1</td>
+<td align="center">.</td>
+<td align="center">6</td>
+</tr>
+<tr class="odd">
+<td align="center">….#…….</td>
+<td align="center">1</td>
+<td align="center">.</td>
+<td align="center">7</td>
+</tr>
+<tr class="even">
+<td align="center">….#…….</td>
+<td align="center">1</td>
+<td align="center">.</td>
+<td align="center">8</td>
+</tr>
+<tr class="odd">
+<td align="center">….#…….</td>
+<td align="center">1</td>
+<td align="center">.</td>
+<td align="center">9</td>
+</tr>
+<tr class="even">
+<td align="center">….#…….</td>
+<td align="center">1</td>
+<td align="center">.</td>
+<td align="center">10</td>
+</tr>
+</tbody>
+</table>
+<p>Now each element of the character vector is its own row its with own <code>row_id</code> and <code>col_id</code>.</p>
+</div>
+<div id="trick-3-extract-is-a-powerhouse-function-for-working-with-strings" class="section level2">
+<h2>Trick #3: <code>extract()</code> is a powerhouse function for working with strings</h2>
+<p>I’ve mentioned before that I think regular expressions are amazing and opens up a world of possibilities. <code>extract()</code> allows for the use to regular expressions and capture groups to create any number of new columns. Its similar to <code>separate()</code> but to me seems more customizable. Given the inputs:</p>
+<pre><code>6-7 z: dqzzzjbzz 67
+13-16 j: jjjvjmjjkjjjjjjj 123
+5-6 m: mmbmmlvmbmmgmmf 5</code></pre>
+<p>And you wanted to create a data.frame that had columns for the number range, the character before the ‘:’, the series of characters after the ‘:’ and a final digit . This could be done with <code>str_match()</code> or similar but <code>extract()</code> just makes it so <strong><em>easy</em></strong>. Just give <code>extract()</code> a regular expression and capture in parentheses the things to turn into columns.</p>
+<pre class="r"><code>input &lt;- c(&quot;6-7 z: dqzzzjbzz 67&quot;,
+           &quot;13-16 j: jjjvjmjjkjjjjjjj 123&quot;,
+           &quot;5-6 m: mmbmmlvmbmmgmmf 5&quot;)
+
+tibble(raw = input) %&gt;% 
+  extract(raw, 
+          into = c(&#39;number_range&#39;, &#39;single_char&#39;, 
+                   &#39;many_char&#39;, &#39;single_digit&#39;),
+          regex = &#39;(\\d+-\\d+) (\\w+): (\\w+) (\\d+)&#39;,
+          convert = T) %&gt;% 
+  kable(align = &#39;c&#39;)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="center">number_range</th>
+<th align="center">single_char</th>
+<th align="center">many_char</th>
+<th align="center">single_digit</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="center">6-7</td>
+<td align="center">z</td>
+<td align="center">dqzzzjbzz</td>
+<td align="center">67</td>
+</tr>
+<tr class="even">
+<td align="center">13-16</td>
+<td align="center">j</td>
+<td align="center">jjjvjmjjkjjjjjjj</td>
+<td align="center">123</td>
+</tr>
+<tr class="odd">
+<td align="center">5-6</td>
+<td align="center">m</td>
+<td align="center">mmbmmlvmbmmgmmf</td>
+<td align="center">5</td>
+</tr>
+</tbody>
+</table>
+<p>Done and Done (and with convert=T it even turned the <code>single_digit</code> into an int)!</p>
+</div>
+<div id="trick-4-memoization" class="section level2">
+<h2>Trick #4: Memoization</h2>
+<p>Some of the puzzles in AoC use programming concepts I haven’t thought about in a long-term (linked lists) and some used concepts I didn’t know existed. Memoization is one of those terms that I’d heard before but had no idea what it meant. There were a number of puzzles where my initial brute force solutions would take hours or days to complete. But in certain cases, memoization sped things up immensely.</p>
+<p>Memoization caches the results of function calls so that if the same call happens a second time, rather than doing the work again, the program can just recall the value from the cache.</p>
+<p>Functions can be memoised in R using the <code>memoise::memoise()</code> function to wrap the function.</p>
+<p>For this example, I’m borrowing the Fibonacci example from this post on <a href="https://www.inwt-statistics.com/read-blog/optimize-your-r-code-using-memoization.html">IWNT Statistics</a>.</p>
+<pre class="r"><code>library(memoise)
+
+# Vanilla Function
+fibb &lt;- function(x){
+  if(x==0){return(1)}
+  else if(x==1){return(1)}
+  else{return(fibb(x - 1) + fibb(x-2))}
+}
+
+# Same Function But Wrapped In Memoise
+memo_fib &lt;- memoise(function(x){
+  if(x==0){return(1)}
+  else if(x==1){return(1)}
+  else{return(memo_fib(x - 1) + memo_fib(x-2))}
+})</code></pre>
+<p>Running the original version:</p>
+<pre class="r"><code>tictoc::tic()
+fibb(35)</code></pre>
+<pre><code>## [1] 14930352</code></pre>
+<pre class="r"><code>tictoc::toc()</code></pre>
+<pre><code>## 26.58 sec elapsed</code></pre>
+<p>And the memoised version:</p>
+<pre class="r"><code>tictoc::tic()
+memo_fib(35)</code></pre>
+<pre><code>## [1] 14930352</code></pre>
+<pre class="r"><code>tictoc::toc()</code></pre>
+<pre><code>## 0.08 sec elapsed</code></pre>
+<p>The memoised version produces a <strong><em>way</em></strong> faster result! While hard to believe, the original function makes close to 30 million calls on its way to finding <code>fibb(35)</code>. However, the memoised version, only needs to solve for the 35 unique function calls and can recall the answer from cache for the recursive calls.</p>
+</div>
+<div id="trick-5---string-replacement-with-back-references" class="section level2">
+<h2>Trick #5 - String Replacement with Back References</h2>
+<p>Back to string manipulation!</p>
+<p>Within regular expressions there is a concept of “capture groups” which is when you wrap something in parenthesis and then are able to extract it from the string match (like how <code>str_match()</code> can work). However, you can also reference what is in the capture group to use it for replacement in functions like <code>str_replace_all()</code>.</p>
+<p>In our example, image we have a string of animals, <code>"the cat, a bird, the dog, ze goat"</code> and we want to insert the adjective <strong>red</strong> between “the” and each animal. There are many ways to do this, but I will use back-references, which will reference the contents of the capture group without knowing specifically what’s in it.</p>
+<pre class="r"><code>input &lt;- &quot;the cat, a bird, the dog, ze goat&quot;
+
+str_replace_all(input, &#39;(\\w+) (\\w+)&#39;, &#39;\\1 red \\2&#39;)</code></pre>
+<pre><code>## [1] &quot;the red cat, a red bird, the red dog, ze red goat&quot;</code></pre>
+<p>The <code>\\1</code> is a back-reference to the first capture group in parenthesis (the, a, the, and ze) while <code>\\2</code> is a reference to the animals.</p>
+</div>
+<div id="trick-6---escaping-stringrs-regular-expression-matching-with-coll" class="section level2">
+<h2>Trick #6 - Escaping stringR’s regular expression matching with <code>coll()</code></h2>
+<p>More often than not, stringR’s use of regular expressions as the pattern is a blessing. One place where it was troublesome was when I was trying to use one variable as a pattern to replace another variable. In these cases, the special characters in my pattern (the ‘+’) were treated as part of a RegEx rather than the literal string I wanted to match.</p>
+<p>For this example, suppose I want to replace an equation within parenthesis with the word ‘hi’ (not sure <strong>why</strong> I’d want to do this, but oh well).</p>
+<pre class="r"><code>tibble(
+  eq = c(&quot;(1 + 1)&quot;, &quot;(7 - 3)&quot;, &quot;(12 * 1)&quot;)
+) %&gt;% 
+  mutate(ptrn = str_extract(eq, &#39;\\(.+\\)&#39;),
+         new_eq = str_replace_all(eq, ptrn, &#39;hi&#39;),
+  ) %&gt;% 
+  kable(align = &#39;c&#39;)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="center">eq</th>
+<th align="center">ptrn</th>
+<th align="center">new_eq</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="center">(1 + 1)</td>
+<td align="center">(1 + 1)</td>
+<td align="center">(1 + 1)</td>
+</tr>
+<tr class="even">
+<td align="center">(7 - 3)</td>
+<td align="center">(7 - 3)</td>
+<td align="center">(hi)</td>
+</tr>
+<tr class="odd">
+<td align="center">(12 * 1)</td>
+<td align="center">(12 * 1)</td>
+<td align="center">(12 * 1)</td>
+</tr>
+</tbody>
+</table>
+<p>Notice that the <code>str_replace_all</code> either didn’t work 100% correctly or didn’t work at all for all three cases. Even though as a person this obviously should be a match, in computer-land the symbols “(”, “)”, “+”, and "*" all are special characters for regular expressions and therefore aren’t matching the literal symbols they are intended to match.</p>
+<p>Fortunately, there is a function <code>coll()</code> which will compare strings using standard collation rules rather than using RegExp rules. Wrapping the pattern variable in <code>coll()</code> should solve all problems.</p>
+<pre class="r"><code>tibble(
+  eq = c(&quot;(1 + 1)&quot;, &quot;(7 - 3)&quot;, &quot;(12 * 1)&quot;)
+) %&gt;% 
+  mutate(ptrn = str_extract(eq, &#39;\\(.+\\)&#39;),
+         new_eq = str_replace_all(eq, ptrn, &#39;hi&#39;),
+         with_coll = str_replace_all(eq, coll(ptrn), &#39;hi&#39;)
+  ) %&gt;%
+  kable(align = &#39;c&#39;)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="center">eq</th>
+<th align="center">ptrn</th>
+<th align="center">new_eq</th>
+<th align="center">with_coll</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="center">(1 + 1)</td>
+<td align="center">(1 + 1)</td>
+<td align="center">(1 + 1)</td>
+<td align="center">hi</td>
+</tr>
+<tr class="even">
+<td align="center">(7 - 3)</td>
+<td align="center">(7 - 3)</td>
+<td align="center">(hi)</td>
+<td align="center">hi</td>
+</tr>
+<tr class="odd">
+<td align="center">(12 * 1)</td>
+<td align="center">(12 * 1)</td>
+<td align="center">(12 * 1)</td>
+<td align="center">hi</td>
+</tr>
+</tbody>
+</table>
+<p>Now everything works!</p>
+</div>
+<div id="trick-7---use-the-assign-function-to-programatically-create-new-objects" class="section level2">
+<h2>Trick #7 - Use the <code>assign()</code> function to programatically create new objects</h2>
+<p>I always struggle with doing programmatic naming of objects. In the course of one of the puzzles I came across the <code>assign()</code> function which takes a variable name, and a object that will be given the variable name.</p>
+<p>Suppose we have data in a data.frame with a column for Player and a value for the cards help by the player and we want to create 2 vectors; one for player 1 and one for player 2. We can use assign to create those objects.</p>
+<pre class="r"><code>input &lt;- tibble::tribble(
+  ~Player, ~Cards,
+       1L,     1L,
+       1L,     2L,
+       1L,     3L,
+       2L,     4L,
+       2L,     5L,
+       2L,     6L
+  )
+
+# Generate the string for the variable name with paste and assign an object
+for(i in seq_len(n_distinct(input$Player))){
+  assign(paste0(&#39;player_&#39;,i), input %&gt;% filter(Player == i) %&gt;% pull(Cards))
+}
+
+print(player_1)</code></pre>
+<pre><code>## [1] 1 2 3</code></pre>
+<pre class="r"><code>print(player_2)</code></pre>
+<pre><code>## [1] 4 5 6</code></pre>
+<p>Now there are two objected in the environment with names “player_1” and “player_2”</p>
+</div>
+<div id="thanks-for-reading" class="section level2">
+<h2>Thanks for Reading!</h2>
+<p>I would highly encourage everyone to try <a href="https://adventofcode.com/">Advent of Code</a> at some point. I found it really enjoyable to do a different type of programming from my day to day. Although there were instances where doing it in R made things difficult (mainly R being a 1-indexed language) I found the experience really enjoyable.</p>
+</div>
