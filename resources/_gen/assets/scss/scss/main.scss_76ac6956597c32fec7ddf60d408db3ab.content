@@ -7680,7 +7680,7 @@ div.alert a {
  **************************************************/
 .navbar {
   height: 70px;
-  background: #3f51b5;
+  background: #2A3439;
   box-shadow: 0 0.125rem 0.25rem 0 rgba(0, 0, 0, 0.11);
   font-size: 16.17px;
   position: fixed;
@@ -7787,7 +7787,7 @@ div.alert a {
     left: 0;
     top: 50px;
     width: 100%;
-    background-color: #3f51b5;
+    background-color: #2A3439;
     text-align: center !important; }
   #navbar-main .main-menu-item .nav-item {
     padding: 10px 15px !important; }
@@ -7811,12 +7811,12 @@ ul.nav-icons li.nav-item a.nav-link {
   padding: 0; }
 
 .dropdown-menu {
-  background-color: #3f51b5 !important;
+  background-color: #2A3439 !important;
   color: #fff !important;
   z-index: 1032; }
 
 .dropdown-item {
-  background-color: #3f51b5 !important;
+  background-color: #2A3439 !important;
   color: #fff !important; }
 
 /*************************************************
@@ -9169,3 +9169,13 @@ div.mermaid {
  **************************************************/
 html[dir="rtl"] body {
   text-align: right; }
+
+.navbar-brand {
+  font-family: "Kaushan Script";
+  font-size: 2.0em; }
+
+.article-container {
+  max-width: 850px;
+  padding: 0 20px 0 20px;
+  margin: 0 auto 0 auto;
+  font-size: 20px; }

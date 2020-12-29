@@ -8,5 +8,3 @@ blogdown
 Thumbs.db
 public/ # if using Netlify
 public
-data/
-data
