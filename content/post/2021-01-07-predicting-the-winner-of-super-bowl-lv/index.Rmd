@@ -403,7 +403,7 @@ gm <- winners('KC', 'BUF')
 ### Super Bowl LV
 
 ```{r echo = F}
-gm <- winners('NO', 'KC')
+gm <- winners('GB', 'KC')
 ```
 
 **#1. `r gm$team1` (`r gm$team1_prob %>% percent`)  vs. #1. `r gm$team2` (`r gm$team2_prob %>% percent`)**
