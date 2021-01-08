@@ -9,7 +9,6 @@ categories:
 tags:
   - BradleyTerry2
   - nflfastR
-  - gt
 subtitle: ''
 summary: ''
 authors: []
