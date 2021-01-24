@@ -122,7 +122,9 @@ senate_clean <- senate %>%
   group_by(congress, state) %>%
   arrange(govtrack_id) %>% 
   slice(1:2) %>% 
-  ungroup()
+  ungroup() %>% 
+  filter(!is.na(date_of_birth))
+
 ```
 
 ### Getting US Population Age Distributions from the Senate

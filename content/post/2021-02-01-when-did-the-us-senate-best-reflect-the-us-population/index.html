@@ -105,7 +105,8 @@ library(tidycensus) # Package for Accessing Census Data</code></pre>
   group_by(congress, state) %&gt;%
   arrange(govtrack_id) %&gt;% 
   slice(1:2) %&gt;% 
-  ungroup()</code></pre>
+  ungroup() %&gt;% 
+  filter(!is.na(date_of_birth))</code></pre>
 </div>
 <div id="getting-us-population-age-distributions-from-the-senate" class="section level3">
 <h3>Getting US Population Age Distributions from the Senate</h3>
