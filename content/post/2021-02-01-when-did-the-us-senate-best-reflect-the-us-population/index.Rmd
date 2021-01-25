@@ -25,11 +25,11 @@ projects: []
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, error = FALSE, message = FALSE)
 ```
 
-
 ## TL;DR
-* While this is the oldest Senate we've ever had, its not the most non-representative Senate when compared to the age distribution of the US Population
-* The most representative Senate was in the 1970s as the average Senator age declined while the average age in the US increased.
-* The least representative Senate was in the 1990s as the average age in the US declined while the average age of Senators continued to rise since 1980
+
+-   While this is the oldest Senate we've ever had, its not the most non-representative Senate when compared to the age distribution of the US Population
+-   The most representative Senate was in the 1970s as the average Senator age declined while the average age in the US increased.
+-   The least representative Senate was in the 1990s as the average age in the US declined while the average age of Senators continued to rise since 1980
 
 ## Intro
 
@@ -37,17 +37,17 @@ The inspiration for this post stemmed from [wcd.fyi's post](https://www.wcd.fyi/
 
 ![](senate_generations.png)
 
-Upon seeing this visualization my initial goal was to see whether certain generation's trajectories were faster or slower than others and how that would shape our expectation of Senate control in the future.  However, as that question expanded and as I thought about how we hear about how the [Senate is old](https://gen.medium.com/why-is-congress-so-old-64f014a9d819) and out of touch with ordinary Americans, I wanted to see whether or not that's true.
+Upon seeing this visualization my initial goal was to see whether certain generations' trajectory were faster or slower than others and how that would shape our expectation of Senate control in the future. However, as that question expanded and as I thought about how we hear about how the [Senate is old](https://gen.medium.com/why-is-congress-so-old-64f014a9d819) and doesn't reflect the American population, I wanted to see whether or not that's true.
 
 The purpose of this post is to determine **when the US Senate most and least reflected the age distribution of the general US population**.
 
 ## Getting the Data
 
-The data for this analysis will come from two primary sources.  Information on the US Senators will come from the same [Propublica Congress API](https://projects.propublica.org/api-docs/congress-api/) as the original visualization.  Information on the US Population Age Distribution will come from a variety of source from the [US Census Bureau](https://www.census.gov).
+The data for this analysis will come from two primary sources. Information on the US Senators will come from the same [ProPublica Congress API](https://projects.propublica.org/api-docs/congress-api/) as the original visualization. Information on the US Population Age Distribution will come from a variety of source from the [US Census Bureau](https://www.census.gov).
 
 ### Setting up the libraries
 
-While the workhorse functions for this analysis are the main `tidyverse` data manipulation and visualization functions, I will be using `httr` to access the Congress API and `tidycensus` to access a subset of age distributions.  Special shoutout to `readr` for its various function to help read a variety of differently formatted files from the [Census Bureau](https://www.census.gov)
+While the workhorse functions for this analysis are the main `tidyverse` data manipulation and visualization functions, I will be using `httr` to access the Congress API and `tidycensus` to access a subset of age distributions. Special shoutout to `readr` for its various function to help read the differently formatted files from the [Census Bureau](https://www.census.gov)
 
 ```{r libraries}
 library(tidyverse) #Data Manipulation and Visualizaion
@@ -57,10 +57,9 @@ library(lubridate) # Date Manipulation Functions
 library(tidycensus) # Package for Accessing Census Data
 ```
 
-
 ### Getting the Senate Data
 
-The data on the Senators will use the same [ProPublica Congress API](https://projects.propublica.org/api-docs/congress-api/) data source from the initial visualization.  According to its documentation you can retrieve a list of Senates for any congress from the 80th (1947) through 117th (2021).  To get this data I'll first write a function that takes in a congressional session and returns the desired data.
+The data on the Senators comes from the [ProPublica Congress API](https://projects.propublica.org/api-docs/congress-api/). According to its documentation you can retrieve a list of Senators for any congress from the 80th (1947) through 117th (2021). To get this data I'll first write a function that takes in a congressional session and returns the desired data.
 
 ```{r senate_function}
 get_senate_data <- function(cngrs){
@@ -107,15 +106,16 @@ get_senate_data <- function(cngrs){
 
 Some notes about this function:
 
-* The ProPublica API requires an API key that you need to register for.  I've stored it in my .Renviron file so I can share the code without sharing my key.
-* The `unnest_wider()` function is part of a family of functions to help work with JSON output to turn lists of lists into more rectangular data.
+-   The ProPublica API requires an API key that you need to register for. I've stored it in my .Renviron file so I can share the code without sharing my key.
+-   The `unnest_wider()` function is part of a family of functions to help work with JSON output to turn lists of lists into more rectangular data.
 
-With the function in place, I can get all the Senate Data with a single line to call the API for each of the 38 Congress' and combine into a single tibble using `map_dfr` which applies the *get_senate_data* function to each input (the numbers between 80 and 117).
+With the function in place, I can get all the Senate data with a single line to call the API for each of the 38 Congress' and combine into a single tibble using `map_dfr` which applies the *get_senate_data* function to each input (the numbers between 80 and 117).
 
 ```{r get_senator, cache=TRUE}
 senate <- map_dfr(80:117, get_senate_data)
 ```
-The API will return all of the Senators who appeared in that Congressional session which due to changes over the course of two years can result in more than 2 senates appearing per state.  For simplicity, I'll reduce the data to only use the 2 senators who were there at the start of the congressional session.  This is done using a heuristic that the Senators who were in-place first will have smaller *govtrack_id* numbers.
+
+The API will return all of the Senators who appeared in that Congressional session which due to changes over the course of two years can result in more than 2 senators appearing per state. For simplicity, I'll reduce the data to only use the 2 senators who were there at the start of the congressional session. This is done using a heuristic that the Senators who were in-place first will have smaller *govtrack_id* numbers. Finally, senators without DOB information are removed.
 
 ```{r clean_senate}
 senate_clean <- senate %>%
@@ -127,21 +127,21 @@ senate_clean <- senate %>%
 
 ```
 
-### Getting US Population Age Distributions from the Senate
+### Getting US Population Age Distributions from the Census Bureau
 
-This process was a PITA.  Since I wanted to match the coverage of the Senator data which ranged from 1947 through 2021, I needed to find US Population Age Distributions to match.  While all this information was available on the Census website it comes from a combination of different files, file formats, and access methods.  In summary:
+This process was a PITA. Since I wanted to match the coverage of the Senator data which ranged from 1947 through 2021, I needed to find US Population Age Distributions to match. While all this information was available on the Census website it comes from a combination of different files, file formats, and access methods. In summary:
 
-* **1947 - 1979:** Individual files per year that contain the population by each individual Age from 0 to 84 and then 85+
-* **1980 - 1989:** The entire decade exists in a [single fixed-width-file](https://www2.census.gov/programs-surveys/popest/tables/1980-1990/state/asrh/s5yr8090.txt)
-* **1990 - 2000:** The entire decade exists in a [single file](https://www2.census.gov/programs-surveys/popest/tables/1990-2000/national/totals/nat-agesex.txt) but the format is too awful to deal with programmatically, so I rebuilt the file in Excel and used the `datapasta` add-in to create the tibble.
-* **2001-2004:** Nicely existed in a [single file](https://www2.census.gov/programs-surveys/popest/tables/2000-2005/national/asrh/nc-est2005-01.csv)
-* **2005-2019:** Retrieved from the American Community Survey (ACS) using the `tidycensus` API.
+-   **1947 - 1979:** Individual files per year that contain the population by each individual age from 0 to 84 and then 85+
+-   **1980 - 1989:** The entire decade exists in a [single fixed-width-file](https://www2.census.gov/programs-surveys/popest/tables/1980-1990/state/asrh/s5yr8090.txt)
+-   **1990 - 2000:** The entire decade exists in a [single file](https://www2.census.gov/programs-surveys/popest/tables/1990-2000/national/totals/nat-agesex.txt) but the format is too awful to deal with programmatically, so I rebuilt the file in Excel and used the `datapasta` add-in to create the tibble.
+-   **2001-2004:** Nicely existed in a [single file](https://www2.census.gov/programs-surveys/popest/tables/2000-2005/national/asrh/nc-est2005-01.csv)
+-   **2005-2019:** Retrieved from the American Community Survey (ACS) using the `tidycensus` API.
 
-There were probably easier ways to get everything... but oh well.  Since there's a lot going on for these 5 source, I'm going to not go into as much detail as I normally would in describing what's happening, but its nothing too complicated.
+There were probably easier ways to get everything... but oh well. Since there's a lot going on for these 5 source, I'm going to not go into as much detail as I normally would in describing what's happening, but its nothing too complicated.
 
 ### 1947 - 1979
 
-The process for reading these flat files isn't too dissimilar from the process used on the ProPublica API.  I write a function to handle an individual year and run `map_dfr` on the list of years to create my data set.  The one unique piece of this function is that the format of each year isn't exactly the same, so it first reads the file to find where the data starts and then does the "official" read-in using the *skip* parameter to start in the right place.
+The process for reading these flat files isn't too dissimilar from the process used on the ProPublica API. I write a function to handle an individual year and run `map_dfr` on the list of years to create my data set. The one unique piece of this function is that the format of each year isn't exactly the same, so it first reads the file to find where the data starts and then does the "official" read-in using the *skip* parameter to start in the right place.
 
 ```{r g47_to_79, cache=TRUE}
 get_1947_to_1979 <- function(yr){
@@ -168,9 +168,9 @@ ages_1947_to_1979 <- map_dfr(1947:1979, get_1947_to_1979)
 
 ### 1980 - 1989
 
-The data for 1980 to 1989 comes from a single fixed-width file.  To read it in, I use the `read_fwf` function from `readr`.  Its very similar to other `readr` functions like `read_csv`.  The only difference is that you need to specific the positions of the data which can be done in a wide variety of ways.  Here i used `fwf_widths` to tell the function how wide each column is and what to call each column.
+The data for 1980 to 1989 comes from a single fixed-width file. To read it in, I use the `read_fwf` function from `readr`. Its very similar to other `readr` functions like `read_csv`. The only difference is that you need to specify the positions of the data which can be done in a wide variety of ways. Here i used `fwf_widths` to tell the function how wide each column is and what to call each column.
 
-The file also contains information at a State level and contains sets for Both Genders, Males only, and Females only.  The *rowid* construction is so I can pull out only the rows I need for Both Genders and for the rows with Age segment data.  Finally, the *group_by* / *summarize* is to aggregate the population over the State values.
+The file also contains information at a State level and contains sets for both genders, Males only, and Females only. The *rowid* construction is so I can pull out only the rows I need for both genders and for the rows with age segment data. Finally, the *group_by* / *summarize* is to aggregate the population over the State values.
 
 ```{r g80_to_89}
 ages_1980_to_1989 <- read_fwf(
@@ -195,10 +195,9 @@ ages_1980_to_1989 <- read_fwf(
 
 ```
 
-
 ### 1990 - 2000
 
-The data for the 1990s comes from a [single file](https://www2.census.gov/programs-surveys/popest/tables/1990-2000/national/totals/nat-agesex.txt) in a very machine unfriendly format.  Here I copied and pasted the data I needed into an Excel file and used `datapasta` to copy it into R as a tibble.  The wide-format data is then cleaned and turned into long-format data.
+The data for the 1990s comes from a [single file](https://www2.census.gov/programs-surveys/popest/tables/1990-2000/national/totals/nat-agesex.txt) in a very machine unfriendly format. Here I copied and pasted the data I needed into an Excel file and used `datapasta` to copy it into R as a tibble. The wide-format data is then cleaned and turned into long-format data.
 
 ```{r g90_to_2000}
 ages_1990_to_2000 <- tibble::tribble(
@@ -252,7 +251,7 @@ ages_2001_to_2004 <- read_csv('https://www2.census.gov/programs-surveys/popest/t
 
 ### 2005 - 2019
 
-There's probably a better way to do this but my original plan was to try to find as granular age buckets as possible and 2005 - 2019 was the first set of years I worked with.  So I leveraged the `tidycensus` package to access the data from the American Community Survey to get population estimates.
+There's probably a better way to do this but my original plan was to try to find as granular age buckets as possible and 2005 - 2019 was the first set of years I worked with. So I leveraged the `tidycensus` package to access the data from the American Community Survey to get population estimates.
 
 ```{r tidycensus, cache=TRUE}
 
@@ -342,7 +341,7 @@ ages_2005_to_2019 <- map_dfr(2005:2019, get_2005_2019) %>%
 
 ## Final Data Preparation
 
-In addition to have different file formats each of the files had different age groupings.  They're not wildly different from each other but we need to have standardized groupings to carry out the analysis:
+In addition to have different file formats each of the files had different age groupings. They're not wildly different from each other but we need to have standardized groupings to carry out the analysis:
 
 ```{r combine_pop_data}
 all_years <- ages_1947_to_1979 %>% 
@@ -402,7 +401,7 @@ all_years <- ages_1947_to_1979 %>%
 
 ```
 
-By law a US Senator needs to be at least 30 years old (technically, this wasn't always true as there are 4 US Senators who were in their late-20s, but those were all in the early 1800s so out of scope for this analysis) so to create a comparable population I'll limit the US population data to those 30 and older and create the Share of 30+ Population by Age:
+By law a US Senator needs to be at least 30 years old (technically, this wasn't always true as there are 4 US Senators who were in their late-20s, but those were all in the early 1800s so out of scope for this analysis) so to create a comparable population I'll limit the US population data to those 30 and older and create the share of 30+ population by age:
 
 ```{r age30plus}
 eligible_age_bckt <- all_years %>% 
@@ -412,8 +411,7 @@ eligible_age_bckt <- all_years %>%
 
 ```
 
-
-I'll summarize the Senate data by the same groupings and create the % of Senators by Age Group:
+I'll summarize the Senate data by the same groupings and create the % of Senators by age:
 
 ```{r senate_summary}
 senate_age_bckt <- senate_clean %>%
@@ -423,7 +421,7 @@ senate_age_bckt <- senate_clean %>%
 
 ```
 
-Finally, we'll complete the data building steps by stacking the US Population Data and Senate Data on top of each other:
+Finally, we'll complete the data building steps by stacking the US population data and Senate data on top of each other:
 
 ```{r stacking_data}
 pop_senate_merged <- 
@@ -440,9 +438,9 @@ knitr::kable(head(pop_senate_merged, 3))
 
 ## Looking At Similarity of Senate vs. US Population
 
-Now onto the main course!
+**Now onto the main course!**
 
-Our goal is to determine when the distribution of ages in the Senate are most similar / dissimilar to the distribution of ages in the US Over 30 population.  There are many different ways to calculate similarity but for I'm going to keep it simple and use *mean absolute difference* because its simple and the results are pretty similar to other methods I tried.
+Our goal is to determine when the distribution of ages in the Senate are most similar / dissimilar to the distribution of ages in the US Over 30 population. There are many different ways to calculate similarity but for I'm going to keep it simple and use *mean absolute difference* because its simple and the results are pretty similar to other methods I tried.
 
 ```{r distance}
 dist_measures <- pop_senate_merged %>% 
@@ -475,11 +473,11 @@ dist_measures %>%
 
 ```
 
-Based on the above, the most representative era for the US Senate was in the  70s when the distance was minimized while least representative time was in the late 80s/early 90s.  The three most representative years are `r dist_measures %>% arrange(distance) %>% slice(1:3) %>% pull(year) %>% paste(., collapse = ', ')` while the least representative years are `r dist_measures %>% arrange(-distance) %>% slice(1:3) %>% pull(year) %>% paste(., collapse = ', ')`  What was surprising is that the present time is actually more representative than in the 90s and about on the level that it was in the 60s.  
+Based on the above, the most representative era for the US Senate was in the 70s when the distance was minimized while least representative time was in the late 80s/early 90s. The three most representative years are `r dist_measures %>% arrange(distance) %>% slice(1:3) %>% pull(year) %>% paste(., collapse = ', ') %>% str_replace(., ', (\\d{4})$', ', and \\1')`, while the least representative years are `r dist_measures %>% arrange(-distance) %>% slice(1:3) %>% pull(year) %>% paste(., collapse = ', ') %>% str_replace(., ', (\\d{4})$', ', and \\1')`.  What was surprising is that the present time is actually more representative than in the 90s and about on the level that it was in the 60s.
 
-To get a better idea of what makes these years representitive or non-representitive we can look at the distributions for the most similar year, 1971, the most dissimilar year (1989), and the most recent year available (2019).
+To get a better idea of what makes these years representative or non-representative we can look at the distributions for the most similar year, 1971, the most dissimilar year, 1989, and the most recent year available, 2019.
 
-```{r drill-down, fig.width = 10, fig.height=8}
+```{r drill-down, fig.width = 10, fig.height=6}
 pop_senate_merged %>% 
   filter(year %in% c(1971, 1989, 2019)) %>% 
   ggplot(aes(x = grp, y = pct, fill = fct_rev(label))) + 
@@ -499,7 +497,8 @@ pop_senate_merged %>%
   cowplot::theme_cowplot()
 
 ```
-While the Senate never fully represented the 30-45 year olds well, in 1971 the distributions were closer with 15% of Senators vs. 35% of the Population.  This is **much** closer than in 1989 when this group made up 4% of Senators vs. 43% of the population or closer to today (2019) when its 3% of Senators vs. 32% of the population.
+
+While the Senate never represented the 30-45 population well, in 1971 the distributions were closer with 15% of Senators vs. 35% of the Population. This is **much** closer than in 1989 when this group made up 4% of Senators vs. 43% of the population and closer than today (2019) when its 3% of Senators vs. 32% of the population.
 
 Finally, between 1989 and 2019 it looks like a glut of Senators who were between 45 and 60 (which was 66% of the Senate in 1989 vs. 26% of the Population) have hung-around as in 2019 this group would be 65 to 80 which still makes up 44% of the Senate vs. 21% of the US Population).
 
