@@ -12,7 +12,7 @@ tags:
 subtitle: ''
 summary: ''
 authors: []
-lastmod: '2021-01-24T16:06:21-05:00'
+lastmod: '2021-02-01T16:06:21-05:00'
 featured: no
 image:
   caption: ''
@@ -422,7 +422,7 @@ knitr::kable(head(pop_senate_merged, 3))</code></pre>
   filter(year %% 2 == 1, year != 2021) %&gt;%
   # Add Up Absolute Deviations
   group_by(year) %&gt;% 
-  summarize(distance = sum(distance))</code></pre>
+  summarize(distance = mean(distance))</code></pre>
 <p>Then the dissimilarity over time can be plotted:</p>
 <pre class="r"><code>dist_measures %&gt;% 
   ggplot(aes(x = year, y = distance)) + 
