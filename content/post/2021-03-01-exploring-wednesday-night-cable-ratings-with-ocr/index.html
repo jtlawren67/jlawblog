@@ -53,10 +53,10 @@ image_ggplot(chopped_image)</code></pre>
 <p>Now the non-tabular data (header and footer) have been removed.</p>
 <p>The <em>ocr()</em> algorithm that will handle extracting the data from the image can struggle sometimes with parts of the image as is. For example, it might think the color boundary between white and green is a character. Therefore, I’m going to try to do the best I can do clean up the image so that the <em>ocr()</em> function can have an easier time. Ultimately this required a lot of guess and check but in the end, I only did two steps for cleaning:</p>
 <ol style="list-style-type: decimal">
-<li>Running a thinning filter over the image to remove the horizontal lines separating each group of 5 shows (this required negating the colors of the image so that the filter would have an easier time).</li>
-<li>Turning everything to greyscale.</li>
+<li>Running a morphology method over the image to remove the horizontal lines separating each group of 5 shows (this required negating the colors of the image so that the filter would have an easier time since white is considered foreground by default). The morphology method modifies an image based on the neighborhood of pixels around it and thinning is subtracting pixels from a shape. So by negating the color the method turns “non-black” pixels to black. Then re-negating turns everything back to “white”.</li>
+<li>Turning everything to greyscale to remove remaining colors.</li>
 </ol>
-<p>I had tried to actually remove the color gradients, but it took much more effort and was ultimately not more effective than just going to greyscale.</p>
+<p>I had tried to remove the color gradients, but it took much more effort and was ultimately not more effective than just going to greyscale.</p>
 <pre class="r"><code>processed_image &lt;- chopped_image %&gt;% 
   image_negate() %&gt;% #Flip the Colors
   # Remove the Horizontal Lines
@@ -77,16 +77,17 @@ image_ggplot(processed_image)</code></pre>
   str_sub(end = str_locate(., &#39;\\n&#39;)[1])</code></pre>
 <pre><code>## [1] &quot;1 CHALLENGE: DOUBLE AGENMTV e:00PM 90/0.54 069 0.39 |047 053 0.20 |058 013} 920\n&quot;</code></pre>
 <p>Just looking at the top row there are a number of issues that come from just using <em>ocr()</em> directly on the table. The boundary between sections are showing up as “|” or “/” and sometime the decimal doesn’t appear.</p>
-<p>Fortunately the function allows you to “whitelist” characters in order to nudge the algorithm on what it should expect to see. So rather than guess and check on the processing of the image to make everything work perfectly. I’ll write a function that allows me to crop to individual columns and specific the proper whitelist for each column.</p>
+<p>Fortunately the function allows you to “whitelist” characters in order to nudge the algorithm on what it should expect to see. So rather than guess and check on the processing of the image to make everything work perfectly. I’ll write a function that allows me to crop to individual columns and specify the proper whitelist for each column.</p>
 <pre class="r"><code>ocr_text &lt;- function(col_width, col_start, format_code){
   
-  ##Formats
+  ##For Stations Which Are Only Characters
   only_chars &lt;- tesseract::tesseract(
     options = list(
       tessedit_char_whitelist = paste0(LETTERS, collapse = &#39;&#39;)
     )
   )
   
+  #For Titles Which Are Letters + Numbers + Characters
   all_chars &lt;- tesseract::tesseract(
     options = list(
       tessedit_char_whitelist = paste0(
@@ -94,15 +95,10 @@ image_ggplot(processed_image)</code></pre>
     )
   )
   
+  #For Ratings which are just numbers and a decimal point
   ratings &lt;- tesseract::tesseract(
     options = list(
       tessedit_char_whitelist = &quot;0123456789 .&quot;
-    )
-  )
-  
-  population &lt;- tesseract::tesseract(
-    options = list(
-      tessedit_char_whitelist = &quot;0123456789,&quot;
     )
   )
   
@@ -130,7 +126,7 @@ ratings &lt;- all_ocr %&gt;%
 </div>
 <div id="final-cleaning" class="section level2">
 <h2>Final Cleaning</h2>
-<p>Even with the column specific specifications the <em>ocr()</em> function did not get everything right. Due to the font, it has particular troubles distinguishing between <code>1</code>s and <code>4</code>s as well as <code>8</code>s and <code>6</code>s. Additionally, sometimes the decimal was still missed, and then I just decided to recode the networks manually.</p>
+<p>Even with the column specific specifications the <em>ocr()</em> function did not get everything right. Due to the font, it has particular troubles distinguishing between <code>1</code>s and <code>4</code>s as well as <code>8</code>s and <code>6</code>s. Additionally, sometimes the decimal was still missed. And since all networks were truncated in the original image, I just decided to manually recode.</p>
 <pre class="r"><code>ratings_clean &lt;- ratings %&gt;% 
   #Fix Things where the decimal was missed
   mutate(across(p_18_49:p_50_plus, ~parse_number(.x)),
@@ -150,6 +146,7 @@ ratings &lt;- all_ocr %&gt;%
            telecast == &#39;ALLIN WI CHRIS HAYES&#39; ~ &#39;ALL IN W/ CHRIS HAYES&#39;,
            telecast == &#39;BEAT WIARI MELBER&#39; ~&#39;BEAT W/ARI MELBER&#39;,
            telecast == &#39;SPORTSCENTER 124M L&#39; ~ &#39;SPORTSCENTER 12AM&#39;,
+           telecast == &#39;MY 600-LB LIFE NIA&#39; ~ &#39;MY 600-LB LIFE&#39;,
            TRUE ~ telecast
          ),
          # Turn to Title Case
@@ -212,7 +209,7 @@ knitr::kable(head(ratings_clean, 3))</code></pre>
 </tr>
 </tbody>
 </table>
-<p>But now everything should be ready for analysis.</p>
+<p>Now everything should be ready for analysis.</p>
 </div>
 <div id="analysis-of-cable-ratings" class="section level2">
 <h2>Analysis of Cable Ratings</h2>
@@ -286,11 +283,11 @@ key_all / (key_male | key_female) +
             plot.title = ggtext::element_markdown(size = 14),
             plot.caption = ggtext::element_markdown())</code></pre>
 <p><img src="index_files/figure-html/most_popular_18_49-1.png" width="672" /></p>
-<p>From the chart its clear that the Challenge is fairly dominent in the 18-49 Demographic with 0.21% (or 1.63x) higher than the 2nd highest show. Although while the Challenge is popular with both genders its the most popular shows amongst 18-49 Females but only 3rd for 18-49 Males after a NBA game and AEW Professional Wrestling.</p>
+<p>From the chart its clear that the Challenge is fairly dominant in the 18-49 Demographic with 0.21% (or 1.63x) higher than the 2nd highest show. Although while the Challenge is popular with both genders its the most popular shows amongst 18-49 Females but only 3rd for 18-49 Males after a NBA game and AEW Professional Wrestling.</p>
 </div>
 <div id="the-most-male-dominant-female-dominant-and-gender-balanced-shows" class="section level3">
 <h3>The Most Male-Dominant, Female Dominant, and Gender-Balanced Shows</h3>
-<p>From the above chart its clear that some shows skew Male (sports) and some skew Female (reality shows like Married at First Sight and My 600-lb Life). But I can look at that more directly by comparing the ratios the Female 18-49 rating to the Male 18-49 rating to determine the gender skew of each show. I break the shows into categories of <em>Male Skewed</em>, <em>Female Skewed</em>, and <em>Balanced</em>.</p>
+<p>From the above chart its clear that some shows skew Male (sports) and some skew Female (reality shows like Married at First Sight and My 600-lb Life). But I can look at that more directly by comparing the ratios the Female 18-49 rating to the Male 18-49 rating to determine the gender skew of each show. I break the shows into categories of <em>Male Skewed</em>, <em>Female Skewed</em>, and <em>Balanced</em> (where the Female/Male Ratio is closest to 1).</p>
 <pre class="r"><code>##Female / Male Ratio for Key Demo
 bind_rows(
   ratings_clean %&gt;% 
@@ -321,11 +318,11 @@ bind_rows(
       plot.caption = ggtext::element_markdown()
     )</code></pre>
 <p><img src="index_files/figure-html/gender_break-1.png" width="672" /></p>
-<p>Sure enough the most Male dominated shows are sport-related with 2 NBA Games, an NBA pre-gram show, an episode of Sportscenter, and a sports talking heads show. Female skewed shows are also not surprising with Married at First Sight, Sistas, My 600-lb Life, and Real Housewives of Salt Lake City topping the list. For the balanced category, I did not have much of an expectation but all the programs seems to be News shows or news adjacent like the Daily Show… which I guess makes sense.</p>
+<p>Sure enough the most Male dominated shows are sport-related with 2 NBA Games, an NBA pre-game show, an episode of Sportscenter, and a sports talking heads show. Female skewed shows are also not surprising with Married at First Sight, Sistas, My 600-lb Life, and Real Housewives of Salt Lake City topping the list. For the balanced category, I did not have much of an expectation but all the programs seems to be News shows or news adjacent like the Daily Show… which I guess makes sense.</p>
 </div>
 <div id="most-popular-shows-for-the-50-demographic" class="section level3">
 <h3>Most Popular Shows for the 50+ Demographic</h3>
-<p>Turning away from the 18-49 demographic I can also look at the most popular shows for the 50+ demographic. Unfortuntaely, there is not a 50+ gender breakdown so I can only look at the overall.</p>
+<p>Turning away from the 18-49 demographic I can also look at the most popular shows for the 50+ demographic. Unfortunately, there is not a 50+ gender breakdown so I can only look at the overall.</p>
 <pre class="r"><code>ratings_clean %&gt;% 
   slice_max(p_50_plus, n = 10) %&gt;% 
   ggplot(aes(x = fct_reorder(telecast, p_50_plus), y = p_50_plus,  fill = network)) + 
@@ -350,4 +347,8 @@ bind_rows(
 <p><img src="index_files/figure-html/plus50_overall-1.png" width="672" /></p>
 <p>Interestingly in the 50+ Demo, <em>ALL</em> of the shows are News shows and they only come from 3 networks. Two on CNN, Two on Fox News, and 6 on MSNBC. Again, didn’t have a ton of expectation but it was surprising to be how homogeneous the 50+ demography was.</p>
 </div>
+</div>
+<div id="concluding-thoughts" class="section level2">
+<h2>Concluding Thoughts</h2>
+<p>While I still love The Challenge and am happy for its popularity, its best time was probably about 10 years ago (sorry not sorry). As far as the techniques in this post are concerned, I found extracting the data from an image to be an interesting challenge (no pun intended) but if the table was a tractable size I would probably manually enter the data rather than go through this again. Getting the data correct required a lot of guess and check for working with <code>magick</code> and <code>tesseract</code>. As for the analysis, I guess its good when things go as expected (most popular shows by gender follow stereotypical gender conventions) but I think the most surprising thing to me was how much cable news dominated the 50+ Demographic.</p>
 </div>

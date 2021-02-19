@@ -73,10 +73,10 @@ Now the non-tabular data (header and footer) have been removed.
 
 The *ocr()* algorithm that will handle extracting the data from the image can struggle sometimes with parts of the image as is.  For example, it might think the color boundary between white and green is a character.  Therefore, I'm going to try to do the best I can do clean up the image so that the *ocr()* function can have an easier time.  Ultimately this required a lot of guess and check but in the end, I only did two steps for cleaning:
 
-1. Running a thinning filter over the image to remove the horizontal lines separating each group of 5 shows (this required negating the colors of the image so that the filter would have an easier time).
-2. Turning everything to greyscale.
+1. Running a morphology method over the image to remove the horizontal lines separating each group of 5 shows (this required negating the colors of the image so that the filter would have an easier time since white is considered foreground by default).  The morphology method modifies an image based on the neighborhood of pixels around it and thinning is subtracting pixels from a shape.  So by negating the color the method turns "non-black" pixels to black.  Then re-negating turns everything back to "white". 
+2. Turning everything to greyscale to remove remaining colors.
 
-I had tried to actually remove the color gradients, but it took much more effort and was ultimately not more effective than just going to greyscale.
+I had tried to remove the color gradients, but it took much more effort and was ultimately not more effective than just going to greyscale.
 
 ```{r processing}
 processed_image <- chopped_image %>% 
@@ -103,18 +103,19 @@ ocr(processed_image) %>%
 ```
 Just looking at the top row there are a number of issues that come from just using *ocr()* directly on the table.  The boundary between sections are showing up as "|" or "/" and sometime the decimal doesn't appear.
 
-Fortunately the function allows you to "whitelist" characters in order to nudge the algorithm on what it should expect to see.  So rather than guess and check on the processing of the image to make everything work perfectly.  I'll write a function that allows me to crop to individual columns and specific the proper whitelist for each column.
+Fortunately the function allows you to "whitelist" characters in order to nudge the algorithm on what it should expect to see.  So rather than guess and check on the processing of the image to make everything work perfectly.  I'll write a function that allows me to crop to individual columns and specify the proper whitelist for each column.
 
 ```{r}
 ocr_text <- function(col_width, col_start, format_code){
   
-  ##Formats
+  ##For Stations Which Are Only Characters
   only_chars <- tesseract::tesseract(
     options = list(
       tessedit_char_whitelist = paste0(LETTERS, collapse = '')
     )
   )
   
+  #For Titles Which Are Letters + Numbers + Characters
   all_chars <- tesseract::tesseract(
     options = list(
       tessedit_char_whitelist = paste0(
@@ -122,15 +123,10 @@ ocr_text <- function(col_width, col_start, format_code){
     )
   )
   
+  #For Ratings which are just numbers and a decimal point
   ratings <- tesseract::tesseract(
     options = list(
       tessedit_char_whitelist = "0123456789 ."
-    )
-  )
-  
-  population <- tesseract::tesseract(
-    options = list(
-      tessedit_char_whitelist = "0123456789,"
     )
   )
   
@@ -163,7 +159,7 @@ ratings <- all_ocr %>%
 
 ## Final Cleaning
 
-Even with the column specific specifications the *ocr()* function did not get everything right.  Due to the font, it has particular troubles distinguishing between `1`s and `4`s as well as `8`s and `6`s.  Additionally, sometimes the decimal was still missed, and then I just decided to recode the networks manually.
+Even with the column specific specifications the *ocr()* function did not get everything right.  Due to the font, it has particular troubles distinguishing between `1`s and `4`s as well as `8`s and `6`s.  Additionally, sometimes the decimal was still missed. And since all networks were truncated in the original image, I just decided to manually recode.
 
 ```{r cleaning}
 ratings_clean <- ratings %>% 
@@ -185,6 +181,7 @@ ratings_clean <- ratings %>%
            telecast == 'ALLIN WI CHRIS HAYES' ~ 'ALL IN W/ CHRIS HAYES',
            telecast == 'BEAT WIARI MELBER' ~'BEAT W/ARI MELBER',
            telecast == 'SPORTSCENTER 124M L' ~ 'SPORTSCENTER 12AM',
+           telecast == 'MY 600-LB LIFE NIA' ~ 'MY 600-LB LIFE',
            TRUE ~ telecast
          ),
          # Turn to Title Case
@@ -212,7 +209,7 @@ knitr::kable(head(ratings_clean, 3))
 
 ```
 
-But now everything should be ready for analysis.
+Now everything should be ready for analysis.
 
 ## Analysis of Cable Ratings
 
@@ -291,11 +288,11 @@ key_all / (key_male | key_female) +
 
 ```
 
-From the chart its clear that the Challenge is fairly dominent in the 18-49 Demographic with 0.21% (or 1.63x) higher than the 2nd highest show.  Although while the Challenge is popular with both genders its the most popular shows amongst 18-49 Females but only 3rd for 18-49 Males after a NBA game and AEW Professional Wrestling.
+From the chart its clear that the Challenge is fairly dominant in the 18-49 Demographic with 0.21% (or 1.63x) higher than the 2nd highest show.  Although while the Challenge is popular with both genders its the most popular shows amongst 18-49 Females but only 3rd for 18-49 Males after a NBA game and AEW Professional Wrestling.
 
 ### The Most Male-Dominant, Female Dominant, and Gender-Balanced Shows
 
-From the above chart its clear that some shows skew Male (sports) and some skew Female (reality shows like Married at First Sight and My 600-lb Life).  But I can look at that more directly by comparing the ratios the Female 18-49 rating to the Male 18-49 rating to determine the gender skew of each show.  I break the shows into categories of *Male Skewed*, *Female Skewed*, and *Balanced*.
+From the above chart its clear that some shows skew Male (sports) and some skew Female (reality shows like Married at First Sight and My 600-lb Life).  But I can look at that more directly by comparing the ratios the Female 18-49 rating to the Male 18-49 rating to determine the gender skew of each show.  I break the shows into categories of *Male Skewed*, *Female Skewed*, and *Balanced* (where the Female/Male Ratio is closest to 1).
 
 ```{r gender_break}
 ##Female / Male Ratio for Key Demo
@@ -330,11 +327,11 @@ bind_rows(
 
 ```
 
-Sure enough the most Male dominated shows are sport-related with 2 NBA Games, an NBA pre-gram show, an episode of Sportscenter, and a sports talking heads show.  Female skewed shows are also not surprising with Married at First Sight, Sistas, My 600-lb Life, and Real Housewives of Salt Lake City topping the list.  For the balanced category, I did not have much of an expectation but all the programs seems to be News shows or news adjacent like the Daily Show... which I guess makes sense.
+Sure enough the most Male dominated shows are sport-related with 2 NBA Games, an NBA pre-game show, an episode of Sportscenter, and a sports talking heads show.  Female skewed shows are also not surprising with Married at First Sight, Sistas, My 600-lb Life, and Real Housewives of Salt Lake City topping the list.  For the balanced category, I did not have much of an expectation but all the programs seems to be News shows or news adjacent like the Daily Show... which I guess makes sense.
 
 ### Most Popular Shows for the 50+ Demographic
 
-Turning away from the 18-49 demographic I can also look at the most popular shows for the 50+ demographic.  Unfortuntaely, there is not a 50+ gender breakdown so I can only look at the overall.
+Turning away from the 18-49 demographic I can also look at the most popular shows for the 50+ demographic.  Unfortunately, there is not a 50+ gender breakdown so I can only look at the overall.
 
 ```{r plus50_overall}
 ratings_clean %>% 
@@ -363,3 +360,6 @@ ratings_clean %>%
 
 Interestingly in the 50+ Demo, *ALL* of the shows are News shows and they only come from 3 networks.  Two on CNN, Two on Fox News, and 6 on MSNBC.  Again, didn't have a ton of expectation but it was surprising to be how homogeneous the 50+ demography was.
 
+## Concluding Thoughts
+
+While I still love The Challenge and am happy for its popularity, its best time was probably about 10 years ago (sorry not sorry).  As far as the techniques in this post are concerned, I found extracting the data from an image to be an interesting challenge (no pun intended) but if the table was a tractable size I would probably manually enter the data rather than go through this again.  Getting the data correct required a lot of guess and check for working with `magick` and `tesseract`.  As for the analysis, I guess its good when things go as expected (most popular shows by gender follow stereotypical gender conventions) but I think the most surprising thing to me was how much cable news dominated the 50+ Demographic.
