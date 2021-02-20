@@ -348,6 +348,48 @@ bind_rows(
 <p><img src="index_files/figure-html/plus50_overall-1.png" width="672" /></p>
 <p>Interestingly in the 50+ Demo, <em>ALL</em> of the shows are News shows and they only come from 3 networks. Two on CNN, Two on Fox News, and 6 on MSNBC. Again, didn’t have a ton of expectation but it was surprising to be how homogeneous the 50+ demography was.</p>
 </div>
+<div id="the-oldest-and-youngest-shows-in-the-top-50" class="section level3">
+<h3>The Oldest and Youngest Shows in the Top 50</h3>
+<p>Similar to the Most Male and Most Female shows in the Top 50 Cable Programs, I’d like to see which shows skew older vs. younger. To do this, I’ll rank order the 18-49 demo and the 50+ demo and plot the ranks against each other. Now there are some massive caveats here in the sense that my data is the Top 50 shows by the 18-49 demo, so its not clear that the 50+ demo is fully represented. Additionally, popularity for each dimension is relative since I don’t know the actual number of people in each demo.</p>
+<pre class="r"><code>#Rank Order the Shows for the 2 Columns
+dt &lt;- ratings_clean %&gt;% 
+  transmute(
+    telecast,
+    young_rnk = min_rank(p_18_49),
+    old_rnk = min_rank(p_50_plus),
+  ) 
+
+# Run K-Means Clustering Algorithm
+km &lt;- kmeans(dt %&gt;% select(-telecast), 
+             centers = 5, nstart = 10)
+
+#Add the cluster label back to the data
+dt2 &lt;- dt %&gt;%
+  mutate(cluster = km$cluster)
+
+#Plot
+ggplot(dt2, aes(x = young_rnk, y = old_rnk, color = factor(cluster))) + 
+  geom_text(aes(label = telecast), size = 3, check_overlap = T) +
+  scale_color_discrete(guide = F) + 
+  scale_x_continuous(breaks = c(1, 50),
+                     labels = c(&quot;Less Popular&quot;, &quot;More Popular&quot;)) + 
+  scale_y_continuous(breaks = c(20, 54),
+                     labels = c(&quot;Less Popular&quot;, &quot;More Popular&quot;)) + 
+  coord_cartesian(xlim = c(-2, 54), ylim = c(0, 52)) + 
+  labs(x = &quot;Popularity Among 18-49&quot;,
+       y = &quot;Popularity Among 50+&quot;,
+       title = &quot;Visualizing Popularity of Wednesday Night Cable by Age&quot;,
+       subtitle = &quot;Comparing 18-49 vs. 50+&quot;) + 
+  cowplot::theme_cowplot() + 
+  theme(
+    axis.ticks = element_blank(),
+    axis.line = element_blank(),
+    axis.text.y = element_text(angle = 90), 
+    panel.background = element_rect(fill = &#39;#EEEEEE&#39;)
+
+  )</code></pre>
+<p><img src="index_files/figure-html/unnamed-chunk-4-1.png" width="672" /></p>
+</div>
 </div>
 <div id="concluding-thoughts" class="section level2">
 <h2>Concluding Thoughts</h2>

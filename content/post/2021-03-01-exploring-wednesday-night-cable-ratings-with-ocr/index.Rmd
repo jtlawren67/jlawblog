@@ -362,6 +362,56 @@ ratings_clean %>%
 
 Interestingly in the 50+ Demo, *ALL* of the shows are News shows and they only come from 3 networks.  Two on CNN, Two on Fox News, and 6 on MSNBC.  Again, didn't have a ton of expectation but it was surprising to be how homogeneous the 50+ demography was.
 
+### The Oldest and Youngest Shows in the Top 50
+
+Similar to the Most Male and Most Female shows in the Top 50 Cable Programs, I'd like to see which shows skew older vs. younger.  To do this, I'll rank order the 18-49 demo and the 50+ demo and plot the ranks against each other.  Now there are some massive caveats here in the sense that my data is the Top 50 shows by the 18-49 demo, so its not clear that the 50+ demo is fully represented.  Additionally, popularity for each dimension is relative since I don't know the actual number of people in each demo.
+
+
+```{r}
+#Rank Order the Shows for the 2 Columns
+dt <- ratings_clean %>% 
+  transmute(
+    telecast,
+    young_rnk = min_rank(p_18_49),
+    old_rnk = min_rank(p_50_plus),
+  ) 
+
+# Run K-Means Clustering Algorithm
+km <- kmeans(dt %>% select(-telecast), 
+             centers = 5, nstart = 10)
+
+#Add the cluster label back to the data
+dt2 <- dt %>%
+  mutate(cluster = km$cluster)
+
+#Plot
+ggplot(dt2, aes(x = young_rnk, y = old_rnk, color = factor(cluster))) + 
+  geom_text(aes(label = telecast), size = 3, check_overlap = T) +
+  scale_color_discrete(guide = F) + 
+  scale_x_continuous(breaks = c(1, 50),
+                     labels = c("Less Popular", "More Popular")) + 
+  scale_y_continuous(breaks = c(20, 54),
+                     labels = c("Less Popular", "More Popular")) + 
+  coord_cartesian(xlim = c(-2, 54), ylim = c(0, 52)) + 
+  labs(x = "Popularity Among 18-49",
+       y = "Popularity Among 50+",
+       title = "Visualizing Popularity of Wednesday Night Cable by Age",
+       subtitle = "Comparing 18-49 vs. 50+") + 
+  cowplot::theme_cowplot() + 
+  theme(
+    axis.ticks = element_blank(),
+    axis.line = element_blank(),
+    axis.text.y = element_text(angle = 90), 
+    panel.background = element_rect(fill = '#EEEEEE')
+
+  )
+  
+
+
+```
+
+
+
 ## Concluding Thoughts
 
 While I still love The Challenge and am happy for its popularity, its best time was probably about 10 years ago (sorry not sorry).  As far as the techniques in this post are concerned, I found extracting the data from an image to be an interesting challenge (no pun intended) but if the table was a tractable size I would probably manually enter the data rather than go through this again.  Getting the data correct required a lot of guess and check for working with `magick` and `tesseract`.  
