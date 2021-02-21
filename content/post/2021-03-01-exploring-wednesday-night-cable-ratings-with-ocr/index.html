@@ -12,7 +12,7 @@ tags:
 subtitle: ''
 summary: ''
 authors: []
-lastmod: '2021-02-13T16:25:16-05:00'
+lastmod: '2021-03-01T01:25:16-05:00'
 featured: no
 image:
   caption: ''
@@ -102,9 +102,11 @@ image_ggplot(processed_image)</code></pre>
     )
   )
   
+  #Grab the Column starting at Col Start and with width Col with
   tmp &lt;- processed_image %&gt;% 
     image_crop(geometry_area(col_width, 1009, col_start, 0)) 
   
+  # Run OCR with the correct whitelist and turn into a dataframe
   tmp %&gt;% 
     ocr(engine = get(format_code)) %&gt;% 
     str_split(&quot;\n&quot;) %&gt;%
@@ -114,11 +116,13 @@ image_ggplot(processed_image)</code></pre>
     filter(!is.na(value), str_length(value) &gt; 0)
 }</code></pre>
 <p>The function above takes in a column width and a column start to crop the column and then a label to choose the whitelist for each specific column. The parameters are defined in a list and passed into <code>purrr</code>’s <em>pmap()</em> function. Finally, all the extracted columns will combined together.</p>
-<pre class="r"><code>all_ocr &lt;- list(col_width = c(168, 37, 33, 34, 35, 34),
+<pre class="r"><code>#Run the function all the various columns
+all_ocr &lt;- list(col_width = c(168, 37, 33, 34, 35, 34),
                 col_start = c(28, 196, 307, 346, 385, 598),
                 format_code = c(&quot;all_chars&quot;, &#39;only_chars&#39;, rep(&quot;ratings&quot;, 4))) %&gt;% 
   pmap(ocr_text) 
 
+#Combine all the columns together and set the names
 ratings &lt;- all_ocr %&gt;% 
   bind_cols() %&gt;% 
   set_names(nm = &quot;telecast&quot;, &quot;network&quot;, &quot;p_18_49&quot;, &quot;f_18_49&quot;, &quot;m_18_49&quot;,
@@ -221,7 +225,7 @@ knitr::kable(head(ratings_clean, 3))</code></pre>
 cols &lt;- scales::hue_pal()(n_distinct(ratings_clean$network))
 names(cols) &lt;- levels(ratings_clean$network)
 
-##Top Show By the Key Demo (By Male, By Female)
+##Top Show By the Key Demo (Combined)
 key_all &lt;- ratings_clean %&gt;% 
   slice_max(p_18_49, n = 10) %&gt;% 
   ggplot(aes(x = fct_reorder(telecast, p_18_49), y = p_18_49, fill = network)) + 
@@ -239,6 +243,7 @@ key_all &lt;- ratings_clean %&gt;%
       plot.title.position = &#39;plot&#39;
     )
 
+#Male Ratings only
 key_male &lt;- ratings_clean %&gt;% 
   slice_max(m_18_49, n = 5) %&gt;% 
   ggplot(aes(x = fct_reorder(telecast, m_18_49), y = m_18_49, fill = network)) + 
@@ -256,6 +261,7 @@ key_male &lt;- ratings_clean %&gt;%
     plot.title.position = &#39;plot&#39;
   )
 
+# Female rating only
 key_female &lt;- ratings_clean %&gt;% 
   slice_max(f_18_49, n = 5) %&gt;% 
   ggplot(aes(x = fct_reorder(telecast, f_18_49), y = f_18_49, fill = network)) + 
@@ -273,7 +279,7 @@ key_female &lt;- ratings_clean %&gt;%
     plot.title.position = &#39;plot&#39;
   )
     
-
+# Combining everything with patchwork syntax
 key_all / (key_male | key_female) +
   plot_layout(guides = &quot;collect&quot;) + 
   plot_annotation(
@@ -350,7 +356,7 @@ bind_rows(
 </div>
 <div id="the-oldest-and-youngest-shows-in-the-top-50" class="section level3">
 <h3>The Oldest and Youngest Shows in the Top 50</h3>
-<p>Similar to the Most Male and Most Female shows in the Top 50 Cable Programs, I’d like to see which shows skew older vs. younger. To do this, I’ll rank order the 18-49 demo and the 50+ demo and plot the ranks against each other. Now there are some massive caveats here in the sense that my data is the Top 50 shows by the 18-49 demo, so its not clear that the 50+ demo is fully represented. Additionally, popularity for each dimension is relative since I don’t know the actual number of people in each demo.</p>
+<p>Similar to the Most Male and Most Female shows in the Top 50 Cable Programs, I’d like to see which shows skew older vs. younger. To do this, I’ll rank order the 18-49 demo and the 50+ demo and plot the ranks against each other. Now there are some massive caveats here in the sense that my data is the Top 50 shows by the 18-49 demo, so its not clear that the 50+ demo is fully represented. Additionally, popularity for each dimension is relative since I don’t know the actual number of people in each demo. Finally, since both scales are ranked, it won’t show the full distance between levels of popularity (e.g, The Challenge is much more popular than the next highest show). This was done to produce a better looking visualization.</p>
 <pre class="r"><code>#Rank Order the Shows for the 2 Columns
 dt &lt;- ratings_clean %&gt;% 
   transmute(
@@ -369,11 +375,11 @@ dt2 &lt;- dt %&gt;%
 
 #Plot
 ggplot(dt2, aes(x = young_rnk, y = old_rnk, color = factor(cluster))) + 
-  geom_text(aes(label = telecast), size = 3, check_overlap = T) +
+  ggrepel::geom_text_repel(aes(label = telecast), size = 3) +
   scale_color_discrete(guide = F) + 
   scale_x_continuous(breaks = c(1, 50),
                      labels = c(&quot;Less Popular&quot;, &quot;More Popular&quot;)) + 
-  scale_y_continuous(breaks = c(20, 54),
+  scale_y_continuous(breaks = c(13, 54),
                      labels = c(&quot;Less Popular&quot;, &quot;More Popular&quot;)) + 
   coord_cartesian(xlim = c(-2, 54), ylim = c(0, 52)) + 
   labs(x = &quot;Popularity Among 18-49&quot;,
@@ -389,6 +395,7 @@ ggplot(dt2, aes(x = young_rnk, y = old_rnk, color = factor(cluster))) +
 
   )</code></pre>
 <p><img src="index_files/figure-html/unnamed-chunk-4-1.png" width="672" /></p>
+<p>Somewhat surprising (at least to me), that Rachel Maddow and Tucker Carlson are the consensus most popular shows across the two demos. My beloved Challenge is very popular amongst the 18-49 demo and very unpopular among 50+. Sports shows tended to be generally the least popular by either demo and finally certain MSNBC and Fox News shows were popular among the 50+ demo but not the 18-49.</p>
 </div>
 </div>
 <div id="concluding-thoughts" class="section level2">
