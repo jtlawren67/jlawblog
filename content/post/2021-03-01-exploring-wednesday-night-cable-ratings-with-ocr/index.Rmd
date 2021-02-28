@@ -366,11 +366,13 @@ ratings_clean %>%
 
 ```
 
-Interestingly in the 50+ Demo, *ALL* of the shows are News shows and they only come from 3 networks.  Two on CNN, Two on Fox News, and 6 on MSNBC.  Again, didn't have a ton of expectation but it was surprising to be how homogeneous the 50+ demography was.
+Interestingly in the 50+ Demo, *ALL* of the shows are News shows and they only come from 3 networks.  Two on CNN, Two on Fox News, and 6 on MSNBC.  Again, didn't have a ton of expectation but it was surprising to be how homogeneous the 50+ demographic was.
 
 ### The Oldest and Youngest Shows in the Top 50
 
-Similar to the Most Male and Most Female shows in the Top 50 Cable Programs, I'd like to see which shows skew older vs. younger.  To do this, I'll rank order the 18-49 demo and the 50+ demo and plot the ranks against each other.  Now there are some massive caveats here in the sense that my data is the Top 50 shows by the 18-49 demo, so its not clear that the 50+ demo is fully represented.  Additionally, popularity for each dimension is relative since I don't know the actual number of people in each demo.  Finally, since both scales are ranked, it won't show the full distance between levels of popularity (e.g, The Challenge is much more popular than the next highest show).  This was done to produce a better looking visualization.
+Similar to the Most Male and Most Female shows in the Top 50 Cable Programs, I'd like to see which shows skew older vs. younger.  To do this, I'll rank order the 18-49 demo and the 50+ demo and plot the ranks against each other.  Now there are some massive caveats here in the sense that my data is the Top 50 shows by the 18-49 demo, so its not clear that the 50+ demo is fully represented.  Additionally, popularity for each dimension is relative since I don't know the actual number of people in each demo.  Finally, since both scales are ranked, it won't show the full distance between levels of popularity (e.g, The Challenge is much more popular than the next highest show for 18-49).  This was done to produce a better looking visualization.
+
+I had run a K-means clustering algorithm for text colors to make differences more appearant.  There isn't much rigor to this beyond my assumption that 5 clusters would probably make sense (1 for each corner and 1 middle).
 
 
 ```{r}
@@ -422,4 +424,4 @@ Somewhat surprising (at least to me), that Rachel Maddow and Tucker Carlson are 
 
 While I still love The Challenge and am happy for its popularity, its best time was probably about 10 years ago (sorry not sorry).  As far as the techniques in this post are concerned, I found extracting the data from an image to be an interesting challenge (no pun intended) but if the table was a tractable size I would probably manually enter the data rather than go through this again.  Getting the data correct required a lot of guess and check for working with `magick` and `tesseract`.  
 
-As for the analysis, I guess its good when things go as expected (most popular shows by gender follow stereotypical gender conventions) but I think the most surprising thing to me was how much cable news dominated the 50+ Demographic.
+As for the analysis, I guess its good when things go as expected (most popular shows by gender follow stereotypical gender conventions) but I think the most surprising thing to me was how much cable news dominated the 50+ Demographic.... and I guess the Daily Show is not as popular as I thought it would be.

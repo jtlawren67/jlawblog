@@ -352,11 +352,12 @@ bind_rows(
     legend.position = &#39;bottom&#39;
   )</code></pre>
 <p><img src="index_files/figure-html/plus50_overall-1.png" width="672" /></p>
-<p>Interestingly in the 50+ Demo, <em>ALL</em> of the shows are News shows and they only come from 3 networks. Two on CNN, Two on Fox News, and 6 on MSNBC. Again, didn’t have a ton of expectation but it was surprising to be how homogeneous the 50+ demography was.</p>
+<p>Interestingly in the 50+ Demo, <em>ALL</em> of the shows are News shows and they only come from 3 networks. Two on CNN, Two on Fox News, and 6 on MSNBC. Again, didn’t have a ton of expectation but it was surprising to be how homogeneous the 50+ demographic was.</p>
 </div>
 <div id="the-oldest-and-youngest-shows-in-the-top-50" class="section level3">
 <h3>The Oldest and Youngest Shows in the Top 50</h3>
-<p>Similar to the Most Male and Most Female shows in the Top 50 Cable Programs, I’d like to see which shows skew older vs. younger. To do this, I’ll rank order the 18-49 demo and the 50+ demo and plot the ranks against each other. Now there are some massive caveats here in the sense that my data is the Top 50 shows by the 18-49 demo, so its not clear that the 50+ demo is fully represented. Additionally, popularity for each dimension is relative since I don’t know the actual number of people in each demo. Finally, since both scales are ranked, it won’t show the full distance between levels of popularity (e.g, The Challenge is much more popular than the next highest show). This was done to produce a better looking visualization.</p>
+<p>Similar to the Most Male and Most Female shows in the Top 50 Cable Programs, I’d like to see which shows skew older vs. younger. To do this, I’ll rank order the 18-49 demo and the 50+ demo and plot the ranks against each other. Now there are some massive caveats here in the sense that my data is the Top 50 shows by the 18-49 demo, so its not clear that the 50+ demo is fully represented. Additionally, popularity for each dimension is relative since I don’t know the actual number of people in each demo. Finally, since both scales are ranked, it won’t show the full distance between levels of popularity (e.g, The Challenge is much more popular than the next highest show for 18-49). This was done to produce a better looking visualization.</p>
+<p>I had run a K-means clustering algorithm for text colors to make differences more appearant. There isn’t much rigor to this beyond my assumption that 5 clusters would probably make sense (1 for each corner and 1 middle).</p>
 <pre class="r"><code>#Rank Order the Shows for the 2 Columns
 dt &lt;- ratings_clean %&gt;% 
   transmute(
@@ -401,5 +402,5 @@ ggplot(dt2, aes(x = young_rnk, y = old_rnk, color = factor(cluster))) +
 <div id="concluding-thoughts" class="section level2">
 <h2>Concluding Thoughts</h2>
 <p>While I still love The Challenge and am happy for its popularity, its best time was probably about 10 years ago (sorry not sorry). As far as the techniques in this post are concerned, I found extracting the data from an image to be an interesting challenge (no pun intended) but if the table was a tractable size I would probably manually enter the data rather than go through this again. Getting the data correct required a lot of guess and check for working with <code>magick</code> and <code>tesseract</code>.</p>
-<p>As for the analysis, I guess its good when things go as expected (most popular shows by gender follow stereotypical gender conventions) but I think the most surprising thing to me was how much cable news dominated the 50+ Demographic.</p>
+<p>As for the analysis, I guess its good when things go as expected (most popular shows by gender follow stereotypical gender conventions) but I think the most surprising thing to me was how much cable news dominated the 50+ Demographic…. and I guess the Daily Show is not as popular as I thought it would be.</p>
 </div>
