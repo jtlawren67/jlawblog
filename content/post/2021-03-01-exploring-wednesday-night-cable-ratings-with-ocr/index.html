@@ -1,0 +1,406 @@
+---
+title: Exploring Wednesday Night Cable Ratings with OCR
+author: JLaw
+date: '2021-03-01'
+slug: exploring-wednesday-night-cable-ratings-with-ocr
+categories:
+  - R
+tags:
+  - magick
+  - tesseract
+  - patchwork
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2021-03-01T01:25:16-05:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+<script src="index_files/header-attrs/header-attrs.js"></script>
+
+
+<p>One of my guilty pleasure TV shows is <a href="https://en.wikipedia.org/wiki/The_Challenge_(TV_series)">MTV’s The Challenge</a>. Debuting in the late 90s, the show pitted alumni from The Real World and Road Rules against each other in a series of physical events. Now on its 36th season, its found new popularity by importing challengers from other Reality Shows, in the US and Internationally, regularly topping Wednesday Night ratings in the coveted 18-49 demographic.</p>
+<p>Looking at the Ratings on <a href="http://www.showbuzzdaily.com/articles/showbuzzdailys-top-150-wednesday-cable-originals-network-finals-2-3-2021.html">showbuzzdaily.com</a> shows that the Challenge was in fact #1 in this demographic. However, it also scores incredibly low on the 50+ demo.</p>
+<p><img src="ratings.PNG" /></p>
+<p>So I figured that exploring the age and gender distributions of Wednesday Night Cable ratings would be interesting. The only caveat is… <strong>the data exists in an image</strong>.</p>
+<p>So for this blog post, I will be extracting the ratings data from the image and doing some exploration on popular shows by age and gender.</p>
+<p>Also, huge thanks to Thomas Mock and his <a href="https://themockup.blog/posts/2021-01-18-reading-tables-from-images-with-magick/">The Mockup Blog</a> for serving as a starting point for learning <code>magick</code>.</p>
+<div id="using-magick-to-process-image-data" class="section level2">
+<h2>Using magick to process image data</h2>
+<p>I’ll be using the <code>magick</code> package to read in the image and do some processing to clean up the image. Then I will use the <em>ocr()</em> function from the <code>tesseract</code> package to actual handle extraction of the data from the image.</p>
+<pre class="r"><code>library(tidyverse) #Data Manipulation
+library(magick) #Image Manipulation
+library(tesseract) #Extracting Text from the Image
+library(patchwork) #Combining Multiple GGPLOTs Together</code></pre>
+<p>The first step is reading in the raw image from the <a href="http://www.showbuzzdaily.com/articles/showbuzzdailys-top-150-wednesday-cable-originals-network-finals-2-3-2021.html">showbuzzdaily.com</a> website which can be done through <code>magick</code>’s <em>image_read()</em> function.</p>
+<pre class="r"><code>raw_img &lt;- image_read(&quot;http://www.showbuzzdaily.com/wp-content/uploads/2021/02/Final-Cable-2021-Feb-03-WED.png&quot;)
+
+image_ggplot(raw_img)</code></pre>
+<p><img src="index_files/figure-html/orig-1.png" width="576" /></p>
+<p>The next thing to notice is that while most of the data does exist in a tabular format, there are also headers and footers that don’t follow the tabular structure. So I’ll use <em>image_crop()</em> to keep only the tabular part of the image. The crop function uses a <em>geometry_area()</em> helper function which takes in four parameters. I struggled a bit with the documentation figuring out exactly how to get this working right but eventually internalized <em>geometry_area(703, 1009, 0, 91)</em> as “crop out 703 pixels of width and 1009 pixels of height starting from X-position on the left boundary and y-position 91 pixels from the top”.</p>
+<pre class="r"><code>chopped_image &lt;- 
+  raw_img %&gt;% 
+  #crop out width:703px and height:1009px starting +91px from the top
+  image_crop(geometry_area(703, 1009, 0, 91)) 
+
+image_ggplot(chopped_image)</code></pre>
+<p><img src="index_files/figure-html/cropping-1.png" width="576" /></p>
+<p>Now the non-tabular data (header and footer) have been removed.</p>
+<p>The <em>ocr()</em> algorithm that will handle extracting the data from the image can struggle with parts of the image as is. For example, it might think the color boundary between white and green is a character. Therefore, I’m going to try to do the best I can do clean up the image so that the <em>ocr()</em> function can have an easier time. Ultimately this required a lot of guess and check but in the end, I only did two steps for cleaning:</p>
+<ol style="list-style-type: decimal">
+<li>Running a morphology method over the image to remove the horizontal lines separating each group of 5 shows (this required negating the colors of the image so that the filter would have an easier time since white is considered foreground by default). The morphology method modifies an image based on the neighborhood of pixels around it and thinning is subtracting pixels from a shape. So by negating the color the method turns “non-black” pixels to black. Then re-negating turns everything back to “white”.</li>
+<li>Turning everything to greyscale to remove remaining colors.</li>
+</ol>
+<p>I had tried to remove the color gradients, but it took much more effort and was ultimately not more effective than just going to greyscale.</p>
+<pre class="r"><code>processed_image &lt;- chopped_image %&gt;% 
+  image_negate() %&gt;% #Flip the Colors
+  # Remove the Horizontal Lines
+  image_morphology(method = &quot;Thinning&quot;, kernel = &quot;Rectangle:7x1&quot;) %&gt;% 
+  # Flip the Colors back to the original
+  image_negate() %&gt;% 
+  # Turn colors to greyscale
+  image_quantize(colorspace = &quot;gray&quot;)
+
+
+image_ggplot(processed_image)</code></pre>
+<p><img src="index_files/figure-html/processing-1.png" width="576" /></p>
+</div>
+<div id="extracting-the-data-with-ocr" class="section level2">
+<h2>Extracting the Data with OCR</h2>
+<p>Because I can be lazy, my first attempts at extraction was just to run <em>ocr()</em> on the processed image and hope for the best. However, the best was somewhat frustrating. For example,</p>
+<pre class="r"><code>ocr(processed_image) %&gt;% 
+  str_sub(end = str_locate(., &#39;\\n&#39;)[1])</code></pre>
+<pre><code>## [1] &quot;1 CHALLENGE: DOUBLE AGENMTV e:00PM 90/0.54 069 0.39 |047 053 0.20 |058 013} 920\n&quot;</code></pre>
+<p>Just looking at the top row there are a number of issues that come from just using <em>ocr()</em> directly on the table. The boundary between sections are showing up as “|” or “/” and sometime the decimal doesn’t appear.</p>
+<p>Fortunately the function allows you to “whitelist” characters in order to nudge the algorithm on what it should expect to see. So rather than guess and check on the processing of the image to make everything work perfectly. I’ll write a function that allows me to crop to individual columns and specify the proper whitelist for each column.</p>
+<pre class="r"><code>ocr_text &lt;- function(col_width, col_start, format_code){
+  
+  ##For Stations Which Are Only Characters
+  only_chars &lt;- tesseract::tesseract(
+    options = list(
+      tessedit_char_whitelist = paste0(LETTERS, collapse = &#39;&#39;)
+    )
+  )
+  
+  #For Titles Which Are Letters + Numbers + Characters
+  all_chars &lt;- tesseract::tesseract(
+    options = list(
+      tessedit_char_whitelist = paste0(
+        c(LETTERS, &quot; &quot;, &quot;.0123456789-()/&quot;), collapse = &quot;&quot;)
+    )
+  )
+  
+  #For Ratings which are just numbers and a decimal point
+  ratings &lt;- tesseract::tesseract(
+    options = list(
+      tessedit_char_whitelist = &quot;0123456789 .&quot;
+    )
+  )
+  
+  #Grab the Column starting at Col Start and with width Col with
+  tmp &lt;- processed_image %&gt;% 
+    image_crop(geometry_area(col_width, 1009, col_start, 0)) 
+  
+  # Run OCR with the correct whitelist and turn into a dataframe
+  tmp %&gt;% 
+    ocr(engine = get(format_code)) %&gt;% 
+    str_split(&quot;\n&quot;) %&gt;%
+    unlist() %&gt;%
+    enframe() %&gt;%
+    select(-name) %&gt;%
+    filter(!is.na(value), str_length(value) &gt; 0)
+}</code></pre>
+<p>The function above takes in a column width and a column start to crop the column and then a label to choose the whitelist for each specific column. The parameters are defined in a list and passed into <code>purrr</code>’s <em>pmap()</em> function. Finally, all the extracted columns will combined together.</p>
+<pre class="r"><code>#Run the function all the various columns
+all_ocr &lt;- list(col_width = c(168, 37, 33, 34, 35, 34),
+                col_start = c(28, 196, 307, 346, 385, 598),
+                format_code = c(&quot;all_chars&quot;, &#39;only_chars&#39;, rep(&quot;ratings&quot;, 4))) %&gt;% 
+  pmap(ocr_text) 
+
+#Combine all the columns together and set the names
+ratings &lt;- all_ocr %&gt;% 
+  bind_cols() %&gt;% 
+  set_names(nm = &quot;telecast&quot;, &quot;network&quot;, &quot;p_18_49&quot;, &quot;f_18_49&quot;, &quot;m_18_49&quot;,
+            &#39;p_50_plus&#39;) </code></pre>
+</div>
+<div id="final-cleaning" class="section level2">
+<h2>Final Cleaning</h2>
+<p>Even with the column specific specifications the <em>ocr()</em> function did not get everything right. Due to the font, it has particular trouble distinguishing between <code>1</code>s and <code>4</code>s as well as <code>8</code>s and <code>6</code>s. Additionally, sometimes the decimal was still missed. And since all networks were truncated in the original image, I just decided to manually recode.</p>
+<pre class="r"><code>ratings_clean &lt;- ratings %&gt;% 
+  #Fix Things where the decimal was missed
+  mutate(across(p_18_49:p_50_plus, ~parse_number(.x)),
+         across(p_18_49:p_50_plus, ~if_else(.x &gt; 10, .x/100, .x)),
+         #1s and 4s get kindof screwed up; same with 8s and 6s
+         p_50_plus = case_when(
+           telecast == &#39;TUCKER CARLSON TONIGHT&#39; ~ 2.71,
+           telecast == &#39;SISTAS SERIES S2&#39; ~ 0.46,
+           telecast == &#39;LAST WORD W/L. ODONNEL&#39; ~ 2.17,
+           telecast == &#39;SITUATION ROOM&#39; &amp; p_50_plus == 1.34 ~ 1.31,
+           telecast == &#39;MY 600-LB LIFE NIA&#39; ~ 0.46,
+           TRUE ~ p_50_plus
+         ),
+         #Clean up &#39;W/&#39; being read as &#39;WI&#39; and &#39;11th&#39; as &#39;44th&#39;
+         telecast = case_when(
+           telecast == &#39;44TH HOUR WIB. WILLIAMS&#39; ~ &#39;11TH HOUR W/B. WILLIAMS&#39;,
+           telecast == &#39;ALLIN WI CHRIS HAYES&#39; ~ &#39;ALL IN W/ CHRIS HAYES&#39;,
+           telecast == &#39;BEAT WIARI MELBER&#39; ~&#39;BEAT W/ARI MELBER&#39;,
+           telecast == &#39;SPORTSCENTER 124M L&#39; ~ &#39;SPORTSCENTER 12AM&#39;,
+           telecast == &#39;MY 600-LB LIFE NIA&#39; ~ &#39;MY 600-LB LIFE&#39;,
+           TRUE ~ telecast
+         ),
+         # Turn to Title Case
+         telecast = str_to_title(telecast),
+         # Clean up random characters
+         telecast = str_remove(telecast, &#39; [L|F|S2|L B]+$&#39;),
+         #Clean up Network
+         network = factor(case_when(
+           network == &#39;TURNI&#39; ~ &quot;TNT&quot;,
+           network == &#39;MSNBI&#39; ~ &quot;MSNBC&quot;,
+           network == &#39;FOXN&#39; ~ &quot;FoxNews&quot;,
+           network == &#39;LIFETI&#39; ~ &quot;Lifetime&quot;,
+           network == &#39;BLACK&#39; ~ &#39;BET&#39;,
+           network %in% c(&#39;AEN&#39;, &#39;AGEN&#39;) ~ &#39;A&amp;E&#39;,
+           network == &#39;BRAVC&#39; ~ &#39;BRAVO&#39;,
+           network == &#39;COME&#39; ~ &#39;COMEDY CENTRAL&#39;,
+           network == &#39;NECS&#39; ~ &#39;NBC SPORTS&#39;,
+           network == &#39;TBSN&#39; ~ &#39;TBS&#39;,
+           network == &#39;TL&#39; ~ &#39;TLC&#39;,
+           TRUE ~ network
+         ))
+  )
+
+knitr::kable(head(ratings_clean, 3))</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">telecast</th>
+<th align="left">network</th>
+<th align="right">p_18_49</th>
+<th align="right">f_18_49</th>
+<th align="right">m_18_49</th>
+<th align="right">p_50_plus</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Challenge Double Agen</td>
+<td align="left">MTV</td>
+<td align="right">0.54</td>
+<td align="right">0.69</td>
+<td align="right">0.39</td>
+<td align="right">0.13</td>
+</tr>
+<tr class="even">
+<td align="left">Nba Regular Season</td>
+<td align="left">ESPN</td>
+<td align="right">0.33</td>
+<td align="right">0.21</td>
+<td align="right">0.46</td>
+<td align="right">0.40</td>
+</tr>
+<tr class="odd">
+<td align="left">Aew All Elite Wrestling</td>
+<td align="left">TNT</td>
+<td align="right">0.32</td>
+<td align="right">0.21</td>
+<td align="right">0.42</td>
+<td align="right">0.32</td>
+</tr>
+</tbody>
+</table>
+<p>Now everything should be ready for analysis.</p>
+</div>
+<div id="analysis-of-cable-ratings" class="section level2">
+<h2>Analysis of Cable Ratings</h2>
+<p>The decimals in the table for cable ratings refer to the <a href="https://en.wikipedia.org/wiki/Audience_measurement#:~:text=Ratings%20point%20is%20a%20measure,households%20in%20the%20United%20States">percent of the population watching the show</a>. For instance the <code>p_18_49</code> field’s value of 0.54 means that 0.54% of the US 18-49 population watched The Challenge on February 3rd.</p>
+<div id="the-most-popular-shows-on-wednesday-night-overall-18-49-and-by-gender" class="section level3">
+<h3>The Most Popular Shows on Wednesday Night Overall 18-49 and By Gender</h3>
+<p>The first question is what are the most popular shows for the 18-49 demographic for combined genders and broken apart by gender. These types of combined plots uses the <code>patchwork</code> package to combine the three ggplots into a single plot using a common legend.</p>
+<pre class="r"><code>##Create Fixed Color Palette For Networks
+cols &lt;- scales::hue_pal()(n_distinct(ratings_clean$network))
+names(cols) &lt;- levels(ratings_clean$network)
+
+##Top Show By the Key Demo (Combined)
+key_all &lt;- ratings_clean %&gt;% 
+  slice_max(p_18_49, n = 10) %&gt;% 
+  ggplot(aes(x = fct_reorder(telecast, p_18_49), y = p_18_49, fill = network)) + 
+    geom_col() + 
+    geom_text(aes(label = p_18_49 %&gt;% round(2)), nudge_y = 0.015) + 
+    scale_y_continuous(expand = expansion(mult = c(0, .1))) + 
+    scale_fill_manual(values = cols) + 
+    labs(x = &quot;&quot;, title = &quot;All Genders&quot;, y = &#39;&#39;, fill = &#39;&#39;) + 
+    coord_flip() + 
+    cowplot::theme_cowplot() + 
+    theme(
+      axis.text.x = element_blank(),
+      axis.ticks = element_blank(),
+      axis.line.x = element_blank(),
+      plot.title.position = &#39;plot&#39;
+    )
+
+#Male Ratings only
+key_male &lt;- ratings_clean %&gt;% 
+  slice_max(m_18_49, n = 5) %&gt;% 
+  ggplot(aes(x = fct_reorder(telecast, m_18_49), y = m_18_49, fill = network)) + 
+  geom_col() + 
+  geom_text(aes(label = m_18_49 %&gt;% round(2)), nudge_y = .045) + 
+  scale_y_continuous(expand = expansion(mult = c(0, .1))) + 
+  scale_fill_manual(values = cols, guide = F) + 
+  labs(x = &quot;&quot;, title = &quot;Male&quot;, y = &#39;&#39;) + 
+  coord_flip() + 
+  cowplot::theme_cowplot() + 
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks = element_blank(),
+    axis.line.x = element_blank(),
+    plot.title.position = &#39;plot&#39;
+  )
+
+# Female rating only
+key_female &lt;- ratings_clean %&gt;% 
+  slice_max(f_18_49, n = 5) %&gt;% 
+  ggplot(aes(x = fct_reorder(telecast, f_18_49), y = f_18_49, fill = network)) + 
+  geom_col() + 
+  geom_text(aes(label = f_18_49 %&gt;% round(2)), nudge_y = .065) + 
+  scale_y_continuous(expand = expansion(mult = c(0, .1))) + 
+  scale_fill_manual(values = cols, guide = F) + 
+  labs(x = &quot;&quot;, title = &quot;Female&quot;, y = &#39;&#39;) + 
+  coord_flip() + 
+  cowplot::theme_cowplot() + 
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks = element_blank(),
+    axis.line.x = element_blank(),
+    plot.title.position = &#39;plot&#39;
+  )
+    
+# Combining everything with patchwork syntax
+key_all / (key_male | key_female) +
+  plot_layout(guides = &quot;collect&quot;) + 
+  plot_annotation(
+    title = &quot;**Wednesday Night Cable Ratings (Feb 3rd, 2021)**&quot;,
+    caption = &quot;*Source:* Showbuzzdaily.com&quot;
+  ) &amp; theme(legend.position = &#39;bottom&#39;,
+            plot.title = ggtext::element_markdown(size = 14),
+            plot.caption = ggtext::element_markdown())</code></pre>
+<p><img src="index_files/figure-html/most_popular_18_49-1.png" width="768" /></p>
+<p>From the chart its clear that the Challenge is fairly dominant in the 18-49 Demographic with 0.21% (or 1.63x) higher than the 2nd highest show. Although while the Challenge is popular with both genders its the most popular show among 18-49 Females but only 3rd for 18-49 Males after a NBA game and AEW Professional Wrestling.</p>
+<p>Also, because the networks for My 600-lb Life (TLC) and Sistas (BET) weren’t in the overall top 10 I couldn’t figure out how to include them in the legend. If anyone has any ideas, please let me know in the comments.</p>
+</div>
+<div id="the-most-male-dominant-female-dominant-and-gender-balanced-shows" class="section level3">
+<h3>The Most Male-Dominant, Female Dominant, and Gender-Balanced Shows</h3>
+<p>From the above chart its clear that some shows skew Male (sports) and some skew Female (reality shows like Married at First Sight, My 600-lb Life, and Real Housewives). But I can look at that more directly by comparing the ratios the Female 18-49 rating to the Male 18-49 rating to determine the gender skew of each show. I break the shows into categories of <em>Male Skewed</em>, <em>Female Skewed</em>, and <em>Balanced</em> (where the Female/Male Ratio is closest to 1).</p>
+<pre class="r"><code>##Female / Male Ratio for Key Demo
+bind_rows(
+  ratings_clean %&gt;% 
+    mutate(f_m_ratio = f_18_49 / m_18_49) %&gt;%
+    slice_max(f_m_ratio, n = 5),
+  ratings_clean %&gt;% 
+    mutate(f_m_ratio = f_18_49 / m_18_49) %&gt;%
+    slice_min(f_m_ratio, n = 5),
+  ratings_clean %&gt;% 
+    mutate(f_m_ratio = f_18_49 / m_18_49,
+           balance = abs(1-f_m_ratio)) %&gt;% 
+    slice_min(balance, n = 5)
+) %&gt;%
+  mutate(balance = f_m_ratio-1) %&gt;% 
+  ggplot(aes(x = m_18_49, y = f_18_49, fill = balance)) + 
+    ggrepel::geom_label_repel(aes(label = telecast)) + 
+    geom_abline(lty = 2) + 
+    scale_fill_gradient2(high = &#39;#8800FF&#39;,mid = &#39;#BBBBBB&#39;, low = &#39;#02C2AD&#39;,
+                         midpoint = 0, guide = F) + 
+    labs(title = &quot;Comparing 18-49 Demographics by Gender&quot;,
+         subtitle = &#39;Cable Feb 3rd, 2021&#39;,
+         caption = &quot;*Source:* showbuzzdaily.com&quot;,
+         x = &quot;Males 18-49 Ratings&quot;,
+         y = &quot;Females 18-49 Ratings&quot;) + 
+    cowplot::theme_cowplot() + 
+    theme(
+      plot.title.position = &#39;plot&#39;,
+      plot.caption = ggtext::element_markdown()
+    )</code></pre>
+<p><img src="index_files/figure-html/gender_break-1.png" width="768" /></p>
+<p>Sure enough the most Male dominated shows are sport-related with 2 NBA Games, an NBA pre-game show, an episode of Sportscenter, and a sports talking heads show. Female skewed shows are also not surprising with Married at First Sight, Sistas, My 600-lb Life, and Real Housewives of Salt Lake City topping the list. For the balanced category, I did not have much of an expectation but all the programs seems to be News shows or news adjacent like the Daily Show… which I guess makes sense.</p>
+</div>
+<div id="most-popular-shows-for-the-50-demographic" class="section level3">
+<h3>Most Popular Shows for the 50+ Demographic</h3>
+<p>Turning away from the 18-49 demographic I can also look at the most popular shows for the 50+ demographic. Unfortunately, there is not a 50+ gender breakdown so I can only look at the overall.</p>
+<pre class="r"><code>ratings_clean %&gt;% 
+  slice_max(p_50_plus, n = 10) %&gt;% 
+  ggplot(aes(x = fct_reorder(telecast, p_50_plus), y = p_50_plus,  fill = network)) + 
+  geom_col() + 
+  geom_text(aes(label = p_50_plus %&gt;% round(2)), nudge_y = 0.15) + 
+  scale_y_continuous(expand = expansion(mult = c(0, .1))) + 
+  labs(x = &quot;&quot;, title = &quot;Top 10 Cable Shows for the 50+ Demographic&quot;,
+       y = &#39;&#39;,
+       subtitle = &quot;Wednesday, Feb 3rd 2021&quot;,
+       caption = &quot;*Source:* Showbuzzdaily.com&quot;,
+       fill = &#39;&#39;) + 
+  coord_flip() + 
+  cowplot::theme_cowplot() + 
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks = element_blank(),
+    axis.line.x = element_blank(),
+    plot.title.position = &#39;plot&#39;,
+    plot.caption = ggtext::element_markdown(),
+    legend.position = &#39;bottom&#39;
+  )</code></pre>
+<p><img src="index_files/figure-html/plus50_overall-1.png" width="672" /></p>
+<p>Interestingly in the 50+ Demo, <em>ALL</em> of the shows are News shows and they only come from 3 networks. Two on CNN, Two on Fox News, and 6 on MSNBC. Again, didn’t have a ton of expectation but it was surprising to be how homogeneous the 50+ demographic was.</p>
+</div>
+<div id="the-oldest-and-youngest-shows-in-the-top-50" class="section level3">
+<h3>The Oldest and Youngest Shows in the Top 50</h3>
+<p>Similar to the Most Male and Most Female shows in the Top 50 Cable Programs, I’d like to see which shows skew older vs. younger. To do this, I’ll rank order the 18-49 demo and the 50+ demo and plot the ranks against each other. Now there are some massive caveats here in the sense that my data is the Top 50 shows by the 18-49 demo, so its not clear that the 50+ demo is fully represented. Additionally, popularity for each dimension is relative since I don’t know the actual number of people in each demo. Finally, since both scales are ranked, it won’t show the full distance between levels of popularity (e.g, The Challenge is much more popular than the next highest show for 18-49). This was done to produce a better looking visualization.</p>
+<p>I had run a K-means clustering algorithm for text colors to make differences more appearant. There isn’t much rigor to this beyond my assumption that 5 clusters would probably make sense (1 for each corner and 1 middle).</p>
+<pre class="r"><code>#Rank Order the Shows for the 2 Columns
+dt &lt;- ratings_clean %&gt;% 
+  transmute(
+    telecast,
+    young_rnk = min_rank(p_18_49),
+    old_rnk = min_rank(p_50_plus),
+  ) 
+
+# Run K-Means Clustering Algorithm
+km &lt;- kmeans(dt %&gt;% select(-telecast), 
+             centers = 5, nstart = 10)
+
+#Add the cluster label back to the data
+dt2 &lt;- dt %&gt;%
+  mutate(cluster = km$cluster)
+
+#Plot
+ggplot(dt2, aes(x = young_rnk, y = old_rnk, color = factor(cluster))) + 
+  ggrepel::geom_text_repel(aes(label = telecast), size = 3) +
+  scale_color_discrete(guide = F) + 
+  scale_x_continuous(breaks = c(1, 50),
+                     labels = c(&quot;Less Popular&quot;, &quot;More Popular&quot;)) + 
+  scale_y_continuous(breaks = c(13, 54),
+                     labels = c(&quot;Less Popular&quot;, &quot;More Popular&quot;)) + 
+  coord_cartesian(xlim = c(-2, 54), ylim = c(0, 52)) + 
+  labs(x = &quot;Popularity Among 18-49&quot;,
+       y = &quot;Popularity Among 50+&quot;,
+       title = &quot;Visualizing Popularity of Wednesday Night Cable by Age&quot;,
+       subtitle = &quot;Comparing 18-49 vs. 50+&quot;) + 
+  cowplot::theme_cowplot() + 
+  theme(
+    axis.ticks = element_blank(),
+    axis.line = element_blank(),
+    axis.text.y = element_text(angle = 90), 
+    panel.background = element_rect(fill = &#39;#EEEEEE&#39;)
+
+  )</code></pre>
+<p><img src="index_files/figure-html/unnamed-chunk-4-1.png" width="672" /></p>
+<p>Somewhat surprising (at least to me), that Rachel Maddow and Tucker Carlson are the consensus most popular shows across the two demos. My beloved Challenge is very popular amongst the 18-49 demo and very unpopular among 50+. Sports shows tended to be generally the least popular by either demo and finally certain MSNBC and Fox News shows were popular among the 50+ demo but not the 18-49.</p>
+</div>
+</div>
+<div id="concluding-thoughts" class="section level2">
+<h2>Concluding Thoughts</h2>
+<p>While I still love The Challenge and am happy for its popularity, its best time was probably about 10 years ago (sorry not sorry). As far as the techniques in this post are concerned, I found extracting the data from an image to be an interesting challenge (no pun intended) but if the table was a tractable size I would probably manually enter the data rather than go through this again. Getting the data correct required a lot of guess and check for working with <code>magick</code> and <code>tesseract</code>.</p>
+<p>As for the analysis, I guess its good when things go as expected (most popular shows by gender follow stereotypical gender conventions) but I think the most surprising thing to me was how much cable news dominated the 50+ Demographic…. and I guess the Daily Show is not as popular as I thought it would be.</p>
+</div>
