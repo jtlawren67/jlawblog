@@ -22,13 +22,13 @@ image:
 projects: []
 ---
 
-<script src="index_files/header-attrs/header-attrs.js"></script>
+<script src="{{< blogdown/postref >}}index_files/header-attrs/header-attrs.js"></script>
 
 
 <div id="motivation" class="section level2">
 <h2>Motivation</h2>
-<p>This post was inspired by my wife who used the GPS data from her Strava app to plot her running routes during 2020. Since I don’t run nearly as much as I used to, I need to go back to when I was training for the NYC marathon to find enough running to make such a map worthwhile Also presenting a challenge is that I’m a bit of a <a href="https://www.merriam-webster.com/dictionary/Luddite">luddite</a> when it comes to running technology. I don’t have a GPS watch and I don’t run with a phone. To track my runs I manually enter my routes and workouts into <a href="http://www.mapmyrun.com">MapMyRun</a> and I time my runs with an ol’ fashioned sportswatch.</p>
-<p>While this works for me on the road, it made the data gathering process for this visualization more difficult. And while MapMyRun does have TCX files for each workout, its not that useful if the data didn’t come a GPS watch.</p>
+<p>This post was inspired by my wife who used the GPS data from her Strava app to plot her running routes during 2020. Since I don’t run nearly as much as I used to, I need to go back to when I was training for the NYC marathon to find enough running to make such a map worthwhile. Also presenting a challenge is that I’m a bit of a <a href="https://www.merriam-webster.com/dictionary/Luddite">luddite</a> when it comes to running technology. I don’t have a GPS watch and I don’t run with a phone. To track my runs I manually enter my routes and workouts into <a href="http://www.mapmyrun.com">MapMyRun</a> and I time my runs with an ol’ fashioned sportswatch.</p>
+<p>While this works for me on the road, it made the data gathering process for this visualization more difficult. And while MapMyRun does have TCX files for each workout, its not that useful if the data didn’t come from a GPS watch.</p>
 <p>At the end of the day, my goal with this analysis is to make a cool looking heatmap of my training routes for the NYC Marathon… or at least to make a visualization that was cooler looking that my wife’s.</p>
 <p>For those who can’t wait… this was final output:
 <img src="running_heatmap.PNG" /></p>
@@ -58,7 +58,7 @@ library(extrafont) # Better Fonts For GGPLOT</code></pre>
 </div>
 <div id="the-route-gpx-files" class="section level3">
 <h3>The Route GPX Files</h3>
-<p>As mentioned above the geocoded data for each route lives in GPX files, one for each of the 24 routes. Since I would apply the same pre-processing to each fill this is a good candidate for the <code>map_dfr</code> function to construct the data frame.</p>
+<p>As mentioned above the geocoded data for each route lives in GPX files, one for each of the 24 routes. Since I would apply the same pre-processing to each file this is a good candidate for the <code>map_dfr</code> function to construct the data frame.</p>
 <p>The following code uses <code>dir()</code> to get a list of all the files in the directory as vectors, the <code>keep()</code> function trims the vector to only the GPX files, and each GPX file is then passed into <code>read_sf</code> to read in the geo-data. The data is subset to only two columns, and a <em>route_id</em> is created based on the numbers in the file name.</p>
 <p>Finally, geo-data in <code>sf</code> lives in a GEOMETRY column. However, in order to get the latitudes and longitudes as individual columns I use <code>st_coodinates</code> to creates “X” and “Y” columns for longitude and latitude.</p>
 <pre class="r"><code>all_routes &lt;- map_dfr(
@@ -143,9 +143,9 @@ runs_and_routes &lt;- runs %&gt;%
 <pre class="r"><code>###Download Roads Map from Tigris
 nyc &lt;- roads(&quot;NY&quot;, &quot;New York&quot;)</code></pre>
 <pre class="r"><code>ggplot() + geom_sf(data = nyc) + ggthemes::theme_map()</code></pre>
-<p><img src="index_files/figure-html/map1-1.png" width="672" /></p>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/map1-1.png" width="672" /></p>
 <p>The function provides road data for all of Manhattan. However, I did not run every part of Manhattan, so it would make more sense to truncate the map to areas where I did run.</p>
-<p>In order to do this, I first need to define a boundary box based on my routes. Given a geometry, the <code>st_bbox()</code> function from <code>sf</code> will return a “bbox” object containing the four corners.</p>
+<p>In order to do this, I first need to define a boundary box based on my routes. Given a geometry, the <code>st_bbox()</code> function from <code>sf</code> will return a “bbox” object containing the four corners of my routes.</p>
 <pre class="r"><code>st_bbox(runs_and_routes$geometry)</code></pre>
 <pre><code>##      xmin      ymin      xmax      ymax 
 ## -74.01880  40.70806 -73.93118  40.82113</code></pre>
@@ -166,14 +166,14 @@ nyc2 &lt;- st_transform(nyc, crs = st_crs(runs_and_routes$geometry)) %&gt;%
   st_crop(bbox)
 
 ggplot() + geom_sf(data = nyc2) + ggthemes::theme_map()</code></pre>
-<p><img src="index_files/figure-html/nyc_map_2-1.png" width="672" /></p>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/nyc_map_2-1.png" width="672" /></p>
 <p>We’ve now cut off Governor’s Island from the bottom left corner as well as parts of Northern Manhattan that I never ran to.</p>
 </div>
 </div>
 <div id="constructing-the-heatmap" class="section level2">
 <h2>Constructing the Heatmap</h2>
 <p>With the new basemap created and the route data in its own data frame. I can create the heatmap using <code>stat_density2d</code> with the route data and <code>geom_sf</code> with the map data. From the <code>stat_density2d</code> piece I pass in the routes data and set the fill value to be the count at each X and Y using the <code>after_stat()</code> option. The <code>n</code> parameter sets the number of grid points in each directions for the density.</p>
-<p>The base map is very rectangular where it is tall but skinny. This made it difficult to add titles To make things look better, I use <code>ggdraw</code> from the <code>cowplot</code> package to create a new drawing layer and add titles/captions to that layer.</p>
+<p>The base map is very rectangular where it is tall but skinny. This made it difficult to add titles. To make things look better, I use <code>ggdraw</code> from the <code>cowplot</code> package to create a new drawing layer and add titles/captions to that layer.</p>
 <pre class="r"><code>p &lt;- ggplot() + 
   #Construct the Heatmap Portion
   stat_density2d(data = runs_and_routes,
@@ -207,7 +207,7 @@ cowplot::ggdraw(p) +
         
 
   )</code></pre>
-<p><img src="index_files/figure-html/heatmap-1.png" width="672" /></p>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/heatmap-1.png" width="672" /></p>
 </div>
 <div id="concluding-thoughts" class="section level2">
 <h2>Concluding Thoughts</h2>

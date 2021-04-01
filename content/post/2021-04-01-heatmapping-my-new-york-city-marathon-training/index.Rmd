@@ -28,9 +28,9 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, error = FALSE, message = FAL
 
 ## Motivation
 
-This post was inspired by my wife who used the GPS data from her Strava app to plot her running routes during 2020.  Since I don't run nearly as much as I used to, I need to go back to when I was training for the NYC marathon to find enough running to make such a map worthwhile  Also presenting a challenge is that I'm a bit of a [luddite](https://www.merriam-webster.com/dictionary/Luddite) when it comes to running technology.  I don't have a GPS watch and I don't run with a phone.   To track my runs I manually enter my routes and workouts into [MapMyRun](http://www.mapmyrun.com) and I time my runs with an ol' fashioned sportswatch.
+This post was inspired by my wife who used the GPS data from her Strava app to plot her running routes during 2020.  Since I don't run nearly as much as I used to, I need to go back to when I was training for the NYC marathon to find enough running to make such a map worthwhile.  Also presenting a challenge is that I'm a bit of a [luddite](https://www.merriam-webster.com/dictionary/Luddite) when it comes to running technology.  I don't have a GPS watch and I don't run with a phone.   To track my runs I manually enter my routes and workouts into [MapMyRun](http://www.mapmyrun.com) and I time my runs with an ol' fashioned sportswatch.
 
-While this works for me on the road, it made the data gathering process for this visualization more difficult.  And while MapMyRun does have TCX files for each workout, its not that useful if the data didn't come a GPS watch.
+While this works for me on the road, it made the data gathering process for this visualization more difficult.  And while MapMyRun does have TCX files for each workout, its not that useful if the data didn't come from a GPS watch.
 
 At the end of the day, my goal with this analysis is to make a cool looking heatmap of my training routes for the NYC Marathon... or at least to make a visualization that was cooler looking that my wife's.
 
@@ -72,7 +72,7 @@ runs <- read_csv('data/user_workout_history.csv') %>%
 
 ### The Route GPX Files
 
-As mentioned above the geocoded data for each route lives in GPX files, one for each of the 24 routes.  Since I would apply the same pre-processing to each fill this is a good candidate for the `map_dfr` function to construct the data frame.
+As mentioned above the geocoded data for each route lives in GPX files, one for each of the 24 routes.  Since I would apply the same pre-processing to each file this is a good candidate for the `map_dfr` function to construct the data frame.
 
 The following code uses `dir()` to get a list of all the files in the directory as vectors, the `keep()` function trims the vector to only the GPX files, and each GPX file is then passed into `read_sf` to read in the geo-data.  The data is subset to only two columns, and a *route_id* is created based on the numbers in the file name.  
 
@@ -124,7 +124,7 @@ ggplot() + geom_sf(data = nyc) + ggthemes::theme_map()
 
 The function provides road data for all of Manhattan.  However, I did not run every part of Manhattan, so it would make more sense to truncate the map to areas where I did run.
 
-In order to do this, I first need to define a boundary box based on my routes.  Given a geometry, the `st_bbox()` function from `sf` will return a "bbox" object containing the four corners.
+In order to do this, I first need to define a boundary box based on my routes.  Given a geometry, the `st_bbox()` function from `sf` will return a "bbox" object containing the four corners of my routes.
 
 ```{r get_bbox}
 st_bbox(runs_and_routes$geometry)
@@ -159,7 +159,7 @@ We've now cut off Governor's Island from the bottom left corner as well as parts
 
 With the new basemap created and the route data in its own data frame.  I can create the heatmap using `stat_density2d` with the route data and `geom_sf` with the map data.  From the `stat_density2d` piece I pass in the routes data and set the fill value to be the count at each X and Y using the `after_stat()` option.  The `n` parameter sets the number of grid points in each directions for the density.
 
-The base map is very rectangular where it is tall but skinny.  This made it difficult to add titles  To make things look better, I use `ggdraw` from the `cowplot` package to create a new drawing layer and add titles/captions to that layer.
+The base map is very rectangular where it is tall but skinny.  This made it difficult to add titles.  To make things look better, I use `ggdraw` from the `cowplot` package to create a new drawing layer and add titles/captions to that layer.
 
 ```{r heatmap}
 p <- ggplot() + 
