@@ -1,0 +1,215 @@
+---
+title: Heatmapping My New York City Marathon Training
+author: JLaw
+date: '2021-04-01'
+slug: heatmapping-my-new-york-city-marathon-training
+categories:
+  - R
+  - DataViz
+tags:
+  - sf
+  - tigris
+  - extrafont
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2021-04-01T01:32:33-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+<script src="{{< blogdown/postref >}}index_files/header-attrs/header-attrs.js"></script>
+
+
+<div id="motivation" class="section level2">
+<h2>Motivation</h2>
+<p>This post was inspired by my wife who used the GPS data from her Strava app to plot her running routes during 2020. Since I don’t run nearly as much as I used to, I need to go back to when I was training for the NYC marathon to find enough running to make such a map worthwhile. Also presenting a challenge is that I’m a bit of a <a href="https://www.merriam-webster.com/dictionary/Luddite">luddite</a> when it comes to running technology. I don’t have a GPS watch and I don’t run with a phone. To track my runs I manually enter my routes and workouts into <a href="http://www.mapmyrun.com">MapMyRun</a> and I time my runs with an ol’ fashioned sportswatch.</p>
+<p>While this works for me on the road, it made the data gathering process for this visualization more difficult. And while MapMyRun does have TCX files for each workout, its not that useful if the data didn’t come from a GPS watch.</p>
+<p>At the end of the day, my goal with this analysis is to make a cool looking heatmap of my training routes for the NYC Marathon… or at least to make a visualization that was cooler looking that my wife’s.</p>
+<p>For those who can’t wait… this was final output:
+<img src="running_heatmap.PNG" /></p>
+</div>
+<div id="libraries-used" class="section level2">
+<h2>Libraries Used</h2>
+<p>This analysis uses four main packages. <code>Tidyverse</code> for data manipulation, <code>sf</code> for modifying spatial data, <code>tigris</code> for getting the basemaps to plot my routes and <code>extrafont</code> to bring in new fonts for the plots.</p>
+<pre class="r"><code>library(tidyverse) # Data Manipulation
+library(sf) # Manipulation Spatial Data
+library(tigris) # Getting Tract and Roads Spatial Data
+library(extrafont) # Better Fonts For GGPLOT</code></pre>
+</div>
+<div id="gathering-data" class="section level2">
+<h2>Gathering Data</h2>
+<p>If I had a GPS watch or used Strava, I could just download all my files which would contain Geo information and plot it directly. But because I do everything manually, I needed to jump through some hoops. From my <a href="http://www.mapmyrun.com">MapMyRun</a> account I was able to download:</p>
+<ol style="list-style-type: decimal">
+<li><code>user_workout_history.csv</code> - Containing all of my workouts along with a column for <em>route_id</em>.</li>
+<li>GPX files for each route that I had saved.</li>
+</ol>
+<p>This led to the semi-painful manual process of using the first file to write down each route id that I had run, look up that route, and download the individual GPX file. Fortunately, I’m a creature of habit and and ran the same routes often, so there were only 24 to individually download.</p>
+<div id="the-user-workout-history-file" class="section level3">
+<h3>The User Workout History File</h3>
+<p>This file was a CSV file exported from MapMyRun which contained one row for each workout I did along with meta-data such as date, time, speed, etc. However, the important column is route id which will be used to join the geo-data from the route’s GPX files.</p>
+<pre class="r"><code>runs &lt;- read_csv(&#39;data/user_workout_history.csv&#39;) %&gt;% 
+  # Create Route ID column
+  mutate(route_id = str_extract(RouteID, &#39;\\d+&#39;) %&gt;% as.integer)</code></pre>
+</div>
+<div id="the-route-gpx-files" class="section level3">
+<h3>The Route GPX Files</h3>
+<p>As mentioned above the geocoded data for each route lives in GPX files, one for each of the 24 routes. Since I would apply the same pre-processing to each file this is a good candidate for the <code>map_dfr</code> function to construct the data frame.</p>
+<p>The following code uses <code>dir()</code> to get a list of all the files in the directory as vectors, the <code>keep()</code> function trims the vector to only the GPX files, and each GPX file is then passed into <code>read_sf</code> to read in the geo-data. The data is subset to only two columns, and a <em>route_id</em> is created based on the numbers in the file name.</p>
+<p>Finally, geo-data in <code>sf</code> lives in a GEOMETRY column. However, in order to get the latitudes and longitudes as individual columns I use <code>st_coodinates</code> to creates “X” and “Y” columns for longitude and latitude.</p>
+<pre class="r"><code>all_routes &lt;- map_dfr(
+  #Get all gpx files in the directory
+  keep(dir(&#39;data&#39;), ~str_detect(.x, &quot;gpx&quot;)),
+  #Read them in
+  ~read_sf(paste0(&#39;data/&#39;,.x), layer = &quot;track_points&quot;) %&gt;% 
+    #keep the segment id and the geometry field
+    select(track_seg_point_id, geometry) %&gt;% 
+    # create a route_id based on the file
+    mutate(route_id = parse_number(.x))
+) %&gt;% 
+  #Extract Lat and Long as Columns
+  cbind(., st_coordinates(.))</code></pre>
+<p>After the processing the data looks like:</p>
+<table>
+<thead>
+<tr class="header">
+<th align="right">track_seg_point_id</th>
+<th align="right">route_id</th>
+<th align="right">X</th>
+<th align="right">Y</th>
+<th align="left">geometry</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="right">0</td>
+<td align="right">111694131</td>
+<td align="right">-73.97597</td>
+<td align="right">40.77624</td>
+<td align="left">POINT (-73.97597 40.77624)</td>
+</tr>
+<tr class="even">
+<td align="right">1</td>
+<td align="right">111694131</td>
+<td align="right">-73.97555</td>
+<td align="right">40.77605</td>
+<td align="left">POINT (-73.97555 40.77605)</td>
+</tr>
+<tr class="odd">
+<td align="right">2</td>
+<td align="right">111694131</td>
+<td align="right">-73.97555</td>
+<td align="right">40.77605</td>
+<td align="left">POINT (-73.97555 40.77605)</td>
+</tr>
+<tr class="even">
+<td align="right">3</td>
+<td align="right">111694131</td>
+<td align="right">-73.97546</td>
+<td align="right">40.77582</td>
+<td align="left">POINT (-73.97546 40.77582)</td>
+</tr>
+<tr class="odd">
+<td align="right">4</td>
+<td align="right">111694131</td>
+<td align="right">-73.97546</td>
+<td align="right">40.77582</td>
+<td align="left">POINT (-73.97546 40.77582)</td>
+</tr>
+<tr class="even">
+<td align="right">5</td>
+<td align="right">111694131</td>
+<td align="right">-73.97552</td>
+<td align="right">40.77527</td>
+<td align="left">POINT (-73.97552 40.77527)</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="combining-runs-and-routes" class="section level3">
+<h3>Combining Runs and Routes</h3>
+<p>With all the workouts in the <code>runs</code> data and all the routes in the <code>all_routes</code> data, a simple inner-join will combine them. This will duplicates routes that I ran multiple times, which in this case would be the desired behavior.</p>
+<pre class="r"><code>#Join Routes to Runs to Duplicate 
+runs_and_routes &lt;- runs %&gt;% 
+  inner_join(all_routes, by = &quot;route_id&quot;) </code></pre>
+</div>
+<div id="creating-a-map-of-nyc" class="section level3">
+<h3>Creating a map of NYC</h3>
+<p>Since the goal is to create a heatmap of the various routes I ran as part of marathon training, I need a map that contains all of the possible roads in NYC. The <code>tigris</code> package allows for the access to US Census TIGER shapefiles. One of the levels is “roads”, which can be downloaded using the <code>road()</code> function where the first parameter is state and 2nd parameter is county (New York County is Manhattan):</p>
+<pre class="r"><code>###Download Roads Map from Tigris
+nyc &lt;- roads(&quot;NY&quot;, &quot;New York&quot;)</code></pre>
+<pre class="r"><code>ggplot() + geom_sf(data = nyc) + ggthemes::theme_map()</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/map1-1.png" width="672" /></p>
+<p>The function provides road data for all of Manhattan. However, I did not run every part of Manhattan, so it would make more sense to truncate the map to areas where I did run.</p>
+<p>In order to do this, I first need to define a boundary box based on my routes. Given a geometry, the <code>st_bbox()</code> function from <code>sf</code> will return a “bbox” object containing the four corners of my routes.</p>
+<pre class="r"><code>st_bbox(runs_and_routes$geometry)</code></pre>
+<pre><code>##      xmin      ymin      xmax      ymax 
+## -74.01880  40.70806 -73.93118  40.82113</code></pre>
+<p>However, this will not provide any padding around my running routes which will make for a worse visualization. So I will use <code>map2_dbl</code> to add a delta of 0.01 to the maximum values and remove a delta of -0.01 to the minimum values to slightly increase the bounding box.</p>
+<pre class="r"><code>### Construct Bounding Boxes and Expand Limits By A Delta
+bbox &lt;- map2_dbl(
+  st_bbox(runs_and_routes$geometry),
+  names(st_bbox(runs_and_routes$geometry)),
+  ~if_else(str_detect(.y, &#39;min&#39;), .x - .01, .x + .01)
+)
+
+bbox</code></pre>
+<pre><code>##      xmin      ymin      xmax      ymax 
+## -74.02880  40.69806 -73.92118  40.83113</code></pre>
+<p>With an updated bounding box, I can now crop the initial map with my bounding box using the <code>st_crop()</code> function. Also, in order to make the Coordinate Reference Systems the same, I use <code>st_crs()</code> and <code>st_transform</code> to make sure the NYC map is using the same coordinates as my routes.</p>
+<pre class="r"><code>#Set CRS for NYC to CRS for Running Routes And Crop to the Bounding Box
+nyc2 &lt;- st_transform(nyc, crs = st_crs(runs_and_routes$geometry)) %&gt;% 
+  st_crop(bbox)
+
+ggplot() + geom_sf(data = nyc2) + ggthemes::theme_map()</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/nyc_map_2-1.png" width="672" /></p>
+<p>We’ve now cut off Governor’s Island from the bottom left corner as well as parts of Northern Manhattan that I never ran to.</p>
+</div>
+</div>
+<div id="constructing-the-heatmap" class="section level2">
+<h2>Constructing the Heatmap</h2>
+<p>With the new basemap created and the route data in its own data frame. I can create the heatmap using <code>stat_density2d</code> with the route data and <code>geom_sf</code> with the map data. From the <code>stat_density2d</code> piece I pass in the routes data and set the fill value to be the count at each X and Y using the <code>after_stat()</code> option. The <code>n</code> parameter sets the number of grid points in each directions for the density.</p>
+<p>The base map is very rectangular where it is tall but skinny. This made it difficult to add titles. To make things look better, I use <code>ggdraw</code> from the <code>cowplot</code> package to create a new drawing layer and add titles/captions to that layer.</p>
+<pre class="r"><code>p &lt;- ggplot() + 
+  #Construct the Heatmap Portion
+  stat_density2d(data = runs_and_routes,
+                 aes(x = X, y = Y, fill = after_stat(count)),
+                 geom = &#39;tile&#39;,
+                 contour = F,
+                 n = 1024
+                 ) +
+  #Draw the Map of Manhattan
+  geom_sf(data = nyc2, color = &#39;#999999&#39;, alpha = .15) + 
+  scale_fill_viridis_c(option = &quot;B&quot;, guide = F) + 
+  ggthemes::theme_map() + 
+  theme(
+    panel.background = element_rect(fill = &#39;black&#39;),
+    plot.background = element_rect(fill = &#39;black&#39;)
+  )
+
+cowplot::ggdraw(p) + 
+  labs(title = &quot;JLaw&#39;s Marathon Training Heatmap&quot;,
+       caption = &quot;**Author**: JLaw&quot;) + 
+  theme(panel.background = element_rect(fill = &quot;black&quot;),
+        plot.background = element_rect(fill = &#39;black&#39;),
+        plot.title = element_text(color = &quot;#DDDDDD&quot;,
+                                  family = &#39;Nirmala UI&#39;,
+                                  #face = &#39;bold&#39;,
+                                  size = 18),
+        plot.caption = ggtext::element_markdown(color = &#39;#DDDDDD&#39;,
+                                    family = &#39;Calibri Light&#39;,
+                                    hjust = 1,
+                                    size = 12),
+        
+
+  )</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/heatmap-1.png" width="672" /></p>
+</div>
+<div id="concluding-thoughts" class="section level2">
+<h2>Concluding Thoughts</h2>
+<p>I’m really happy with how this came out. It also provides some information about my running habits, mainly that I ran in Central Park a lot and that you can roughly tell where I worked at the time as that area is slightly <em>hotter</em>. There are some parts of Manhattan that I did run but don’t show up well in the map because I might have only run there once. An exploration of how much of Manhattan did I run will be covered in a follow-up post.</p>
+</div>
