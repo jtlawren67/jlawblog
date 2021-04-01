@@ -44,7 +44,7 @@ library(extrafont) # Better Fonts For GGPLOT
 
 ## Data Used
 
-The data is also the same running route data from the prior post.  For more details on its creation please reference it.
+The data is also the same running route data from the prior post.  For more details on its creation please reference the prior post.
 
 ```{r data_file}
 runs_and_routes <- readRDS('data/runs_and_routes.RDS')
@@ -74,8 +74,7 @@ nyc_geo_join <- nyc_tracts %>%
   group_by(
     TRACTCE, #Census Tract ID
     ALAND, #Land Area
-    AWATER, #Water Area
-    geometry #Geometry
+    AWATER #Water Area
   ) %>% 
   summarize(num_routes = n_distinct(route_id, na.rm = T), .groups = 'drop') %>% 
   #Set 0 Routes to NA colored
