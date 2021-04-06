@@ -46,6 +46,7 @@ library(extrafont) # Better Fonts For GGPLOT
 
 The data is also the same running route data from the prior post.  For more details on its creation please reference the [prior post](/2021/04/01/heatmapping-my-new-york-city-marathon-training/).
 
+
 ```{r data_file}
 runs_and_routes <- readRDS('data/runs_and_routes.RDS')
 all_routes <- readRDS('data/all_routes.RDS')
@@ -63,6 +64,7 @@ ggplot() + geom_sf(data = nyc_tracts) + ggthemes::theme_map()
 ```
 
 Unlike the [prior analysis](/2021/04/01/heatmapping-my-new-york-city-marathon-training/) where the heatmap was just overlaid atop the map, here I need to identify which census tracts contained a route I ran vs. which didn't. This can be done using the `st_join` function, specifying it to be a left join, and specifying the join type as `st_intersects` which joins the route information if the lat/long is contained in the census tract.  The data is then grouped by tract_name and some other tract metadata.  Then I create a field for number of route which will be used for the choropleth.
+
 
 ```{r joining}
 #Join Routes to Tracts by Intersecting
