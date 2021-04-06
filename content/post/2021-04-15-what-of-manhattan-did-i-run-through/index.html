@@ -26,7 +26,7 @@ projects: []
 
 
 <p><img src="choropleth.PNG" /></p>
-<p>In a previous post I created a cool-looking (in my opinion) heatmap of my Marathon training from years back. One of the downsides to that density-based method of making the heat map was that routes I only ran once didn’t show up very clearly. I also wanted to know roughly what % of Manhattan I covered in my runs. This post will use that same data to create a choropleth map by Census Tract to both visualize all the tracts I passed through in my training as well as determine what % of Manhattan’s land area did I cover.</p>
+<p>In a <a href="/2021/04/01/heatmapping-my-new-york-city-marathon-training/">previous post</a> I created a cool-looking (in my opinion) heatmap of my Marathon training from years back. One of the downsides to that density-based method of making the heat map was that routes I only ran once didn’t show up very clearly. I also wanted to know roughly what % of Manhattan I covered in my runs. This post will use that same data to create a choropleth map by Census Tract to both visualize all the tracts I passed through in my training as well as determine what % of Manhattan’s land area did I cover.</p>
 <div id="libraries-used" class="section level2">
 <h2>Libraries Used</h2>
 <p>The packages used in this analysis are the same from the prior analysis, <code>Tidyverse</code> for data manipulation, <code>sf</code> for modifying spatial data, <code>tigris</code> for getting the basemaps to plot my routes and <code>extrafont</code> to bring in new fonts for the plots.</p>
@@ -37,7 +37,7 @@ library(extrafont) # Better Fonts For GGPLOT</code></pre>
 </div>
 <div id="data-used" class="section level2">
 <h2>Data Used</h2>
-<p>The data is also the same running route data from the prior post. For more details on its creation please reference the prior post.</p>
+<p>The data is also the same running route data from the prior post. For more details on its creation please reference the <a href="/2021/04/01/heatmapping-my-new-york-city-marathon-training/">prior post</a>.</p>
 <pre class="r"><code>runs_and_routes &lt;- readRDS(&#39;data/runs_and_routes.RDS&#39;)
 all_routes &lt;- readRDS(&#39;data/all_routes.RDS&#39;)</code></pre>
 <p>For the basemap I’m again using the <code>tigris</code> package however this time getting census tracts rather than roads. According to the package, <em>Census tracts generally have a population size between 1,200 and 8,000 people, with an optimum size of 4,000 people</em>. The map is downloaded using the <code>tracts()</code> function with inputs for state and county.</p>
@@ -45,7 +45,7 @@ all_routes &lt;- readRDS(&#39;data/all_routes.RDS&#39;)</code></pre>
   st_transform(crs = st_crs(runs_and_routes$geometry))</code></pre>
 <pre class="r"><code>ggplot() + geom_sf(data = nyc_tracts) + ggthemes::theme_map()</code></pre>
 <p><img src="{{< blogdown/postref >}}index_files/figure-html/map1-1.png" width="672" /></p>
-<p>Unlike the prior analysis where the heatmap was just overlaid atop the map, here I need to identify which census tracts contained a route I ran vs. which didn’t. This can be done using the <code>st_join</code> function, specifying it to be a left join, and specifying the join type as <code>st_intersects</code> which joins the route information if the lat/long is contained in the census tract. The data is then grouped by tract_name and some other tract metadata. Then I create a field for number of route which will be used for the choropleth.</p>
+<p>Unlike the <a href="/2021/04/01/heatmapping-my-new-york-city-marathon-training/">prior analysis</a> where the heatmap was just overlaid atop the map, here I need to identify which census tracts contained a route I ran vs. which didn’t. This can be done using the <code>st_join</code> function, specifying it to be a left join, and specifying the join type as <code>st_intersects</code> which joins the route information if the lat/long is contained in the census tract. The data is then grouped by tract_name and some other tract metadata. Then I create a field for number of route which will be used for the choropleth.</p>
 <pre class="r"><code>#Join Routes to Tracts by Intersecting
 nyc_geo_join &lt;- nyc_tracts %&gt;% 
   st_join(all_routes %&gt;% distinct(route_id, geometry),
