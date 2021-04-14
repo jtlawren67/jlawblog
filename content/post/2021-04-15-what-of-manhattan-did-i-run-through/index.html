@@ -45,7 +45,7 @@ all_routes &lt;- readRDS(&#39;data/all_routes.RDS&#39;)</code></pre>
   st_transform(crs = st_crs(runs_and_routes$geometry))</code></pre>
 <pre class="r"><code>ggplot() + geom_sf(data = nyc_tracts) + ggthemes::theme_map()</code></pre>
 <p><img src="{{< blogdown/postref >}}index_files/figure-html/map1-1.png" width="672" /></p>
-<p>Unlike the <a href="/2021/04/01/heatmapping-my-new-york-city-marathon-training/">prior analysis</a> where the heatmap was just overlaid atop the map, here I need to identify which census tracts contained a route I ran vs. which didn’t. This can be done using the <code>st_join</code> function, specifying it to be a left join, and specifying the join type as <code>st_intersects</code> which joins the route information if the lat/long is contained in the census tract. The data is then grouped by tract_name and some other tract metadata. Then I create a field for number of route which will be used for the choropleth.</p>
+<p>Unlike the <a href="/2021/04/01/heatmapping-my-new-york-city-marathon-training/">prior analysis</a> where the heatmap was just overlaid atop the map, here I need to identify which census tracts contained a route I ran vs. which didn’t. This can be done using the <code>st_join</code> function, specifying it to be a left join, and specifying the join type as <code>st_intersects</code> which joins the route information if the lat/long is contained in the census tract. The data is then grouped by tract_name and some other tract metadata. Then I create a field for the number of routes contained in each census tract, which will be used for the choropleth.</p>
 <pre class="r"><code>#Join Routes to Tracts by Intersecting
 nyc_geo_join &lt;- nyc_tracts %&gt;% 
   st_join(all_routes %&gt;% distinct(route_id, geometry),
