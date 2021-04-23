@@ -1,0 +1,38 @@
+---
+title: Scraping Google Play Reviews with RSelenium
+author: JLaw
+date: '2021-05-03'
+slug: scraping-google-play-reviews-with-rselenium
+categories:
+  - R
+tags:
+  - RSelenium
+  - rvest
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2021-05-03T03:30:38-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+<script src="{{< blogdown/postref >}}index_files/header-attrs/header-attrs.js"></script>
+
+
+<div id="when-normal-web-scraping-just-wont-work" class="section level2">
+<h2>When Normal Web Scraping Just Won’t WOrk</h2>
+<p>I’ve <a href="https://jlaw.netlify.app/2020/12/01/exploring-nhl-stanley-cup-champion-s-points-percentage-in-four-ggplots/">used</a> <a href="https://jlaw.netlify.app/2020/11/24/what-s-the-most-successful-dancing-with-the-stars-profession-visualizing-with-gt/">rvest</a> in <a href="https://jlaw.netlify.app/2020/09/07/covid-19s-impact-on-the-nyc-subway-system/">numerous</a> <a href="https://jlaw.netlify.app/2020/07/04/a-racing-barplot-of-top-us-baby-names-1880-2018/">posts</a> to scrape information from static websites or through forms to get data. However, some websites don’t have static data that can be downloaded by just scraping the HTML. Google Play Store reviews are one of the sources.</p>
+<p>Reviews on the Google Play Store have what I call a semi-infinite scroll where as you each the bottom of the page, the site will load the next batch of reviews. However, a special wrinkle in the Play Store page is that after a few loads, the user will be prompted again to click a button to load the next batch of reviews.</p>
+<p><img src="show_more.PNG" /></p>
+</div>
+<div id="selenium-to-the-rescue" class="section level2">
+<h2>Selenium to the Rescue</h2>
+<p>Selenium is a tool that automates a browser. Its often used for writing automated tests for websites but in this instance it can be used to mimic a user’s browser behavior to load up a bunch of Play Store reviews before we can then scrape using <code>rvest</code> in the conventional fashion.</p>
+<div id="how-does-selenium-work" class="section level3">
+<h3>How Does Selenium Work?</h3>
+</div>
+</div>
