@@ -24,27 +24,27 @@ projects: []
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, error = FALSE, message = FALSE)
 ```
 
-## When Normal Web Scraping Just Won't WOrk
+## When Normal Web Scraping Just Won't Work
 
-I've [used](https://jlaw.netlify.app/2020/12/01/exploring-nhl-stanley-cup-champion-s-points-percentage-in-four-ggplots/) [rvest](https://jlaw.netlify.app/2020/11/24/what-s-the-most-successful-dancing-with-the-stars-profession-visualizing-with-gt/) in [numerous](https://jlaw.netlify.app/2020/09/07/covid-19s-impact-on-the-nyc-subway-system/) [posts](https://jlaw.netlify.app/2020/07/04/a-racing-barplot-of-top-us-baby-names-1880-2018/) to scrape information from static websites or through forms to get data.  However, some websites don't have static data that can be  downloaded by just scraping the HTML.  Google Play Store reviews are one of the sources.
+I've [used](https://jlaw.netlify.app/2020/12/01/exploring-nhl-stanley-cup-champion-s-points-percentage-in-four-ggplots/) [rvest](https://jlaw.netlify.app/2020/11/24/what-s-the-most-successful-dancing-with-the-stars-profession-visualizing-with-gt/) in [numerous](https://jlaw.netlify.app/2020/09/07/covid-19s-impact-on-the-nyc-subway-system/) [posts](https://jlaw.netlify.app/2020/07/04/a-racing-barplot-of-top-us-baby-names-1880-2018/) to scrape information from static websites or through forms to get data.  However, some websites don't have static data that can be  downloaded by just scraping the HTML.  Google Play Store reviews are one of these sources.
 
-Reviews on the Google Play Store have what I call a semi-infinite scroll where as you each the bottom of the page, the site will load the next batch of reviews.  However, a special wrinkle in the Play Store page is that after a few loads, the user will be prompted again to click a button to load the next batch of reviews.
+Reviews on the Google Play Store have what I call a semi-infinite scroll where as you reach the bottom of the page, the site will load the next batch of reviews.  However, a special wrinkle in the Play Store page is that after a few loads, the user will be prompted again to click a button to load the next batch of reviews.
 
 ![](show_more.PNG)
 
 ## Selenium to the Rescue
 
-Selenium is a tool that automates a browser.  Its often used for writing automated tests for websites but in this instance it can be used to mimic a user's browser behavior to load up a bunch of Play Store reviews before we can then scrape using `rvest` in the conventional fashion.
+Selenium is a tool that automates a browser.  Its often used for writing automated tests for websites but in this instance it can be used to mimic a user's browser behavior to load up a bunch of Play Store reviews to the screen before we can then scrape using `rvest` in the conventional fashion.
 
-Selenium and its R package `RSelenium` allows a user to interact with a broswer through their programming language of choice.  Since this is an R blog, I'll be using R to control the browser.
+Selenium and its R package `RSelenium` allows a user to interact with a browser through their programming language of choice.  Since this is an R blog, I'll be using R to control the browser.
 
 ## Scraping Instagram Lite Reviews
 
-Instagram Lite is a recently launched product who's ["goal was to offer a smaller download that takes up less space on a mobile device — a feature that specifically caters to users in emerging markets, where storage space is a concern"](https://techcrunch.com/2020/05/11/instagram-lite-shuts-down-in-advance-of-a-relaunch/).  Since this is a relatively new product it seems like it would be fun to see how its doing through text mining.  This first post will cover how to use `RSelenium` to actually get the data and the analysis will be covered in a follow-up post.
+Instagram Lite is a recently launched product whose ["goal was to offer a smaller download that takes up less space on a mobile device — a feature that specifically caters to users in emerging markets, where storage space is a concern"](https://techcrunch.com/2020/05/11/instagram-lite-shuts-down-in-advance-of-a-relaunch/).  Since this is a relatively new product it would be fun to see how its doing.  This first post will cover how to use `RSelenium` to actually get the data and the analysis will be covered in a follow-up post.
 
 ### Part 1: Loading Libraries
 
-The four libraries used for this data acquisition project are `RSelenium` which will allow for manipulating a browser, `tidyverse` for constructing the data structure, `lubridate` to handle the dates in the reviews, and `rvest` to scrape the HTML after we're done loading all the reviews with Selenoim
+The four libraries used for this data acquisition project are `RSelenium` which will allow for manipulating a browser through R, `tidyverse` for constructing the data structure, `lubridate` to handle the dates in the reviews, and `rvest` to scrape the HTML after we're done loading all the reviews with Selenium
 
 ```{r libraries}
 library(RSelenium)
@@ -58,7 +58,7 @@ library(rvest)
 
 A browser session gets started by called `rsDriver` from the `RSelenium` package.  While `RSelenium` can work with Chrome, Firefox, or PhantomJS, I've personally found that working with Firefox is the path of least resistance.  With Chrome you need to match the chromedriver versions between `RSelenium` and the Chrome browser and I've never successfully pulled that off.  While with Firefox you can just set `browser="firefox"` and it just works.
 
-The first time running `RSelenium` you can't have `check=F` as it will download the drivers that it needs to work.  After that first run you can set `check=F` to skip those checks.  The `verbose=F` option is to supress excess messaging.
+The first time running `RSelenium` you can't have `check=F` as it will download the drivers that it needs to work.  After that first run you can set `check=F` to skip those checks.  The `verbose=F` option is to suppress excess messaging.
 
 The `rsDriver` function will start both a Selenium server and start the remote Firefox browser.  It returns both a server and a client which will be assigned to `remDr`.
 
@@ -80,7 +80,7 @@ If everything goes to plan a new Firefox window will open and the address bar wi
 
 ### Part 3: Browse to the Instagram Lite Google Play Reviews Page
 
-This part is straight forwards, I create a `url` variable with the desired URL as a string and then use the remote driver `remDr` to tell the browser to navigate to that page.
+This part is straight forward, I create a `url` variable with the desired URL as a string and then use the remote driver `remDr` to tell the browser to navigate to that page.
 
 ```{r browse}
 #Navigate to URL
@@ -102,16 +102,19 @@ This section is the meat and potato of working with Selenium where we'll write a
 4. If the button exists, find the element and click it.
 5. Wait 3 seconds to let new reviews load and then repeat from Step 2
 
-I repeat this loop 10 times.  If the browser isn't running headlessly then you can switch to the remote browser window and watch everything in action (but be careful because manual intervention with the webpage can mess with the intended function of the script)
+I repeat this loop 50 times to try to get enough data for analysis.  If the browser isn't running headlessly then you can switch to the remote browser window and watch everything in action (but be careful because manual intervention with the webpage can mess with the intended function of the script)
 
-Figuring out the right classes for the button (RveJvd) took some guess and check work from inspecting the page.
+Figuring out the right classes for the button (RveJvd) took some guess and check work from inspecting the page, however, I believe all Google Play Review pages use the same classes so this could *should* be adaptable to other apps. But YMMV.
+
+*Note:* I originally wanted to run this 100 times to try to get more reviews but I kept winding up with an error of `unexpected end of hex escape at line 1 column 15497205` that I was unable to debug.  So I stuck with 50.  But if anyone knows how to avoid that error please let me know in the comments.
 
 ```{r loop, results='hide'}
 #Find Page Element for Body
 webElem <- remDr$findElement("css", "body")
 
 #Page to the End
-for(i in 1:10){
+for(i in 1:50){
+  message(paste("Iteration",i))
   webElem$sendKeysToElement(list(key = "end"))
   #Check for the Show More Button
   element<- try(unlist(remDr$findElement("class name", "RveJvd")$getElementAttribute('class')),
@@ -134,19 +137,20 @@ for(i in 1:10){
 
 Now that we've scrolled and pushed buttons and scrolled some more to get a bunch of reviews to load on the screen its time to scrape the reviews.
 
-We can extract the HTML from the remote browser using `getPageSource()` and `readHTML()`
+We can extract the HTML from the remote browser using `getPageSource()` and `readHTML()`.  
 
 ```{r scape_page}
 ##Scrape in HTML Objects
 html_obj <- remDr$getPageSource(header = TRUE)[[1]] %>% read_html()
 ```
 
-Now that we have the HTML we no longer need the remote Firefox browser or Selenium server so we can shut those down.
+Now that we have the HTML we no longer need the remote Firefox browser or Selenium server so we can shut those down.  [There have been issues with the Java process remaining open](https://github.com/ropensci/RSelenium/issues/228) even after calling the stop server pieces so I issue a system command to kill the java process.
 
 ```{r shutdown, results='hide'}
 #Shut Down Client and Server
 remDr$close()
 rD$server$stop()
+system("taskkill /im java.exe /f", intern=FALSE, ignore.stdout=FALSE)
 ```
 
 ### Part 6: Extracting the Various Parts of the Review
@@ -165,7 +169,7 @@ This piece was a bit of guess and check working with `rvest` and looking at the 
 
 ```{r get_data1}
 
-# 1) Reviewr Name
+# 1) Reviewer Name
 names <- html_obj %>% html_elements("span.X43Kjb") %>% html_text()
 
 # 2) Number of Stars
@@ -227,12 +231,24 @@ review_data <- tibble(
   reviews = reviews
   ) 
 
-knitr::kable(review_data)
-
 saveRDS(review_data, 'data/review_data.RDS')
+write_csv(review_data, 'data/review_data.csv')
 
 
 ```
+
+Just to make sure everything is working we'll compare an actual review to our data:
+
+![](show_more.PNG)
+
+```{r compare}
+
+review_data %>%
+  filter(names %in% c('Sushil Uk07', 'Hana Hoey')) %>%
+  knitr::kable()
+
+```
+
 
 And there you have it.  We used Selenium to have a browser scroll for a while to load a bunch of reviews, extracted the data with `rvest` and then combined and saved the data.  In the next post we'll use this data to understand what downloaders think about Instagram Lite.
 

@@ -24,15 +24,218 @@ projects: []
 
 
 <div id="when-normal-web-scraping-just-wont-work" class="section level2">
-<h2>When Normal Web Scraping Just Won’t WOrk</h2>
-<p>I’ve <a href="https://jlaw.netlify.app/2020/12/01/exploring-nhl-stanley-cup-champion-s-points-percentage-in-four-ggplots/">used</a> <a href="https://jlaw.netlify.app/2020/11/24/what-s-the-most-successful-dancing-with-the-stars-profession-visualizing-with-gt/">rvest</a> in <a href="https://jlaw.netlify.app/2020/09/07/covid-19s-impact-on-the-nyc-subway-system/">numerous</a> <a href="https://jlaw.netlify.app/2020/07/04/a-racing-barplot-of-top-us-baby-names-1880-2018/">posts</a> to scrape information from static websites or through forms to get data. However, some websites don’t have static data that can be downloaded by just scraping the HTML. Google Play Store reviews are one of the sources.</p>
-<p>Reviews on the Google Play Store have what I call a semi-infinite scroll where as you each the bottom of the page, the site will load the next batch of reviews. However, a special wrinkle in the Play Store page is that after a few loads, the user will be prompted again to click a button to load the next batch of reviews.</p>
+<h2>When Normal Web Scraping Just Won’t Work</h2>
+<p>I’ve <a href="https://jlaw.netlify.app/2020/12/01/exploring-nhl-stanley-cup-champion-s-points-percentage-in-four-ggplots/">used</a> <a href="https://jlaw.netlify.app/2020/11/24/what-s-the-most-successful-dancing-with-the-stars-profession-visualizing-with-gt/">rvest</a> in <a href="https://jlaw.netlify.app/2020/09/07/covid-19s-impact-on-the-nyc-subway-system/">numerous</a> <a href="https://jlaw.netlify.app/2020/07/04/a-racing-barplot-of-top-us-baby-names-1880-2018/">posts</a> to scrape information from static websites or through forms to get data. However, some websites don’t have static data that can be downloaded by just scraping the HTML. Google Play Store reviews are one of these sources.</p>
+<p>Reviews on the Google Play Store have what I call a semi-infinite scroll where as you reach the bottom of the page, the site will load the next batch of reviews. However, a special wrinkle in the Play Store page is that after a few loads, the user will be prompted again to click a button to load the next batch of reviews.</p>
 <p><img src="show_more.PNG" /></p>
 </div>
 <div id="selenium-to-the-rescue" class="section level2">
 <h2>Selenium to the Rescue</h2>
-<p>Selenium is a tool that automates a browser. Its often used for writing automated tests for websites but in this instance it can be used to mimic a user’s browser behavior to load up a bunch of Play Store reviews before we can then scrape using <code>rvest</code> in the conventional fashion.</p>
-<div id="how-does-selenium-work" class="section level3">
-<h3>How Does Selenium Work?</h3>
+<p>Selenium is a tool that automates a browser. Its often used for writing automated tests for websites but in this instance it can be used to mimic a user’s browser behavior to load up a bunch of Play Store reviews to the screen before we can then scrape using <code>rvest</code> in the conventional fashion.</p>
+<p>Selenium and its R package <code>RSelenium</code> allows a user to interact with a browser through their programming language of choice. Since this is an R blog, I’ll be using R to control the browser.</p>
 </div>
+<div id="scraping-instagram-lite-reviews" class="section level2">
+<h2>Scraping Instagram Lite Reviews</h2>
+<p>Instagram Lite is a recently launched product whose <a href="https://techcrunch.com/2020/05/11/instagram-lite-shuts-down-in-advance-of-a-relaunch/">“goal was to offer a smaller download that takes up less space on a mobile device — a feature that specifically caters to users in emerging markets, where storage space is a concern”</a>. Since this is a relatively new product it would be fun to see how its doing. This first post will cover how to use <code>RSelenium</code> to actually get the data and the analysis will be covered in a follow-up post.</p>
+<div id="part-1-loading-libraries" class="section level3">
+<h3>Part 1: Loading Libraries</h3>
+<p>The four libraries used for this data acquisition project are <code>RSelenium</code> which will allow for manipulating a browser through R, <code>tidyverse</code> for constructing the data structure, <code>lubridate</code> to handle the dates in the reviews, and <code>rvest</code> to scrape the HTML after we’re done loading all the reviews with Selenium</p>
+<pre class="r"><code>library(RSelenium)
+library(tidyverse)
+library(lubridate)
+library(rvest)</code></pre>
+</div>
+<div id="part-2-start-rselenium" class="section level3">
+<h3>Part 2: Start RSelenium</h3>
+<p>A browser session gets started by called <code>rsDriver</code> from the <code>RSelenium</code> package. While <code>RSelenium</code> can work with Chrome, Firefox, or PhantomJS, I’ve personally found that working with Firefox is the path of least resistance. With Chrome you need to match the chromedriver versions between <code>RSelenium</code> and the Chrome browser and I’ve never successfully pulled that off. While with Firefox you can just set <code>browser="firefox"</code> and it just works.</p>
+<p>The first time running <code>RSelenium</code> you can’t have <code>check=F</code> as it will download the drivers that it needs to work. After that first run you can set <code>check=F</code> to skip those checks. The <code>verbose=F</code> option is to suppress excess messaging.</p>
+<p>The <code>rsDriver</code> function will start both a Selenium server and start the remote Firefox browser. It returns both a server and a client which will be assigned to <code>remDr</code>.</p>
+<pre class="r"><code>rD &lt;- rsDriver(browser = &quot;firefox&quot;, 
+               port = 6768L, 
+               #If Running RSelenium for the First Time, you can&#39;t have check =F
+               #since you&#39;ll need to download the appropriate drivers
+               check = F, 
+               verbose = F
+)
+remDr &lt;- rD[[&quot;client&quot;]]</code></pre>
+<p>If everything goes to plan a new Firefox window will open and the address bar will be “oranged” out.</p>
+<p><img src="remote_firefox.PNG" /></p>
+</div>
+<div id="part-3-browse-to-the-instagram-lite-google-play-reviews-page" class="section level3">
+<h3>Part 3: Browse to the Instagram Lite Google Play Reviews Page</h3>
+<p>This part is straight forward, I create a <code>url</code> variable with the desired URL as a string and then use the remote driver <code>remDr</code> to tell the browser to navigate to that page.</p>
+<pre class="r"><code>#Navigate to URL
+url &lt;- &quot;https://play.google.com/store/apps/details?id=com.instagram.lite&amp;hl=en_US&amp;showAllReviews=true&quot;
+remDr$navigate(url)</code></pre>
+<p>If all goes well the Firefox browser that had opened should now have loaded the Google Play page for Instagram Lite. There will also be a little robot icon on the address bar to show that the browser is under remote control.</p>
+<p><img src="iglite_page.PNG" /></p>
+</div>
+<div id="part-4-loading-a-bunch-of-reviews" class="section level3">
+<h3>Part 4: Loading A Bunch of Reviews</h3>
+<p>This section is the meat and potato of working with Selenium where we’ll write a script to tell the browser what to do. The summary of what this code block will do is:</p>
+<ol style="list-style-type: decimal">
+<li>Identify the body of the webpage</li>
+<li>Send the “end” key to the browser to move to the bottom of the body</li>
+<li>Check if the “SHOW MORE” button exists on the screen and wait 2 seconds</li>
+<li>If the button exists, find the element and click it.</li>
+<li>Wait 3 seconds to let new reviews load and then repeat from Step 2</li>
+</ol>
+<p>I repeat this loop 50 times to try to get enough data for analysis. If the browser isn’t running headlessly then you can switch to the remote browser window and watch everything in action (but be careful because manual intervention with the webpage can mess with the intended function of the script)</p>
+<p>Figuring out the right classes for the button (RveJvd) took some guess and check work from inspecting the page, however, I believe all Google Play Review pages use the same classes so this could <em>should</em> be adaptable to other apps. But YMMV.</p>
+<p><em>Note:</em> I originally wanted to run this 100 times to try to get more reviews but I kept winding up with an error of <code>unexpected end of hex escape at line 1 column 15497205</code> that I was unable to debug. So I stuck with 50. But if anyone knows how to avoid that error please let me know in the comments.</p>
+<pre class="r"><code>#Find Page Element for Body
+webElem &lt;- remDr$findElement(&quot;css&quot;, &quot;body&quot;)
+
+#Page to the End
+for(i in 1:50){
+  message(paste(&quot;Iteration&quot;,i))
+  webElem$sendKeysToElement(list(key = &quot;end&quot;))
+  #Check for the Show More Button
+  element&lt;- try(unlist(remDr$findElement(&quot;class name&quot;, &quot;RveJvd&quot;)$getElementAttribute(&#39;class&#39;)),
+                silent = TRUE)
+  
+  #If Button Is There Then Click It
+  Sys.sleep(2)
+  if(str_detect(element, &quot;RveJvd&quot;) == TRUE){
+    buttonElem &lt;- remDr$findElement(&quot;class name&quot;, &quot;RveJvd&quot;)
+    buttonElem$clickElement()
+  }
+  
+  #Sleep to Let Things Load
+  Sys.sleep(3)
+}</code></pre>
+</div>
+<div id="part-5-scraping-the-page" class="section level3">
+<h3>Part 5: Scraping the Page</h3>
+<p>Now that we’ve scrolled and pushed buttons and scrolled some more to get a bunch of reviews to load on the screen its time to scrape the reviews.</p>
+<p>We can extract the HTML from the remote browser using <code>getPageSource()</code> and <code>readHTML()</code>.</p>
+<pre class="r"><code>##Scrape in HTML Objects
+html_obj &lt;- remDr$getPageSource(header = TRUE)[[1]] %&gt;% read_html()</code></pre>
+<p>Now that we have the HTML we no longer need the remote Firefox browser or Selenium server so we can shut those down. <a href="https://github.com/ropensci/RSelenium/issues/228">There have been issues with the Java process remaining open</a> even after calling the stop server pieces so I issue a system command to kill the java process.</p>
+<pre class="r"><code>#Shut Down Client and Server
+remDr$close()
+rD$server$stop()
+system(&quot;taskkill /im java.exe /f&quot;, intern=FALSE, ignore.stdout=FALSE)</code></pre>
+</div>
+<div id="part-6-extracting-the-various-parts-of-the-review" class="section level3">
+<h3>Part 6: Extracting the Various Parts of the Review</h3>
+<p>If we look at a single review, there are a number of different elements we’d like to extract.</p>
+<p><img src="review_img.PNG" /></p>
+<ol style="list-style-type: decimal">
+<li>The Reviewer Name</li>
+<li>Number of Stars</li>
+<li>Date of Review</li>
+<li>Number of Upvotes</li>
+<li>Full Text of the Review</li>
+</ol>
+<p>This piece was a bit of guess and check working with <code>rvest</code> and looking at the CSS selectors on the page to identify the CSS classes for the pieces that I wanted and extract them with <code>html_elements()</code>, <code>html_attr()</code>, and <code>html_text()</code>:</p>
+<pre class="r"><code># 1) Reviewer Name
+names &lt;- html_obj %&gt;% html_elements(&quot;span.X43Kjb&quot;) %&gt;% html_text()
+
+# 2) Number of Stars
+stars &lt;- html_obj %&gt;% html_elements(&quot;.kx8XBd .nt2C1d [role=&#39;img&#39;]&quot;)%&gt;% 
+  html_attr(&quot;aria-label&quot;) %&gt;% 
+  #Remove everything that&#39;s not numeric
+  str_remove_all(&#39;\\D+&#39;) %&gt;% 
+  # Convert to Integer
+  as.integer()
+
+#3) Date of Review
+dates &lt;- html_obj %&gt;% html_elements(&quot;.p2TkOb&quot;) %&gt;% 
+  html_text() %&gt;% 
+  # Convert to a Date
+  mdy()
+
+#4) How many helpful clicks
+clicks &lt;- html_obj %&gt;% html_elements(&#39;div.jUL89d.y92BAb&#39;) %&gt;% 
+  html_text() %&gt;% 
+  #Convert to Integer
+  as.integer()</code></pre>
+<p>For the text of the review itself there is one wrinkle. From the image above the beginning of the review is shown, but it is truncated. Then a button for “Full Review” would need to be clicked to show the full review. Fortunately, this shows up in the data as “<Text Preview> …Full Review<The Actual Full Review>”. So in the cases, where the initial review is truncated, all we need to do is grab all the text that comes after the string “Full Review”:</p>
+<pre class="r"><code># 5) Full Text of the Review
+reviews &lt;- html_obj %&gt;% html_elements(&quot;.UD7Dzf&quot;) %&gt;% html_text() 
+
+###Deal with the &quot;Full Review&quot; Issue where text is duplicated
+reviews &lt;- if_else(
+  #If the review is truncated
+  str_detect(reviews, &#39;\\.\\.\\.Full Review&#39;),
+  #Grab all the Text After the string &#39;...Full Review&#39;
+  str_sub(reviews, 
+          start = str_locate(reviews, &#39;\\.\\.\\.Full Review&#39;)[, 2]+1
+          ),
+  #Else remove the leading space from the review as is
+  str_trim(reviews)
+  )</code></pre>
+</div>
+<div id="part-7-combine-and-save-the-data-set" class="section level3">
+<h3>Part 7: Combine and Save the Data Set</h3>
+<p>With each piece of the review individually extracted we’ll combine the vectors in a tibble and save the file for the analysis in the next part.</p>
+<pre class="r"><code># create the df with all the info
+review_data &lt;- tibble(
+  names = names, 
+  stars = stars, 
+  dates = dates, 
+  clicks = clicks,
+  reviews = reviews
+  ) 
+
+saveRDS(review_data, &#39;data/review_data.RDS&#39;)
+write_csv(review_data, &#39;data/review_data.csv&#39;)</code></pre>
+<p>Just to make sure everything is working we’ll compare an actual review to our data:</p>
+<p><img src="show_more.PNG" /></p>
+<pre class="r"><code>review_data %&gt;%
+  filter(names %in% c(&#39;Sushil Uk07&#39;, &#39;Hana Hoey&#39;)) %&gt;%
+  knitr::kable()</code></pre>
+<table>
+<colgroup>
+<col width="9%" />
+<col width="4%" />
+<col width="8%" />
+<col width="5%" />
+<col width="71%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left">names</th>
+<th align="right">stars</th>
+<th align="left">dates</th>
+<th align="right">clicks</th>
+<th align="left">reviews</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Sushil Uk07</td>
+<td align="right">3</td>
+<td align="left">2021-04-15</td>
+<td align="right">0</td>
+<td align="left">Good ,but it’s doesn’t Have option to put music in stories</td>
+</tr>
+<tr class="even">
+<td align="left">Hana Hoey</td>
+<td align="right">3</td>
+<td align="left">2021-04-21</td>
+<td align="right">0</td>
+<td align="left">in features, this app has already including important things. but the movement is very slow</td>
+</tr>
+</tbody>
+</table>
+<p>And there you have it. We used Selenium to have a browser scroll for a while to load a bunch of reviews, extracted the data with <code>rvest</code> and then combined and saved the data. In the next post we’ll use this data to understand what downloaders think about Instagram Lite.</p>
+</div>
+</div>
+<div id="appendix" class="section level2">
+<h2>Appendix:</h2>
+<p>In this post the Firefox browser was actually loaded which is a useful way to see what the code is actually doing. But if you didn’t want to actually see the browser you could send extra parameters to the <code>rsDriver</code> function to not make the browser visible:</p>
+<pre class="r"><code>rsDriver(browser = &quot;firefox&quot;, 
+         port = 6768L, 
+         check = F, 
+         verbose = F, 
+         #Run the Browser Headlessly
+         extraCapabilities = 
+           list(&quot;moz:firefoxOptions&quot; = 
+                  list(
+                    args = list(&#39;--headless&#39;)
+                    )
+                )
+         )</code></pre>
 </div>
