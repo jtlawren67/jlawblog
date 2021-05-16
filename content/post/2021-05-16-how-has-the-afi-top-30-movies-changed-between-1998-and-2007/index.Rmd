@@ -1,5 +1,5 @@
 ---
-title: How has the AFI Top 30 Movies Changed Between 1998 and 2007?
+title: How have the AFI Top 30 Movies Changed Between 1998 and 2007?
 author: JLaw
 date: '2021-05-16'
 slug: how-has-the-afi-top-30-movies-changed-between-1998-and-2007
@@ -27,7 +27,7 @@ projects: []
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, error = FALSE, message = FALSE)
 ```
 
-For whatever reason during COVID I've started watching some older "classic" movies that I hadn't seen before but felt for whatever reason I *should* have seen as a movie fan.  Last week, I had watched [The Third Man](https://www.imdb.com/title/tt0041959/) after listening to a podcast about [Spy Movies](https://www.theringer.com/2021/5/4/22418490/top-five-spy-movies-and-without-remorse).  After watching it I was surprised to find out that while it was named the [Top British Film of All-Time](https://en.wikipedia.org/wiki/BFI_Top_100_British_films) it is **NOT** in the AFI Top 100 list that was refreshed in 2007.  However, it was in the original list of 1998.
+During COVID I've started watching some older "classic" movies that I hadn't seen before but felt for whatever reason I *should* have seen as a movie fan.  Last week, I had watched [The Third Man](https://www.imdb.com/title/tt0041959/) after listening to a podcast about [Spy Movies](https://www.theringer.com/2021/5/4/22418490/top-five-spy-movies-and-without-remorse).  After watching it I was surprised to find out that while it was named the [Top British Film of All-Time](https://en.wikipedia.org/wiki/BFI_Top_100_British_films) it is **NOT** in the AFI Top 100 list that was refreshed in 2007.  However, it was in the original list of 1998.
 
 This got me thinking about what were all the differences between the original 1998 list and the revised 2007 list.  And while the results are very clearly in the [Wikipedia table](https://en.wikipedia.org/wiki/AFI%27s_100_Years...100_Movies) I though it would be fun to try out a visualization using bump charts.  This posts utilizes the `ggbump` package to make the bump chart and much of the code and style in this post is influenced from the package [README](https://cran.r-project.org/web/packages/ggbump/readme/README.html).
 
@@ -37,7 +37,7 @@ The main parts of this post will be:
 
 1. Scraping the table from Wikipedia using `rvest`
 2. Doing some light transformations with `dplyr`
-3. Doing the plotting with `ggplot2`, `ggbump`, and a couple of other packges for fonts.
+3. Doing the plotting with `ggplot2`, `ggbump`, and a couple of other packages for fonts.
 
 ```{r}
 library(rvest)
@@ -48,7 +48,7 @@ library(ggtext)
 library(showtext)
 ```
 
-When making the plot I wanted to leverage the font that's actually used on the American Film Institute web-page which turned out to be the Google Font *Nunito*.  Using the `showtext` package, I can install the google fonts into the R session and load them for use in plotting.  The function `font_add_google` from the `showtext` package takes two arguments, the name of the Google Font and an alias that can be used to refer to the font later.  For example, in the code below, I'll be referring to "Nunito" as the "afi" family later on.  The `showtext_auto` call allows for the family aliases to be used in future code.
+When making the plot I wanted to leverage the font that's actually used on the American Film Institute web-page which turned out to be the Google Font *Nunito*.  Using the `showtext` package, I can install the Google fonts into the R session and load them for use in plotting.  The function `font_add_google` from the `showtext` package takes two arguments, the name of the Google Font and a family alias that can be used to refer to the font later.  For example, in the code below, I'll be referring to "Nunito" as the "afi" family later on.  The `showtext_auto` call allows for the family aliases to be used in future code.
 
 ```{r}
 # Load Google Font
@@ -77,7 +77,7 @@ knitr::kable(head(tbl, 3))
 
 In order to get the data ready for use in ggplot there are a few data transformation steps that need to happen:
 
-1. I'd like the labels for the plot to include both the title of the film as well as its year of release.  This will use the `glue` package to easily combine the *film* and *release_year* columns.
+1. I'd like the labels for the plot to include both the title of the film as well as its year of release.  I will use the `glue` package to easily combine the *film* and *release_year* columns.
 2. I want to clean up the rows for movies that aren't in both lists by replacing the "-" label with `NA`s.  This is done using `across()` and `na_if` to replace the "-" characters in the two rank columns with `NA`.
 3. I need to turn the tibble from wide format to long format with `pivot_wider`
 4. Finally, I want to have rank be an integer and I want to remove the leading "x" character from the year column
@@ -104,7 +104,7 @@ knitr::kable(head(tbl2, 3))
 
 ## Creating the Plot
 
-In order to make the plot readable, I'll only be looking at the Top 30 films rather than the full top 100.  I'll be using a bump chart do the comparison.  Bump charts are a visualization technique good for looking at changes in rank over time.  There is a package `ggbump` which provides a `ggplot2` geom (`geom_bump`) to handle the lines for a bump chart.  Movies that appear in only one list will not have a line.
+In order to make the plot readable, I'll only be looking at the Top 30 films rather than the full Top 100.  I'll be using a bump chart do the comparison.  Bump charts are a visualization technique good for looking at changes in rank over time.  There is a package `ggbump` which provides a `ggplot2` geom (`geom_bump`) to handle the lines for a bump chart.  Movies that appear in only one list will not have a line.
 
 As for what the code does, the first section above the `theme()` call does most of the work by having the points, lines, and titles as well as scaling the axes to the right sizes.  Note that in the `geom_text` calls, I'm using *family = 'rob'* to refer to the Roboto font downloaded earlier.  The theme call handles a lot of the formatting and the `geom_text()` and `geom_point()` calls after the `theme()` section create the white circles that contain the ranks.
 

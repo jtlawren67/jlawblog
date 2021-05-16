@@ -1,5 +1,5 @@
 ---
-title: How has the AFI Top 30 Movies Changed Between 1998 and 2007?
+title: How have the AFI Top 30 Movies Changed Between 1998 and 2007?
 author: JLaw
 date: '2021-05-16'
 slug: how-has-the-afi-top-30-movies-changed-between-1998-and-2007
@@ -26,7 +26,7 @@ projects: []
 <script src="{{< blogdown/postref >}}index_files/header-attrs/header-attrs.js"></script>
 
 
-<p>For whatever reason during COVID I’ve started watching some older “classic” movies that I hadn’t seen before but felt for whatever reason I <em>should</em> have seen as a movie fan. Last week, I had watched <a href="https://www.imdb.com/title/tt0041959/">The Third Man</a> after listening to a podcast about <a href="https://www.theringer.com/2021/5/4/22418490/top-five-spy-movies-and-without-remorse">Spy Movies</a>. After watching it I was surprised to find out that while it was named the <a href="https://en.wikipedia.org/wiki/BFI_Top_100_British_films">Top British Film of All-Time</a> it is <strong>NOT</strong> in the AFI Top 100 list that was refreshed in 2007. However, it was in the original list of 1998.</p>
+<p>During COVID I’ve started watching some older “classic” movies that I hadn’t seen before but felt for whatever reason I <em>should</em> have seen as a movie fan. Last week, I had watched <a href="https://www.imdb.com/title/tt0041959/">The Third Man</a> after listening to a podcast about <a href="https://www.theringer.com/2021/5/4/22418490/top-five-spy-movies-and-without-remorse">Spy Movies</a>. After watching it I was surprised to find out that while it was named the <a href="https://en.wikipedia.org/wiki/BFI_Top_100_British_films">Top British Film of All-Time</a> it is <strong>NOT</strong> in the AFI Top 100 list that was refreshed in 2007. However, it was in the original list of 1998.</p>
 <p>This got me thinking about what were all the differences between the original 1998 list and the revised 2007 list. And while the results are very clearly in the <a href="https://en.wikipedia.org/wiki/AFI%27s_100_Years...100_Movies">Wikipedia table</a> I though it would be fun to try out a visualization using bump charts. This posts utilizes the <code>ggbump</code> package to make the bump chart and much of the code and style in this post is influenced from the package <a href="https://cran.r-project.org/web/packages/ggbump/readme/README.html">README</a>.</p>
 <div id="libraries" class="section level2">
 <h2>Libraries</h2>
@@ -34,7 +34,7 @@ projects: []
 <ol style="list-style-type: decimal">
 <li>Scraping the table from Wikipedia using <code>rvest</code></li>
 <li>Doing some light transformations with <code>dplyr</code></li>
-<li>Doing the plotting with <code>ggplot2</code>, <code>ggbump</code>, and a couple of other packges for fonts.</li>
+<li>Doing the plotting with <code>ggplot2</code>, <code>ggbump</code>, and a couple of other packages for fonts.</li>
 </ol>
 <pre class="r"><code>library(rvest)
 library(tidyverse)
@@ -42,7 +42,7 @@ library(glue)
 library(ggbump)
 library(ggtext)
 library(showtext)</code></pre>
-<p>When making the plot I wanted to leverage the font that’s actually used on the American Film Institute web-page which turned out to be the Google Font <em>Nunito</em>. Using the <code>showtext</code> package, I can install the google fonts into the R session and load them for use in plotting. The function <code>font_add_google</code> from the <code>showtext</code> package takes two arguments, the name of the Google Font and an alias that can be used to refer to the font later. For example, in the code below, I’ll be referring to “Nunito” as the “afi” family later on. The <code>showtext_auto</code> call allows for the family aliases to be used in future code.</p>
+<p>When making the plot I wanted to leverage the font that’s actually used on the American Film Institute web-page which turned out to be the Google Font <em>Nunito</em>. Using the <code>showtext</code> package, I can install the Google fonts into the R session and load them for use in plotting. The function <code>font_add_google</code> from the <code>showtext</code> package takes two arguments, the name of the Google Font and a family alias that can be used to refer to the font later. For example, in the code below, I’ll be referring to “Nunito” as the “afi” family later on. The <code>showtext_auto</code> call allows for the family aliases to be used in future code.</p>
 <pre class="r"><code># Load Google Font
 font_add_google(&quot;Nunito&quot;, &quot;afi&quot;)
 font_add_google(&quot;Roboto&quot;, &quot;rob&quot;)
@@ -99,7 +99,7 @@ showtext_auto()</code></pre>
 <h2>Data Transformation</h2>
 <p>In order to get the data ready for use in ggplot there are a few data transformation steps that need to happen:</p>
 <ol style="list-style-type: decimal">
-<li>I’d like the labels for the plot to include both the title of the film as well as its year of release. This will use the <code>glue</code> package to easily combine the <em>film</em> and <em>release_year</em> columns.</li>
+<li>I’d like the labels for the plot to include both the title of the film as well as its year of release. I will use the <code>glue</code> package to easily combine the <em>film</em> and <em>release_year</em> columns.</li>
 <li>I want to clean up the rows for movies that aren’t in both lists by replacing the “-” label with <code>NA</code>s. This is done using <code>across()</code> and <code>na_if</code> to replace the “-” characters in the two rank columns with <code>NA</code>.</li>
 <li>I need to turn the tibble from wide format to long format with <code>pivot_wider</code></li>
 <li>Finally, I want to have rank be an integer and I want to remove the leading “x” character from the year column</li>
@@ -161,7 +161,7 @@ showtext_auto()</code></pre>
 </div>
 <div id="creating-the-plot" class="section level2">
 <h2>Creating the Plot</h2>
-<p>In order to make the plot readable, I’ll only be looking at the Top 30 films rather than the full top 100. I’ll be using a bump chart do the comparison. Bump charts are a visualization technique good for looking at changes in rank over time. There is a package <code>ggbump</code> which provides a <code>ggplot2</code> geom (<code>geom_bump</code>) to handle the lines for a bump chart. Movies that appear in only one list will not have a line.</p>
+<p>In order to make the plot readable, I’ll only be looking at the Top 30 films rather than the full Top 100. I’ll be using a bump chart do the comparison. Bump charts are a visualization technique good for looking at changes in rank over time. There is a package <code>ggbump</code> which provides a <code>ggplot2</code> geom (<code>geom_bump</code>) to handle the lines for a bump chart. Movies that appear in only one list will not have a line.</p>
 <p>As for what the code does, the first section above the <code>theme()</code> call does most of the work by having the points, lines, and titles as well as scaling the axes to the right sizes. Note that in the <code>geom_text</code> calls, I’m using <em>family = ‘rob’</em> to refer to the Roboto font downloaded earlier. The theme call handles a lot of the formatting and the <code>geom_text()</code> and <code>geom_point()</code> calls after the <code>theme()</code> section create the white circles that contain the ranks.</p>
 <pre class="r"><code>##Plot
 num_films = 30
