@@ -1,0 +1,234 @@
+---
+title: How have the AFI Top 30 Movies Changed Between 1998 and 2007?
+author: JLaw
+date: '2021-05-16'
+slug: how-has-the-afi-top-30-movies-changed-between-1998-and-2007
+categories:
+  - R
+  - DataViz
+tags:
+  - ggbump
+  - showtext
+  - glue
+  - rvest
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2021-05-15T18:01:27-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+<script src="{{< blogdown/postref >}}index_files/header-attrs/header-attrs.js"></script>
+
+
+<p>During COVID I’ve started watching some older “classic” movies that I hadn’t seen before but felt for whatever reason I <em>should</em> have seen as a movie fan. Last week, I had watched <a href="https://www.imdb.com/title/tt0041959/">The Third Man</a> after listening to a podcast about <a href="https://www.theringer.com/2021/5/4/22418490/top-five-spy-movies-and-without-remorse">Spy Movies</a>. After watching it I was surprised to find out that while it was named the <a href="https://en.wikipedia.org/wiki/BFI_Top_100_British_films">Top British Film of All-Time</a> it is <strong>NOT</strong> in the AFI Top 100 list that was refreshed in 2007. However, it was in the original list of 1998.</p>
+<p>This got me thinking about what were all the differences between the original 1998 list and the revised 2007 list. And while the results are very clearly in the <a href="https://en.wikipedia.org/wiki/AFI%27s_100_Years...100_Movies">Wikipedia table</a> I though it would be fun to try out a visualization using bump charts. This posts utilizes the <code>ggbump</code> package to make the bump chart and much of the code and style in this post is influenced from the package <a href="https://cran.r-project.org/web/packages/ggbump/readme/README.html">README</a>.</p>
+<div id="libraries" class="section level2">
+<h2>Libraries</h2>
+<p>The main parts of this post will be:</p>
+<ol style="list-style-type: decimal">
+<li>Scraping the table from Wikipedia using <code>rvest</code></li>
+<li>Doing some light transformations with <code>dplyr</code></li>
+<li>Doing the plotting with <code>ggplot2</code>, <code>ggbump</code>, and a couple of other packages for fonts.</li>
+</ol>
+<pre class="r"><code>library(rvest)
+library(tidyverse)
+library(glue)
+library(ggbump)
+library(ggtext)
+library(showtext)</code></pre>
+<p>When making the plot I wanted to leverage the font that’s actually used on the American Film Institute web-page which turned out to be the Google Font <em>Nunito</em>. Using the <code>showtext</code> package, I can install the Google fonts into the R session and load them for use in plotting. The function <code>font_add_google</code> from the <code>showtext</code> package takes two arguments, the name of the Google Font and a family alias that can be used to refer to the font later. For example, in the code below, I’ll be referring to “Nunito” as the “afi” family later on. The <code>showtext_auto</code> call allows for the family aliases to be used in future code.</p>
+<pre class="r"><code># Load Google Font
+font_add_google(&quot;Nunito&quot;, &quot;afi&quot;)
+font_add_google(&quot;Roboto&quot;, &quot;rob&quot;)
+showtext_auto()</code></pre>
+</div>
+<div id="scraping-the-data" class="section level2">
+<h2>Scraping the Data</h2>
+<p>The data for the original and new AFI Top 100 Lists are in the same table on the <a href="https://en.wikipedia.org/wiki/AFI%27s_100_Years...100_Movies">AFI 100 Years… 100 Movies Wikipedia table</a>. I’ll be using <code>rvest</code> to grab the table and import it into a tibble. I do this by providing <code>rvest</code> with the URL using <code>read_html</code>, search for a specific CSS class with <code>html_element</code> and then extract the information from the table with <code>html_table</code>. Since <code>rvest</code> will take the column names exactly from the table, which will include spaces, I’ll use the <code>janitor::clean_names()</code> function to replace spaces with underscores and add characters before names that start with numbers. <em>1998 Rank</em> will then become <em>x1998_rank</em>.</p>
+<pre class="r"><code>tbl &lt;- read_html(&#39;https://en.wikipedia.org/wiki/AFI%27s_100_Years...100_Movies&#39;) %&gt;%
+  html_element(css = &#39;.sortable&#39;) %&gt;%
+  html_table() %&gt;%
+  janitor::clean_names()</code></pre>
+<p>The first three rows of this data set will look like:</p>
+<table>
+<thead>
+<tr class="header">
+<th align="left">film</th>
+<th align="right">release_year</th>
+<th align="left">director</th>
+<th align="left">x1998_rank</th>
+<th align="left">x2007_rank</th>
+<th align="left">change</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Citizen Kane</td>
+<td align="right">1941</td>
+<td align="left">Orson Welles</td>
+<td align="left">1</td>
+<td align="left">1</td>
+<td align="left">0</td>
+</tr>
+<tr class="even">
+<td align="left">Casablanca</td>
+<td align="right">1942</td>
+<td align="left">Michael Curtiz</td>
+<td align="left">2</td>
+<td align="left">3</td>
+<td align="left">1</td>
+</tr>
+<tr class="odd">
+<td align="left">The Godfather</td>
+<td align="right">1972</td>
+<td align="left">Francis Ford Coppola</td>
+<td align="left">3</td>
+<td align="left">2</td>
+<td align="left">1</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="data-transformation" class="section level2">
+<h2>Data Transformation</h2>
+<p>In order to get the data ready for use in ggplot there are a few data transformation steps that need to happen:</p>
+<ol style="list-style-type: decimal">
+<li>I’d like the labels for the plot to include both the title of the film as well as its year of release. I will use the <code>glue</code> package to easily combine the <em>film</em> and <em>release_year</em> columns.</li>
+<li>I want to clean up the rows for movies that aren’t in both lists by replacing the “-” label with <code>NA</code>s. This is done using <code>across()</code> and <code>na_if</code> to replace the “-” characters in the two rank columns with <code>NA</code>.</li>
+<li>I need to turn the tibble from wide format to long format with <code>pivot_wider</code></li>
+<li>Finally, I want to have rank be an integer and I want to remove the leading “x” character from the year column</li>
+</ol>
+<pre class="r"><code>tbl2 &lt;- tbl %&gt;% 
+  mutate(title_lbl = glue(&quot;{film} ({release_year})&quot;),
+         across(ends_with(&#39;rank&#39;), ~na_if(., &quot;—&quot;))
+  ) %&gt;%
+  pivot_longer(
+    cols = contains(&#39;rank&#39;),
+    names_to = &#39;year&#39;,
+    values_to = &#39;rank&#39;
+  ) %&gt;%
+  mutate(year = str_remove_all(year, &#39;\\D+&#39;) %&gt;% as.integer(),
+         rank = as.integer(rank))</code></pre>
+<p>Now we have 1 row for each instance on a movie for each list. For example, Citizen Kane appears in both lists so it appears in two rows in the data.</p>
+<table>
+<thead>
+<tr class="header">
+<th align="left">film</th>
+<th align="right">release_year</th>
+<th align="left">director</th>
+<th align="left">change</th>
+<th align="left">title_lbl</th>
+<th align="right">year</th>
+<th align="right">rank</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Citizen Kane</td>
+<td align="right">1941</td>
+<td align="left">Orson Welles</td>
+<td align="left">0</td>
+<td align="left">Citizen Kane (1941)</td>
+<td align="right">1998</td>
+<td align="right">1</td>
+</tr>
+<tr class="even">
+<td align="left">Citizen Kane</td>
+<td align="right">1941</td>
+<td align="left">Orson Welles</td>
+<td align="left">0</td>
+<td align="left">Citizen Kane (1941)</td>
+<td align="right">2007</td>
+<td align="right">1</td>
+</tr>
+<tr class="odd">
+<td align="left">Casablanca</td>
+<td align="right">1942</td>
+<td align="left">Michael Curtiz</td>
+<td align="left">1</td>
+<td align="left">Casablanca (1942)</td>
+<td align="right">1998</td>
+<td align="right">2</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="creating-the-plot" class="section level2">
+<h2>Creating the Plot</h2>
+<p>In order to make the plot readable, I’ll only be looking at the Top 30 films rather than the full Top 100. I’ll be using a bump chart do the comparison. Bump charts are a visualization technique good for looking at changes in rank over time. There is a package <code>ggbump</code> which provides a <code>ggplot2</code> geom (<code>geom_bump</code>) to handle the lines for a bump chart. Movies that appear in only one list will not have a line.</p>
+<p>As for what the code does, the first section above the <code>theme()</code> call does most of the work by having the points, lines, and titles as well as scaling the axes to the right sizes. Note that in the <code>geom_text</code> calls, I’m using <em>family = ‘rob’</em> to refer to the Roboto font downloaded earlier. The theme call handles a lot of the formatting and the <code>geom_text()</code> and <code>geom_point()</code> calls after the <code>theme()</code> section create the white circles that contain the ranks.</p>
+<pre class="r"><code>##Plot
+num_films = 30
+
+tbl2 %&gt;%
+  filter(rank &lt;= num_films) %&gt;%
+  ggplot(aes(x = year, y = rank, color = title_lbl)) +
+  #Add Dots
+  geom_point(size = 5) +
+  #Add Titles
+  geom_text(data = . %&gt;% filter(year == min(year)),
+            aes(x = year - .5, label = title_lbl), size = 5, hjust = 1, family = &#39;rob&#39;) +
+  geom_text(data = . %&gt;% filter(year == max(year)),
+            aes(x = year + .5, label = title_lbl), size = 5, hjust = 0, family = &#39;rob&#39;) +
+  # Add Bump Lines
+  geom_bump(size = 2, smooth = 8) +
+  
+  # Resize Axes
+  scale_x_continuous(limits = c(1990, 2014),
+                     breaks = c(1998, 2007),
+                     position = &#39;top&#39;) +
+  scale_y_reverse() +
+  labs(title = glue(&quot;How has the AFI Top {num_films} Movies Changed Between Lists&quot;),
+       subtitle = &quot;Comparing 1998 and 2007s lists&quot;,
+       caption = &quot;***Source:*** Wikipedia&quot;,
+       x = &quot;List Year&quot;,
+       y = &quot;Rank&quot;) + 
+  # Set Colors and Sizes
+  theme(
+    text = element_text(family = &#39;afi&#39;),
+    legend.position = &quot;none&quot;,
+    panel.grid = element_blank(),
+    plot.title = element_text(hjust = .5, color = &quot;white&quot;, size = 20),
+    plot.caption = element_markdown(hjust = 1, color = &quot;white&quot;, size = 12),
+    plot.subtitle = element_text(hjust = .5, color = &quot;white&quot;, size = 18),
+    axis.line = element_blank(),
+    axis.ticks = element_blank(),
+    axis.text.y = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.x = element_text(face = 2, color = &quot;white&quot;, size = 18),
+    panel.background = element_rect(fill = &quot;black&quot;),
+    plot.background = element_rect(fill = &quot;black&quot;)
+  ) + 
+  ## Add in the Ranks with the Circles
+  geom_point(data = tibble(x = 1990.5, y = 1:num_films), aes(x = x, y = y), 
+             inherit.aes = F,
+             color = &quot;white&quot;,
+             size = 7,
+             pch = 21) +
+  geom_text(data = tibble(x = 1990.5, y = 1:num_films), aes(x = x, y = y, label = y), 
+            inherit.aes = F,
+            color = &quot;white&quot;,
+            fontface = 2,
+            family = &#39;rob&#39;) + 
+  geom_point(data = tibble(x = 2013.5, y = 1:num_films), aes(x = x, y = y), 
+             inherit.aes = F,
+             color = &quot;white&quot;,
+             size = 7,
+             pch = 21) +
+  geom_text(data = tibble(x = 2013.5, y = 1:num_films), aes(x = x, y = y, label = y), 
+            inherit.aes = F,
+            color = &quot;white&quot;,
+            fontface = 2,
+            family = &#39;rob&#39;) </code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/plot-1.png" width="768" /></p>
+</div>
+<div id="conclusion" class="section level2">
+<h2>Conclusion</h2>
+<p>While the Wikipedia page tells you exactly what changed between the two lists it provided an opportunity for me to get some practice with making some “nicer” looking ggplot charts and to try out a bump chart and the <code>ggbump</code> package. As for an interpretation of the chart, there’s a couple of things I don’t really understand between the two lists. Mainly why Raging Bull suddenly jumps from the 24th best film to the 4th. Or why City Lights jumps 65 places from 76th to 11th. I guess I’ll just have to watch and find out.</p>
+</div>
