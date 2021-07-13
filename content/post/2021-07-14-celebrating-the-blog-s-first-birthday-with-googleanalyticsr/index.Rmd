@@ -25,18 +25,18 @@ projects: []
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE, error = FALSE, message = FALSE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, error = FALSE, message = FALSE, fig.height = 8, fig.width = 12)
 ```
 
-On July 4th, 2020, I posted the [first article](https://jlaw.netlify.app/2020/07/04/a-racing-barplot-of-top-us-baby-names-1880-2018/) to this humble R blog as a small hobby to during something new while working from home through COVID.  Very recently, this blog celebrated its first year and I wanted to leverage Google Analytics to do a look back at the last year, what's done well as well as when and where people were visiting from.  Much of this content is heavily leveraged from [Antoine Soetewey's Stats and R blog post](https://statsandr.com/blog/track-blog-performance-in-r/) and the numbers contained here will be *much* smaller than on his.
+On July 4th, 2020, I posted the [first article](https://jlaw.netlify.app/2020/07/04/a-racing-barplot-of-top-us-baby-names-1880-2018/) to this humble R blog as a small hobby to do something new while working from home through COVID.  Very recently, this blog celebrated its first year and I wanted to leverage Google Analytics to do a look back at the last year, what's done well as well as when and where people were visiting from.  Much of this content is heavily leveraged from [Antoine Soetewey's Stats and R blog post](https://statsandr.com/blog/track-blog-performance-in-r/) and **but** the numbers contained here will be *much* smaller than on his.
 
-But as it says on the home page, this blog was primarily meant for me to be able have a more accessible set of code snippets / a reason to do random analyses to continue learning.  That fact that people have taken the time to read it has been awesome and really the icing on a really delicious cake.
+As it says on the home page, this blog was primarily meant for me to be able have a more accessible set of code snippets / a reason to do random analyses to continue learning.  That fact that people have taken the time to read it has been awesome and really the icing on a really delicious cake.
 
 So to everything currently reading or who has read the blog in the last year.  Thank you so much!  Now onto the recap!!
 
 ## Libraries and Set-up
 
-The libraries I'll use in this analysis generally serve 1 of 2 functions, either to access data from Google Analytics which is the workhorse of this post or to do/edit data visitations (plotly, scales, gghalves).
+The libraries I'll use in this analysis generally serve 1 of 2 functions, either to access and manipulate data from Google Analytics which is the workhorse of this post or to do/edit data visitations (plotly, scales, gghalves, ggflags).
 
 ```{r packages}
 library(plotly) #For turning ggplots into INTERACTIVE ggplots
@@ -49,12 +49,12 @@ library(countrycode) # Convert Country Names to 2 Letter Codes
 library(ggflags) # Plot Flags
 ```
 
-Getting Google Analytics was also somewhat tricky to get set up. As someone who's not terrible familiar with Google Cloud Platform and was a little hazy about using the generic public account that comes with googleAnalyticsR, I struggled a bit with getting the authentication correct.  The [googleAnalyticsR documentation](http://code.markedmondson.me/googleAnalyticsR/articles/rmarkdown.html) provides some guidance for getting the authentication to work with markdown.  Not all of it worked for me, and I found up trial and error'ing my say into creating a client project and downloading the JSON and adding it to my .Renviron file to handle authentication.
+Getting Google Analytics was also somewhat tricky to get set up. As someone who's not terrible familiar with Google Cloud Platform and was a little hazy about using the generic public account that comes with `googleAnalyticsR`, I struggled a bit with getting the authentication correct.  The [googleAnalyticsR documentation](http://code.markedmondson.me/googleAnalyticsR/articles/rmarkdown.html) provides some guidance for getting the authentication to work with markdown.  But I trialed and errored so much that I don't think I can provide much guidance for what I did.  I just kindof kept running `ga_auth_setup()` until things seemed like they were working.
 
-But once authenticating the first time, we can refresh the OAuth token with the email address initially used to authenticate:
+But after getting client ids and auth ids into my R Environment, I can authenticate the markdown file with:
 
-```{r eval=FALSE}
-ga_auth(email = "XXXXXX@XXXXX.com")
+```{r}
+ga_auth()
 ```
 
 As a last piece of set-up most of the functions in `googleAnalyticsR` take in a *view_id* and a date range.  Since those will all be the same since I'm looking at ***this*** blog and for the first year, I'll create those variables first so they can be referenced in each call:
@@ -81,9 +81,9 @@ totals <- google_analytics(view_id,
 
 ```
 
-Over the first year of the blog (July 4th, 2020 through July 3rd, 2021), I had `r totals$users %>% comma` users visit with `r totals$sessions %>% comma` sessions and `r totals$pageviews %>% comma` total page views.  Given the relatively minimal promotion, I'll call that a win.
+Over the first year of the blog (July 4th, 2020 through July 3rd, 2021), I had `r totals$users %>% comma` users visit with `r totals$sessions %>% comma` sessions and `r totals$pageviews %>% comma` total page views.  Given the relatively minimal promotion, I'll call that a win `r emo::ji('winner')`.
 
-I have a hypothesis that most of my views came in the days immediately following posts as I'm connected to the [R-Bloggers](https://www.r-bloggers.com/) aggregate.  To check this hypothesis I'll compare the time series of sessions to the days when posts were first made.  Since the post dates are embedded in the URLs (/year/month/day/title), I'll get the full URLs from Google Analytics and pull out the post dates from there:
+I have a hypothesis that most of my views came in the days immediately following posts as I'm connected to the [R-Bloggers](https://www.r-bloggers.com/) aggregator.  To check this hypothesis I'll compare the time series of sessions to the days when posts were first made.  Since the post dates are embedded in the URLs (/year/month/day/title), I'll get the full URLs from Google Analytics and pull out the post dates from there:
 
 ```{r Launch_Dates}
 # Get all visited pages 
@@ -97,9 +97,12 @@ launch_dates <- google_analytics(view_id,
 # Grab All the URLs that have the /year/month/day pattern and at 
 #least 10 page views
 launch_dates <- launch_dates %>%
+  #Keep only rows that match my pattern
   filter(str_detect(pagePath, '/\\d+/\\d+/\\d+')) %>%
+  #Extract and convert the date components
   extract(pagePath, regex='/(\\d+)/(\\d+)/(\\d+)/',
          into = c('year', 'month', 'day')) %>% 
+  #Turn the components into an actual date field
   mutate(dt = lubridate::ymd(paste(year, month, day, sep = '-')),
          #Fixing an error in this logic
          dt = if_else(dt == lubridate::ymd(20201201), 
@@ -135,7 +138,7 @@ sessions_over_time %>%
 
 ```
 
-Based on the post dates (blue dotes), it does not seem like post dates correlate to the highest volume.  While there are some peaks on post days, particularly in March through July, there has been a small delay between posting and spikes.
+Based on the post dates (blue dotes), it does not seem like post dates correlate to the highest volume.  While there are some peaks on post days, particularly in March through July, there are a number of large spikes that occur a bit after the posting dates.
 
 ### Looking at Monthly Active Users
 
@@ -161,12 +164,12 @@ mau %>%
 
 ```
 
-The blog definitely became more popular in April (awesome).  But sadly, the monthly active user count topped out at at 872.  Better luck in 2021-2022. 
+The blog definitely became more popular in April (awesome).  But sadly, the monthly active user count topped out at at 872 `r emo::ji('sad')`.  Better luck in 2021-2022. 
 
 
 ### Days of the Week
 
-First up, looking at the number of sessions split by days of the week.  Just for fun here, I'll utilize the `gghalves` package which allows you to [create hybrid geoms](https://erocoar.github.io/gghalves/).  In this case, I'll make a half box plot, half point plot to be able to show the distribution in box plot form but also get a better idea of the actual distribution from the points. The *side* parameter tells the function to plot on the left or right half.
+Next up is looking at the number of sessions split by days of the week.  Just for fun here, I'll utilize the `gghalves` package which allows you to [create hybrid geoms](https://erocoar.github.io/gghalves/).  In this case, I'll make a half box plot, half point plot to be able to show the distribution in box plot form but also get a better idea of the actual distribution from the points. The *side* parameter tells the function to plot on the left or right half.
 
 Since most days have very few sessions, the plot is set to a log10 scale
 
@@ -198,7 +201,7 @@ sessions_dow %>%
     cowplot::theme_cowplot()
 ```
 
-It seems like Monday is the most popular day and then there's a slight decline throughout the rest of the week.  Like the median number of sessions for the weekdays are all fairly similar there is a higher ceiling for Monday, Tuesday, Wednesday than there is for Thurs and Friday.
+It seems like Monday is the most popular day and then there's a slight decline throughout the rest of the week.  The median number of sessions for the weekdays are all fairly similar but there is a higher ceiling for Monday, Tuesday, Wednesday than there is for Thurs and Friday.
 
 ## Sources and Pages
 
@@ -261,7 +264,7 @@ top_pages %>%
   filter(!pageTitle %in% c('(not set)', "JLaw's R Blog", "Posts")) %>%
   # Keep the Top 10 By Page Views
   slice_max(pageviews, n = 10) %>%
-  ggplot(aes(x = fct_reorder(pageTitle, pageviews), 
+  ggplot(aes(x = fct_reorder(str_wrap(pageTitle, 75), pageviews), 
              y = pageviews,
              fill = pageTitle)) + 
   geom_col() +
@@ -269,7 +272,7 @@ top_pages %>%
             hjust = 1) + 
   scale_fill_discrete(guide = F) + 
   scale_y_continuous(expand = c(0, 0)) + 
-  labs(x = "Country", y = "# of Users",
+  labs(x = "", y = "# of Users",
        title = "Most Popular Posts") + 
   coord_flip() + 
   cowplot::theme_cowplot() + 
@@ -284,7 +287,7 @@ I'm not surprised that the "Scraping the Google Play Store with RSelenium" is th
 
 **HOWEVER**, while its good to know which are the most popular posts in general.  Some of these posts are older than others and have had more of a chance to generate page views than others.  For example, the Instagram Lite post is from late June while the Advent of Code post is from December.  To counter this, I can look at the cumulative number of page views from the first page view date.  Then we can see which post is accumulating views the fastest.  To this, I'm going to create a static ggplot but then use `ggplotly` to make it interactive:
 
-```{r normalized_time, fig.width=12}
+```{r normalized_time, fig.height=6, fig.width=8}
 pages_by_time <- google_analytics(view_id,
                                   date_range = c(start_date, end_date),
                                   metrics = c("pageviews"),
@@ -338,7 +341,7 @@ users_by_country <- google_analytics(view_id,
 
 users_by_country %>% 
   filter(country != '(not set)') %>% 
-  #Get % Column
+  #Get % Column and Recode Countries to the iso2c standard
   mutate(pct = users/sum(users),
          code = str_to_lower(countrycode(country, 
                                          origin = 'country.name.en', 

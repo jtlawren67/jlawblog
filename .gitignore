@@ -2,6 +2,7 @@
 .Rhistory
 .RData
 .Ruserdata
+.Renviron
 *.RDS
 /blogdown
 .DS_Store # if a windows user, Thumbs.db instead
@@ -10,3 +11,4 @@ public/ # if using Netlify
 /public
 .DS_Store
 .udpipe
+googleauthr-auth-key.json
