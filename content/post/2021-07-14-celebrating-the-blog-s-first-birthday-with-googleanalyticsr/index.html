@@ -1,0 +1,318 @@
+---
+title: Celebrating the Blog's First Birthday With googleAnalyticsR
+author: JLaw
+date: '2021-07-14'
+slug: celebrating-the-blog-s-first-birthday-with-googleanalyticsr
+categories:
+  - R
+tags:
+  - googleAnalyticsR
+  - gghalves
+  - plotly
+  - countrycode
+  - ggflags
+  - wesanderson
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2021-07-14T01:01:36-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+<script src="{{< blogdown/postref >}}index_files/header-attrs/header-attrs.js"></script>
+
+
+<p>On July 4th, 2020, I posted the <a href="https://jlaw.netlify.app/2020/07/04/a-racing-barplot-of-top-us-baby-names-1880-2018/">first article</a> to this humble R blog as a small hobby to do something new while working from home through COVID. Very recently, this blog celebrated its first year and I wanted to leverage Google Analytics to do a look back at the last year, what’s done well as well as when and where people were visiting from. Much of this content is heavily leveraged from <a href="https://statsandr.com/blog/track-blog-performance-in-r/">Antoine Soetewey’s Stats and R blog post</a> and <strong>but</strong> the numbers contained here will be <em>much</em> smaller than on his.</p>
+<p>As it says on the home page, this blog was primarily meant for me to be able have a more accessible set of code snippets / a reason to do random analyses to continue learning. That fact that people have taken the time to read it has been awesome and really the icing on a really delicious cake.</p>
+<p>So to everything currently reading or who has read the blog in the last year. Thank you so much! Now onto the recap!!</p>
+<div id="libraries-and-set-up" class="section level2">
+<h2>Libraries and Set-up</h2>
+<p>The libraries I’ll use in this analysis generally serve 1 of 2 functions, either to access and manipulate data from Google Analytics which is the workhorse of this post or to do/edit data visitations (plotly, scales, gghalves, ggflags).</p>
+<pre class="r"><code>library(plotly) #For turning ggplots into INTERACTIVE ggplots
+library(tidyverse) #General Data Manipulation
+library(googleAnalyticsR) # To access the Google Analytics API
+library(scales) # Making text prettier
+library(gghalves) # Creating Half Boxplot / Half Point Plots
+library(wesanderson) # To have some more fun colors
+library(countrycode) # Convert Country Names to 2 Letter Codes
+library(ggflags) # Plot Flags</code></pre>
+<p>Getting Google Analytics was also somewhat tricky to get set up. As someone who’s not terrible familiar with Google Cloud Platform and was a little hazy about using the generic public account that comes with <code>googleAnalyticsR</code>, I struggled a bit with getting the authentication correct. The <a href="http://code.markedmondson.me/googleAnalyticsR/articles/rmarkdown.html">googleAnalyticsR documentation</a> provides some guidance for getting the authentication to work with markdown. But I trialed and errored so much that I don’t think I can provide much guidance for what I did. I just kindof kept running <code>ga_auth_setup()</code> until things seemed like they were working.</p>
+<p>But after getting client ids and auth ids into my R Environment, I can authenticate the markdown file with:</p>
+<pre class="r"><code>ga_auth()</code></pre>
+<p>As a last piece of set-up most of the functions in <code>googleAnalyticsR</code> take in a <em>view_id</em> and a date range. Since those will all be the same since I’m looking at <strong><em>this</em></strong> blog and for the first year, I’ll create those variables first so they can be referenced in each call:</p>
+<pre class="r"><code>view_id &lt;- ga_account_list()$viewId
+
+start_date &lt;- as.Date(&quot;2020-07-04&quot;)
+end_date &lt;- as.Date(&quot;2021-07-03&quot;)</code></pre>
+</div>
+<div id="the-headlines-users-and-sessions" class="section level2">
+<h2>The Headlines (Users and Sessions)</h2>
+<p>The first thing to explore will be the total number of <em>users</em>, <em>sessions</em>, and <em>pageviews</em> that occurred over the first year of the R Blog. To access the Google Analytics API, I’ll use the <code>google_analytics()</code> function. The parameters are pretty self-explanatory in that you give it your <em>ViewId</em>, a date range, a set of metrics, and a set of dimensions to get data returned. The <code>anti_sample</code> option will split up the call so that nothing gets sampled.</p>
+<p>A complete list of metrics and dimensions can be found in the <a href="https://ga-dev-tools.appspot.com/dimensions-metrics-explorer/?">Google Analytics Metrics and Dimension Explorer</a>.</p>
+<pre class="r"><code>totals &lt;- google_analytics(view_id,
+                           date_range = c(start_date, end_date),
+                           metrics = c(&quot;users&quot;, &quot;sessions&quot;, &quot;pageviews&quot;),
+                           anti_sample = TRUE 
+)</code></pre>
+<p>Over the first year of the blog (July 4th, 2020 through July 3rd, 2021), I had 3,081 users visit with 4,211 sessions and 6,685 total page views. Given the relatively minimal promotion, I’ll call that a win 🏆.</p>
+<p>I have a hypothesis that most of my views came in the days immediately following posts as I’m connected to the <a href="https://www.r-bloggers.com/">R-Bloggers</a> aggregator. To check this hypothesis I’ll compare the time series of sessions to the days when posts were first made. Since the post dates are embedded in the URLs (/year/month/day/title), I’ll get the full URLs from Google Analytics and pull out the post dates from there:</p>
+<pre class="r"><code># Get all visited pages 
+launch_dates &lt;- google_analytics(view_id,
+                                 date_range = c(start_date, end_date),
+                                 metrics = c(&quot;pageviews&quot;), 
+                                 dimensions = c(&quot;pagePath&quot;),
+                                 anti_sample = TRUE
+)
+
+# Grab All the URLs that have the /year/month/day pattern and at 
+#least 10 page views
+launch_dates &lt;- launch_dates %&gt;%
+  #Keep only rows that match my pattern
+  filter(str_detect(pagePath, &#39;/\\d+/\\d+/\\d+&#39;)) %&gt;%
+  #Extract and convert the date components
+  extract(pagePath, regex=&#39;/(\\d+)/(\\d+)/(\\d+)/&#39;,
+         into = c(&#39;year&#39;, &#39;month&#39;, &#39;day&#39;)) %&gt;% 
+  #Turn the components into an actual date field
+  mutate(dt = lubridate::ymd(paste(year, month, day, sep = &#39;-&#39;)),
+         #Fixing an error in this logic
+         dt = if_else(dt == lubridate::ymd(20201201), 
+                      lubridate::ymd(20201206),
+                      dt)) %&gt;% 
+  group_by(dt) %&gt;% 
+  summarize(pg = sum(pageviews)) %&gt;% 
+  filter(pg &gt; 10)</code></pre>
+<p>Now I can get the <strong>sessions over time</strong> from Google Analytics and overlay the launch dates on top of them:</p>
+<pre class="r"><code>sessions_over_time &lt;- google_analytics(view_id,
+                           date_range = c(start_date, end_date),
+                           metrics = c(&quot;sessions&quot;),
+                           dimensions = c(&quot;date&quot;),
+                           anti_sample = TRUE 
+)
+
+sessions_over_time %&gt;% 
+  left_join(launch_dates, by = c(&quot;date&quot; = &quot;dt&quot;), keep = T) %&gt;% 
+  ggplot(aes(x = date, y = sessions)) + 
+    geom_line() + 
+    geom_point(aes(x = dt), color = &#39;darkblue&#39;, size = 3) + 
+    scale_x_date(date_breaks = &#39;month&#39;, date_labels = &#39;%b %Y&#39;) + 
+    labs(x = &quot;Date&quot;, y = &quot;# of Sessions&quot;, 
+         title = &quot;Sessions Over the Last Year&quot;,
+         subtitle = &quot;Blue dots represent post dates&quot;) + 
+    cowplot::theme_cowplot()</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/sessions_over_time-1.png" width="1152" /></p>
+<p>Based on the post dates (blue dotes), it does not seem like post dates correlate to the highest volume. While there are some peaks on post days, particularly in March through July, there are a number of large spikes that occur a bit after the posting dates.</p>
+<div id="looking-at-monthly-active-users" class="section level3">
+<h3>Looking at Monthly Active Users</h3>
+<p>For whatever reason I thought I would be cool to have 1,000 monthly active users on the blog (1,000 unique visitors in a 30 day period). Given that there were only 3,081 throughout the course of the year it doesn’t seem likely that I made this goal. But fortunately we don’t have to guess:</p>
+<pre class="r"><code>mau &lt;- google_analytics(view_id,
+                           date_range = c(start_date, end_date),
+                           metrics = c(&quot;30dayUsers&quot;), 
+                           dimensions = c(&quot;date&quot;),
+                           anti_sample = TRUE
+)
+
+mau %&gt;% 
+  ggplot(aes(x = date, y = `30dayUsers`)) + 
+  geom_line(color = wes_palette(&#39;Moonrise2&#39;, n=1, &#39;discrete&#39;)) + 
+  geom_smooth(se = F, lty = 2, color = wes_palette(&#39;BottleRocket1&#39;, 1)) + 
+  labs(x = &quot;Date&quot;, y = &quot;# of Sessions&quot;, 
+       title = &quot;Monthly Active Users (30 Days)&quot;,
+       subtitle = &quot;Smoothed Line in Red&quot;) + 
+  cowplot::theme_cowplot()</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/mau-1.png" width="1152" /></p>
+<p>The blog definitely became more popular in April (awesome). But sadly, the monthly active user count topped out at at 872 😢. Better luck in 2021-2022.</p>
+</div>
+<div id="days-of-the-week" class="section level3">
+<h3>Days of the Week</h3>
+<p>Next up is looking at the number of sessions split by days of the week. Just for fun here, I’ll utilize the <code>gghalves</code> package which allows you to <a href="https://erocoar.github.io/gghalves/">create hybrid geoms</a>. In this case, I’ll make a half box plot, half point plot to be able to show the distribution in box plot form but also get a better idea of the actual distribution from the points. The <em>side</em> parameter tells the function to plot on the left or right half.</p>
+<p>Since most days have very few sessions, the plot is set to a log10 scale</p>
+<pre class="r"><code>sessions_dow &lt;- google_analytics(view_id,
+                                date_range = c(start_date, end_date),
+                                metrics = c(&quot;sessions&quot;),
+                                dimensions = c(&quot;Date&quot;, &quot;dayOfWeekName&quot;),
+                                anti_sample = TRUE
+)
+
+sessions_dow %&gt;% 
+  # Code the text labels to a Factor
+  mutate(dayOfWeekName = factor(dayOfWeekName,
+                                levels = c(&#39;Sunday&#39;, &#39;Monday&#39;, &#39;Tuesday&#39;, 
+                                           &#39;Wednesday&#39;, &#39;Thursday&#39;, &#39;Friday&#39;,
+                                           &#39;Saturday&#39;))) %&gt;%
+  ggplot(aes(x = dayOfWeekName, y = sessions, fill = dayOfWeekName)) + 
+    geom_half_boxplot(side = &#39;l&#39;, outlier.shape = NA) + 
+    geom_half_point(side = &#39;r&#39;, aes(color = dayOfWeekName)) +
+    labs(title = &#39;What is the Day of Week Distribution of Sessions?&#39;,
+         x = &quot;Day of Week&quot;,
+         y = &quot;Sessions&quot;) + 
+    scale_y_log10() + 
+    scale_fill_manual(guide = &#39;none&#39;, 
+                      values = wes_palette(&#39;Zissou1&#39;, n =7, type = &#39;continuous&#39;)) + 
+    scale_color_manual(guide = &#39;none&#39;,
+                       values = wes_palette(&#39;Zissou1&#39;, n =7, type = &#39;continuous&#39;)) + 
+    cowplot::theme_cowplot()</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/dow-1.png" width="1152" /></p>
+<p>It seems like Monday is the most popular day and then there’s a slight decline throughout the rest of the week. The median number of sessions for the weekdays are all fairly similar but there is a higher ceiling for Monday, Tuesday, Wednesday than there is for Thurs and Friday.</p>
+</div>
+</div>
+<div id="sources-and-pages" class="section level2">
+<h2>Sources and Pages</h2>
+<p>I don’t do I ton of promotion of the blog but I <strong>am</strong> very interested in knowing how people are getting to the site as well as what pages people gravitated to the most.</p>
+<div id="how-are-people-getting-to-the-site" class="section level3">
+<h3>How are people getting to the Site?</h3>
+<p>Google Analytics provides the referral source for site visitors. Let’s take a look at the top 10 referral sources to the site:</p>
+<pre class="r"><code>sources &lt;- google_analytics(view_id,
+                               date_range = c(start_date, end_date),
+                               metrics = c(&quot;sessions&quot;),
+                               dimensions = c(&quot;source&quot;),
+                               anti_sample = TRUE 
+)
+
+sources %&gt;% 
+  mutate(pct = sessions / sum(sessions)) %&gt;% 
+  #Get top 10 rows by session value
+  slice_max(sessions, n = 10) %&gt;%
+  ggplot(aes(x = fct_reorder(source, sessions), 
+             y = sessions,
+             fill = source)) + 
+  geom_col() +
+  geom_text(aes(label = paste0(sessions %&gt;% comma(accuracy = 1), &#39; (&#39;,
+                               pct %&gt;% percent(accuracy = .1), &#39;)&#39;)),
+            nudge_y = 80) + 
+  scale_y_continuous(expand = c(0, 0)) + 
+  scale_fill_manual(guide = &#39;none&#39;,
+                    values = wes_palette(&#39;FantasticFox1&#39;, n=10, &#39;continuous&#39;)) + 
+  labs(x = &quot;Referral Sources&quot;, y = &quot;# of Sessions&quot;,
+       title = &quot;Where Did People Visiting the Blog Come From?&quot;) + 
+  coord_flip(ylim = c(0, 1600)) + 
+  cowplot::theme_cowplot() + 
+  theme(
+    plot.title.position = &#39;plot&#39;
+  )</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/sources-1.png" width="1152" /></p>
+<p>Somewhat surprising to me is that nearly a third of sessions are direct to the site and another 20% are from Google. Given that I think <a href="https://www.r-bloggers.com/">R-Bloggers</a> is probably my primary mechanism of promotion, I’m not surprised that its in the Top 3, but kindof surprised that it is #3. It is also kindof cool to see referrals from rweekly.org and linkedin where I don’t know exactly how my blog is popping up.. but happy that it is!</p>
+</div>
+<div id="what-are-the-most-visited-posts-on-the-site" class="section level3">
+<h3>What are the Most Visited Posts on the Site?</h3>
+<p>One of the most obvious questions for this post is what prior post generated the most views. Because there are non-post pages on the site (such as the home page), I’ll need to do some cleaning to keep only the actual posts. But then we can look at the top 10 posts by page views.</p>
+<pre class="r"><code>top_pages &lt;- google_analytics(view_id,
+                               date_range = c(start_date, end_date),
+                               metrics = c(&quot;pageviews&quot;),
+                               dimensions = c(&quot;pageTitle&quot;),
+                               anti_sample = TRUE
+)
+
+top_pages %&gt;% 
+  # Remove that all page titles end in | Jlaw&#39;s R Blog
+  mutate(pageTitle = str_remove_all(pageTitle, &quot; \\| JLaw&#39;s R Blog&quot;)) %&gt;%
+  # Remove the Main Post Page, the Home Page, and Unknown Pages
+  filter(!pageTitle %in% c(&#39;(not set)&#39;, &quot;JLaw&#39;s R Blog&quot;, &quot;Posts&quot;)) %&gt;%
+  # Keep the Top 10 By Page Views
+  slice_max(pageviews, n = 10) %&gt;%
+  ggplot(aes(x = fct_reorder(str_wrap(pageTitle, 75), pageviews), 
+             y = pageviews,
+             fill = pageTitle)) + 
+  geom_col() +
+  geom_text(aes(label = pageviews %&gt;% comma(accuracy = 1)),
+            hjust = 1) + 
+  scale_fill_discrete(guide = F) + 
+  scale_y_continuous(expand = c(0, 0)) + 
+  labs(x = &quot;&quot;, y = &quot;# of Users&quot;,
+       title = &quot;Most Popular Posts&quot;) + 
+  coord_flip() + 
+  cowplot::theme_cowplot() + 
+  theme(
+    plot.title.position = &#39;plot&#39;
+  )</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/post1-1.png" width="1152" /></p>
+<p>I’m not surprised that the “Scraping the Google Play Store with RSelenium” is the Top Post on the site as it got picked up by at least one other website that I was aware of. Also, as far as I know its not a very common topic. Similarly, my post on <code>arulesSequence</code> isn’t surprising as that’s an interesting package with not a ton of blog posts about it. However, I did not realize that the “7 Things I Learned During Advent of Code 2020” was as popular as it was. And finally, it makes me kindof happy that the Visualizing Dancing with the Stars winners with <code>gt</code> was number 4. I really like that post and Hugo (how I generate this site) got really confused and claims that the reading time is an hour when it is much shorter. So I’m happy that people weren’t too scared off.</p>
+<p><strong>HOWEVER</strong>, while its good to know which are the most popular posts in general. Some of these posts are older than others and have had more of a chance to generate page views than others. For example, the Instagram Lite post is from late June while the Advent of Code post is from December. To counter this, I can look at the cumulative number of page views from the first page view date. Then we can see which post is accumulating views the fastest. To this, I’m going to create a static ggplot but then use <code>ggplotly</code> to make it interactive:</p>
+<pre class="r"><code>pages_by_time &lt;- google_analytics(view_id,
+                                  date_range = c(start_date, end_date),
+                                  metrics = c(&quot;pageviews&quot;),
+                                  dimensions = c(&quot;date&quot;, &quot;pageTitle&quot;),
+                                  anti_sample = TRUE 
+)
+
+p &lt;- pages_by_time %&gt;% 
+  filter(pageTitle != &#39;(not set)&#39;) %&gt;% 
+  #Filter out pages with less than 50 pageviews
+  add_count(pageTitle, wt = pageviews, name = &quot;total_views&quot;) %&gt;% 
+  filter(total_views &gt;= 50) %&gt;% 
+  # Calculate Days Since Post and Cumulative Number of Views
+  group_by(pageTitle) %&gt;% 
+  arrange(pageTitle, date) %&gt;% 
+  mutate(
+    min_date = min(date),
+    days_since_post = date - min(date),
+    cuml_views = cumsum(pageviews)) %&gt;% 
+  ungroup() %&gt;% 
+  #The text aesthetic allows me to add that field into the tooltip for plotly
+  ggplot(aes(x = days_since_post, y = cuml_views, color = pageTitle, text = min_date)) + 
+    geom_line() + 
+    coord_cartesian(xlim = c(0, 100), ylim = c(0, 550)) + 
+    labs(title = &quot;Which Posts Got the Views the Fastest?&quot;,
+         subtitle = &quot;First 100 Days Since Post Date&quot;,
+         y = &quot;Cumulative Page Views&quot;,
+         x = &quot;Days Since Post Date&quot;) +
+    cowplot::theme_cowplot() + 
+    # This will work with Plotly while scale_color_discrete(guide = F) will not
+    theme(legend.position=&#39;none&#39;) 
+
+# Create Interactive Version of GGPLOT
+ggplotly(p)</code></pre>
+<p><iframe src="p1.html" scrolling="no" seamless="seamless" frameBorder="0" height="400" width="800"></iframe></p>
+<p>Now its a little clearer to see the bump that the RSelenium post got around day 8 that shot it to most popular. Also, the Instagram Lite post at 8 days since publishing is actually the most viewed for a Day 8. However, its trajectory is beginning to flatten and while it seems like it will be one of the more popular ones, it doesn’t seem like it will catch RSelenium.</p>
+</div>
+</div>
+<div id="what-countries-are-people-visiting-the-site-from" class="section level2">
+<h2>What Countries are People Visiting The Site From?</h2>
+<p>The blog was visited by users from 134 countries throughout the year, which is pretty crazy to think about. We can look at the distribution of countries by users to see whether the blog is most popular in the US (which is expected) or if it has a stronger than expected International appeal. To add some pizzazz to the graph, I’ll use the <code>countrycode</code> package to convert the country names into two-letter codes and then use <code>ggflag</code> to add the flags to the plot (note that geom_flag works by having a <em>country</em> aesthetic set).</p>
+<pre class="r"><code>users_by_country &lt;- google_analytics(view_id,
+                               date_range = c(start_date, end_date),
+                               metrics = c(&quot;users&quot;),
+                               dimensions = c(&quot;country&quot;),
+                               anti_sample = TRUE 
+)
+
+users_by_country %&gt;% 
+  filter(country != &#39;(not set)&#39;) %&gt;% 
+  #Get % Column and Recode Countries to the iso2c standard
+  mutate(pct = users/sum(users),
+         code = str_to_lower(countrycode(country, 
+                                         origin = &#39;country.name.en&#39;, 
+                                         destination = &#39;iso2c&#39;)
+                             )
+         ) %&gt;%
+  # Get Top 10 Countries by # of Users
+  slice_max(users, n = 10) %&gt;% 
+  ggplot(aes(x = fct_reorder(country, users), 
+             y = users,
+             fill = country,
+             country = code)) + 
+    geom_col() +
+    geom_text(aes(label = paste0(users %&gt;% comma(accuracy = 1), 
+                                 &#39; (&#39;, pct %&gt;% percent(accuracy = .1), &#39;)&#39;)),
+              nudge_y = 50) + 
+    geom_flag(y = 30, size = 15) + 
+    scale_fill_discrete(guide = F) + 
+    scale_y_continuous(expand = c(0, 0)) + 
+    labs(x = &quot;Country&quot;, y = &quot;# of Users&quot;,
+         title = &quot;Where Did Users Come From?&quot;) + 
+    coord_flip(ylim = c(0, 1100)) + 
+    cowplot::theme_cowplot()</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/users_by_country-1.png" width="1152" /></p>
+<p>As expected the US is where the most users are location with close to 30% of all users. However, what’s a bit surprising is that 70% of the users are <em>NOT</em> from the US. And in the Top 10 countries there’s a pretty good representation across the continents with North America, South America, Europe, Asia, and Australia all represented (Africa gets its first representation at #29 with Nigeria).</p>
+</div>
+<div id="concluding-thoughts" class="section level2">
+<h2>Concluding Thoughts</h2>
+<p>First and foremost, thank you to everyone who has supported the blog by reading it over the past year. This really did start out as a small hobby for myself during COVID but I hope that others have found some value in the various posts. For this post in particular, I hope it displays all the things you can find within Google Analytics. For me personally, it made me happy to take this post to reflect on the first year of the blog and see the reach that a single person doing this in their spare time can have. So again, thank you all and onto Year 2 (and another shot at that 1000 Monthly Active User Goal!!)</p>
+<center>
+<img src="Thank-you-word-cloud.jpg" />
+</center>
+</div>
