@@ -15,7 +15,7 @@ tags:
 subtitle: ''
 summary: ''
 authors: []
-lastmod: '2021-07-11T19:01:36-04:00'
+lastmod: '2021-07-14T01:01:36-04:00'
 featured: no
 image:
   caption: ''
@@ -287,7 +287,7 @@ I'm not surprised that the "Scraping the Google Play Store with RSelenium" is th
 
 **HOWEVER**, while its good to know which are the most popular posts in general.  Some of these posts are older than others and have had more of a chance to generate page views than others.  For example, the Instagram Lite post is from late June while the Advent of Code post is from December.  To counter this, I can look at the cumulative number of page views from the first page view date.  Then we can see which post is accumulating views the fastest.  To this, I'm going to create a static ggplot but then use `ggplotly` to make it interactive:
 
-```{r normalized_time, fig.height=6, fig.width=8}
+```{r normalized_time, fig.height=6, fig.width=8, eval=FALSE}
 pages_by_time <- google_analytics(view_id,
                                   date_range = c(start_date, end_date),
                                   metrics = c("pageviews"),
@@ -324,6 +324,59 @@ p <- pages_by_time %>%
 ggplotly(p)
 
 ```
+```{r normalized_time_saved, fig.height=6, fig.width=8, echo=FALSE}
+
+pages_by_time <- google_analytics(view_id,
+                                  date_range = c(start_date, end_date),
+                                  metrics = c("pageviews"),
+                                  dimensions = c("date", "pageTitle"),
+                                  anti_sample = TRUE 
+)
+
+p <- pages_by_time %>% 
+  filter(pageTitle != '(not set)') %>% 
+  #Filter out pages with less than 50 pageviews
+  add_count(pageTitle, wt = pageviews, name = "total_views") %>% 
+  filter(total_views >= 50) %>% 
+  # Calculate Days Since Post and Cumulative Number of Views
+  group_by(pageTitle) %>% 
+  arrange(pageTitle, date) %>% 
+  mutate(
+    min_date = min(date),
+    days_since_post = date - min(date),
+    cuml_views = cumsum(pageviews)) %>% 
+  ungroup() %>% 
+  #The text aesthetic allows me to add that field into the tooltip for plotly
+  ggplot(aes(x = days_since_post, y = cuml_views, color = pageTitle, text = min_date)) + 
+    geom_line() + 
+    coord_cartesian(xlim = c(0, 100), ylim = c(0, 550)) + 
+    labs(title = "Which Posts Got the Views the Fastest?",
+         subtitle = "First 100 Days Since Post Date",
+         y = "Cumulative Page Views",
+         x = "Days Since Post Date") +
+    cowplot::theme_cowplot() + 
+    # This will work with Plotly while scale_color_discrete(guide = F) will not
+    theme(legend.position='none') 
+
+# Create Interactive Version of GGPLOT
+p1 <- ggplotly(p)
+
+htmlwidgets::saveWidget(p1, file="p1.html", selfcontained = T)
+
+```
+
+```{r render_plot, fig.height=8, fig.width=12, echo=FALSE}
+htmltools::tags$iframe(
+  src = "p1.html", 
+  scrolling = "no", 
+  seamless = "seamless",
+  frameBorder = "0",
+  height=400,
+  width=800
+)
+
+```
+
 
 Now its a little clearer to see the bump that the RSelenium post got around day 8 that shot it to most popular.  Also, the Instagram Lite post at 8 days since publishing is actually the most viewed for a Day 8.  However, its trajectory is beginning to flatten and while it seems like it will be one of the more popular ones, it doesn't seem like it will catch RSelenium.
 
