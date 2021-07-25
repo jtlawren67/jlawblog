@@ -1,0 +1,177 @@
+---
+title: How to not have Plot.ly Inflate Hugo's Reading Time
+author: JLaw
+date: '2021-08-01'
+slug: how-to-not-have-plot-ly-inflate-hugo-s-reading-time
+categories:
+  - R
+tags:
+  - plotly
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2021-08-01T21:52:33-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+<script src="{{< blogdown/postref >}}index_files/header-attrs/header-attrs.js"></script>
+
+
+<p>I’m a big proponent of enabling the reading time option on this blog which uses Hugo’s academic theme. I always appreciate seeing it on other blogs so I know how much time to invest in the post. I also like it because its a feedback mechanism for me to try to write more concisely. But having too long a reading time at the beginning of a post can be a deterrent to getting people to read.</p>
+<p>Writing the recap post for <a href="https://jlaw.netlify.app/2021/07/14/celebrating-the-blog-s-first-birthday-with-googleanalyticsr/">this blog’s 1 year anniversary</a>, when I first generated the post using plot.ly for an interactive chart, I noticed that the reading time ballooned up to 98 minutes from the 13 that it was supposed to be.</p>
+<p>Turning to “Dr. Google” I didn’t find any immediate solutions for getting the reading time to be more tractable. However, I did figure out a small “hack” within RMarkdown to provide the same end output to the blog, but without the increase in reading time.</p>
+<p>This post will show:</p>
+<ol style="list-style-type: decimal">
+<li>That this happens</li>
+<li>Why this happens</li>
+<li>And a way to continue to use plot.ly from RMarkdown without having it balloon the post’s reading time.</li>
+</ol>
+<pre class="r"><code>library(tidyverse)
+library(plotly)</code></pre>
+<div id="what-is-happening" class="section level2">
+<h2>What is Happening?</h2>
+<p>When rendering a RMarkdown file to Hugo and using a <code>plot.ly</code> chart that includes categorical data it will cause the article’s reading time to balloon. At least it will in the case where there are many points with categorical data. For this trivial example, I’ll see which character from Friends had the most lines throughout the run of the show. Apparently this is available in a <code>friends</code> R package… because everything is available in an R package!!</p>
+<pre class="r"><code>p &lt;- friends::friends %&gt;% 
+  filter(!is.na(speaker)) %&gt;% 
+  #Creating Running Season and Episode Indicator
+  inner_join(
+    friends::friends %&gt;% 
+      distinct(season, episode) %&gt;%
+      arrange(season, episode) %&gt;%
+      mutate(episode_num = row_number()),
+    by = c(&#39;season&#39;, &#39;episode&#39;)
+  ) %&gt;%
+  #Summarize By Character
+  count(episode_num, speaker, name = &quot;lines&quot;) %&gt;%
+  group_by(speaker) %&gt;% 
+  arrange(episode_num) %&gt;%
+  mutate(total_lines = cumsum(lines),
+         max_lines = max(total_lines)) %&gt;%
+  ungroup() %&gt;%
+  #Keep Top 20
+  mutate(rnk = dense_rank(-max_lines)) %&gt;%
+  filter(rnk &lt;= 20) %&gt;% 
+  ggplot(aes(x = episode_num, y = total_lines, color = speaker)) + 
+    geom_line() + 
+    labs(x = &quot;Episode # of Friends&quot;,
+         y = &quot;Number of Lines&quot;,
+         title = &quot;Cumulative Number of Lines Spoken by Characters on Friends&quot;) + 
+    cowplot::theme_cowplot() + 
+    theme(legend.position=&#39;none&#39;,
+          plot.title = element_text(size = 14)) 
+
+ggplotly(p)</code></pre>
+<p><iframe src="p1.html" scrolling="no" seamless="seamless" frameBorder="0" height="400" width="800"></iframe></p>
+<p>But <strong>WTF</strong>… when I render this page I see that the Reading Time is 57 minutes!!! For this article to this point!! Insanity.</p>
+<p><img src="wtf.PNG" /></p>
+</div>
+<div id="why-is-this-happening" class="section level2">
+<h2>Why is this happening?</h2>
+<p>The TL;DR of what’s going on is that plot.ly embeds all of the data from the chart directly into the page source. So if we view the page source we’ll see elements for every point of the data:</p>
+<p><img src="plotly_data.PNG" /></p>
+<p>Then (I believe) Hugo misinterprets aspects of this data as additional word count and that’s how an article that should only be a few minutes becomes closer to an hour.</p>
+</div>
+<div id="how-to-get-around-this" class="section level2">
+<h2>How to get around this?</h2>
+<p>In my post, I worked around this by:</p>
+<ol style="list-style-type: decimal">
+<li>Displaying the code I wanted to show with an <code>eval=FALSE</code> option on the code chunk to not actually render the plot.ly chart but show the code that <strong>WOULD</strong> render it.</li>
+<li>Having a 2nd code block that’s nearly identical with a <code>echo=FALSE</code> option on the code chunk to not show the code that is actually run. This code chunk should <strong>also</strong> save the plot.ly widget as a self-contained file to the directory using something like <code>htmlwidgets::saveWidget(p1, file="p1.html", selfcontained = T)</code> when p1 is the <code>ggplotly()</code> element and <em>p1.html</em> is output.</li>
+<li>Have a 3rd code chunk with <code>echo=FALSE</code> to create an iframe tag that will contain the HTML file created in step 2. This is done with <code>htmltools::tags$iframe(src = "p1.html")</code> and some other options.</li>
+</ol>
+<p>To show this in action (although I’ll display all 3 code blocks in this example)</p>
+<div id="code-block-1-the-code-you-want-to-display" class="section level3">
+<h3>Code Block 1: The Code You Want To Display</h3>
+<p>This is a repeat from the code from above which has <code>eval=FALSE</code> so its shown but not run:</p>
+<pre class="r"><code>p &lt;- friends::friends %&gt;% 
+  filter(!is.na(speaker)) %&gt;% 
+  #Creating Running Season and Episode Indicator
+  inner_join(
+    friends::friends %&gt;% 
+      distinct(season, episode) %&gt;%
+      arrange(season, episode) %&gt;%
+      mutate(episode_num = row_number()),
+    by = c(&#39;season&#39;, &#39;episode&#39;)
+  ) %&gt;%
+  #Summarize By Character
+  count(episode_num, speaker, name = &quot;lines&quot;) %&gt;%
+  group_by(speaker) %&gt;% 
+  arrange(episode_num) %&gt;%
+  mutate(total_lines = cumsum(lines),
+         max_lines = max(total_lines)) %&gt;%
+  ungroup() %&gt;%
+  #Keep Top 20
+  mutate(rnk = dense_rank(-max_lines)) %&gt;%
+  filter(rnk &lt;= 20) %&gt;% 
+  ggplot(aes(x = episode_num, y = total_lines, color = speaker)) + 
+    geom_line() + 
+    labs(x = &quot;Episode # of Friends&quot;,
+         y = &quot;Number of Lines&quot;,
+         title = &quot;Cumulative Number of Lines Spoken by Characters on Friends&quot;) + 
+    cowplot::theme_cowplot() + 
+    theme(legend.position=&#39;none&#39;,
+          plot.title = element_text(size = 14)) 
+
+ggplotly(p)</code></pre>
+</div>
+<div id="code-block-2-the-code-thats-actually-run-to-save-the-plot.ly-chart-to-an-external-file" class="section level3">
+<h3>Code Block 2: The Code That’s ACTUALLY run to save the plot.ly chart to an external file</h3>
+<p>This would normally have <code>echo=FALSE</code> so that it is run but not seen. It is identical to the prior code block but it will save the chart to <em>p1.html</em>.</p>
+<pre class="r"><code>## Identical Code to CB1
+p &lt;- friends::friends %&gt;% 
+  filter(!is.na(speaker)) %&gt;% 
+  #Creating Running Season and Episode Indicator
+  inner_join(
+    friends::friends %&gt;% 
+      distinct(season, episode) %&gt;%
+      arrange(season, episode) %&gt;%
+      mutate(episode_num = row_number()),
+    by = c(&#39;season&#39;, &#39;episode&#39;)
+  ) %&gt;%
+  #Summarize By Character
+  count(episode_num, speaker, name = &quot;lines&quot;) %&gt;%
+  group_by(speaker) %&gt;% 
+  arrange(episode_num) %&gt;%
+  mutate(total_lines = cumsum(lines),
+         max_lines = max(total_lines)) %&gt;%
+  ungroup() %&gt;%
+  #Keep Top 20
+  mutate(rnk = dense_rank(-max_lines)) %&gt;%
+  filter(rnk &lt;= 20) %&gt;% 
+  ggplot(aes(x = episode_num, y = total_lines, color = speaker)) + 
+    geom_line() + 
+    labs(x = &quot;Episode # of Friends&quot;,
+         y = &quot;Number of Lines&quot;,
+         title = &quot;Cumulative Number of Lines Spoken by Characters on Friends&quot;) + 
+    cowplot::theme_cowplot() + 
+    theme(legend.position=&#39;none&#39;,
+          plot.title = element_text(size = 14)) 
+
+################MODIFIED PART STARTS HERE##############################
+
+## Save the plot.ly chart to an object
+p1 &lt;- ggplotly(p)
+
+## Save the object as a self-contained HTML file
+htmlwidgets::saveWidget(p1, file=&quot;p1.html&quot;, selfcontained = T)</code></pre>
+</div>
+<div id="code-block-3-the-code-to-redner-the-stand-alone-plot.ly-chart" class="section level3">
+<h3>Code Block 3: The code to redner the stand-alone plot.ly chart</h3>
+<p>This also would normally have <code>echo=FALSE</code> to run the code but not display it.</p>
+<pre class="r"><code>htmltools::tags$iframe(
+  src = &quot;p1.html&quot;, 
+  scrolling = &quot;no&quot;, 
+  seamless = &quot;seamless&quot;,
+  frameBorder = &quot;0&quot;,
+  height=400,
+  width=800
+)</code></pre>
+<p><iframe src="p1.html" scrolling="no" seamless="seamless" frameBorder="0" height="400" width="800"></iframe></p>
+<p>And now as you can see, we have the plot.ly chart displayed. But the reading time is a much more manageable 5 minutes.</p>
+</div>
+</div>
