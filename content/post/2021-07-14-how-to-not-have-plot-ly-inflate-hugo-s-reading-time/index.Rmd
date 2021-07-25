@@ -1,7 +1,7 @@
 ---
 title: How to not have Plot.ly Inflate Hugo's Reading Time
 author: JLaw
-date: '2021-08-01'
+date: '2021-07-26'
 slug: how-to-not-have-plot-ly-inflate-hugo-s-reading-time
 categories:
   - R
@@ -10,7 +10,7 @@ tags:
 subtitle: ''
 summary: ''
 authors: []
-lastmod: '2021-08-01T21:52:33-04:00'
+lastmod: '2021-07-26T01:52:33-04:00'
 featured: no
 image:
   caption: ''
