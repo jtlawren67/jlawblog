@@ -36,7 +36,7 @@ library(plotly)</code></pre>
 <div id="what-is-happening" class="section level2">
 <h2>What is Happening?</h2>
 <p>When rendering a RMarkdown file to Hugo and using a <code>plot.ly</code> chart that includes categorical data it will cause the article’s reading time to balloon. At least it will in the case where there are many points with categorical data. For this trivial example, I’ll see which character from Friends had the most lines throughout the run of the show. Apparently this is available in a <code>friends</code> R package… because everything is available in an R package!!</p>
-<pre class="r"><code>p &lt;- friends::friends %&gt;% 
+<pre class="r"><code>p &lt;- friends::friends %&gt;%
   filter(!is.na(speaker)) %&gt;% 
   #Creating Running Season and Episode Indicator
   inner_join(
@@ -67,7 +67,7 @@ library(plotly)</code></pre>
 
 ggplotly(p)</code></pre>
 <p><iframe src="p1.html" scrolling="no" seamless="seamless" frameBorder="0" height="400" width="800"></iframe></p>
-<p>But <strong>WTF</strong>… when I render this page I see that the Reading Time is 57 minutes!!! For this article to this point!! Insanity.</p>
+<p>But <strong>WTF</strong>… when I render this page I see that the Reading Time is 60 minutes!!! For this article to this point!! Insanity.</p>
 <p><img src="wtf.PNG" /></p>
 </div>
 <div id="why-is-this-happening" class="section level2">
@@ -172,6 +172,8 @@ htmlwidgets::saveWidget(p1, file=&quot;p1.html&quot;, selfcontained = T)</code><
   width=800
 )</code></pre>
 <p><iframe src="p1.html" scrolling="no" seamless="seamless" frameBorder="0" height="400" width="800"></iframe></p>
-<p>And now as you can see, we have the plot.ly chart displayed. But the reading time is a much more manageable 5 minutes.</p>
+<p>And now as you can see, we have the plot.ly chart displayed. But the reading time is a much more manageable 5 minutes. This is because the source HTML now looks like:</p>
+<p><img src="after.PNG" /></p>
+<p>Much fewer words. <em>Hope this helps</em>.</p>
 </div>
 </div>

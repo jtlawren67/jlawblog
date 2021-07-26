@@ -47,7 +47,7 @@ When rendering a RMarkdown file to Hugo and using a `plot.ly` chart that include
 
 
 ```{r eval=FALSE}
-p <- friends::friends %>% 
+p <- friends::friends %>%
   filter(!is.na(speaker)) %>% 
   #Creating Running Season and Episode Indicator
   inner_join(
@@ -91,7 +91,7 @@ htmltools::tags$iframe(
 
 ```
 
-But **WTF**... when I render this page I see that the Reading Time is 57 minutes!!! For this article to this point!! Insanity.
+But **WTF**... when I render this page I see that the Reading Time is 60 minutes!!! For this article to this point!! Insanity.
 
 ![](wtf.PNG)
 
@@ -212,4 +212,8 @@ htmltools::tags$iframe(
 
 ```
 
-And now as you can see, we have the plot.ly chart displayed.  But the reading time is a much more manageable 5 minutes.
+And now as you can see, we have the plot.ly chart displayed.  But the reading time is a much more manageable 5 minutes.  This is because the source HTML now looks like:
+
+![](after.PNG)
+
+Much fewer words.  *Hope this helps*.
