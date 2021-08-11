@@ -29,13 +29,13 @@ projects: []
 
 <div id="introduction" class="section level1">
 <h1>Introduction</h1>
-<p>Between January 13th and January 27th, 2021 the stock price for Gamestop (<a href="https://www.google.com/finance/quote/GME:NYSE">GME</a>) rose 10x from $31 to $374 dollars. This rise was in part due to increased popularity on the Reddit forum <a href="https://www.reddit.com/r/wallstreetbets/">r/wallstreetbets</a> looking to create a short squeeze and because they “liked the stock”. This rapid rise also drew attention of popular media such as <a href="https://www.cnbc.com/2021/01/26/gamestop-shares-are-jumping-again-but-short-sellers-arent-backing-down.html">CNBC</a>:</p>
+<p>Between January 13th and January 27th, 2021 the stock price for Gamestop (<a href="https://www.google.com/finance/quote/GME:NYSE">GME</a>) rose 10x from $31 to $347 dollars. This rise was in part due to increased popularity on the Reddit forum <a href="https://www.reddit.com/r/wallstreetbets/">r/wallstreetbets</a> looking to create a short squeeze and because they “liked the stock”. This rapid rise also drew attention of popular media such as <a href="https://www.cnbc.com/2021/01/26/gamestop-shares-are-jumping-again-but-short-sellers-arent-backing-down.html">CNBC</a>:</p>
 <p><img src="Capture.PNG" /></p>
 <p>However, this post will not try to understand the mechanics of why GME rose or whether it <em>should</em> have risen. What I will try to answer is <strong>“how unexpected was its rise”</strong> using an array of different forecasting tools. To assess how expected this rise in GME stock is, I’ll be using the following packages:</p>
 <ul>
 <li>Anomalize</li>
 <li>Prophet</li>
-<li>Auto.Arima from Forecast</li>
+<li>Forecast (auto.arima)</li>
 <li>CausalImpact</li>
 </ul>
 <p>From these methods we should get a good idea of just how unexpected this rise was. The method for doing this will be using historical price data through January 21st to predict the Gamestop stock price for the period of January 22nd, through February 4th and looking at the mean average percent error (MAPE<a href="#fn1" class="footnote-ref" id="fnref1"><sup>1</sup></a>) to quantify the amount of unexpectedness.</p>
@@ -279,80 +279,80 @@ knitr::kable(predictions_prophet_no_reg, digits = 2)</code></pre>
 <td align="left">2021-01-22</td>
 <td align="right">65.01</td>
 <td align="right">17.74</td>
-<td align="right">14.96</td>
-<td align="right">20.46</td>
+<td align="right">14.91</td>
+<td align="right">20.59</td>
 <td align="right">47.27</td>
 </tr>
 <tr class="even">
 <td align="left">2021-01-25</td>
 <td align="right">76.79</td>
 <td align="right">17.31</td>
-<td align="right">14.48</td>
-<td align="right">20.29</td>
+<td align="right">14.56</td>
+<td align="right">20.15</td>
 <td align="right">59.48</td>
 </tr>
 <tr class="odd">
 <td align="left">2021-01-26</td>
 <td align="right">147.98</td>
 <td align="right">17.14</td>
-<td align="right">14.27</td>
-<td align="right">19.84</td>
+<td align="right">14.13</td>
+<td align="right">19.90</td>
 <td align="right">130.84</td>
 </tr>
 <tr class="even">
 <td align="left">2021-01-27</td>
 <td align="right">347.51</td>
 <td align="right">17.03</td>
-<td align="right">14.24</td>
-<td align="right">19.83</td>
+<td align="right">14.29</td>
+<td align="right">19.93</td>
 <td align="right">330.48</td>
 </tr>
 <tr class="odd">
 <td align="left">2021-01-28</td>
 <td align="right">193.60</td>
 <td align="right">16.89</td>
-<td align="right">14.22</td>
-<td align="right">19.69</td>
+<td align="right">13.89</td>
+<td align="right">19.31</td>
 <td align="right">176.71</td>
 </tr>
 <tr class="even">
 <td align="left">2021-01-29</td>
 <td align="right">325.00</td>
 <td align="right">16.55</td>
-<td align="right">13.76</td>
-<td align="right">19.24</td>
+<td align="right">13.99</td>
+<td align="right">19.29</td>
 <td align="right">308.45</td>
 </tr>
 <tr class="odd">
 <td align="left">2021-02-01</td>
 <td align="right">225.00</td>
 <td align="right">16.24</td>
-<td align="right">13.49</td>
-<td align="right">19.02</td>
+<td align="right">13.43</td>
+<td align="right">19.01</td>
 <td align="right">208.76</td>
 </tr>
 <tr class="even">
 <td align="left">2021-02-02</td>
 <td align="right">90.00</td>
 <td align="right">16.16</td>
-<td align="right">13.57</td>
-<td align="right">19.12</td>
+<td align="right">13.66</td>
+<td align="right">18.90</td>
 <td align="right">73.84</td>
 </tr>
 <tr class="odd">
 <td align="left">2021-02-03</td>
 <td align="right">92.41</td>
 <td align="right">16.14</td>
-<td align="right">13.40</td>
-<td align="right">18.95</td>
+<td align="right">13.46</td>
+<td align="right">18.83</td>
 <td align="right">76.27</td>
 </tr>
 <tr class="even">
 <td align="left">2021-02-04</td>
 <td align="right">53.50</td>
 <td align="right">16.11</td>
-<td align="right">13.20</td>
-<td align="right">18.89</td>
+<td align="right">13.47</td>
+<td align="right">18.79</td>
 <td align="right">37.39</td>
 </tr>
 </tbody>
@@ -398,80 +398,80 @@ knitr::kable(predictions_prophet_reg, digits = 2)</code></pre>
 <td align="left">2021-01-22</td>
 <td align="right">65.01</td>
 <td align="right">20.32</td>
-<td align="right">17.71</td>
-<td align="right">22.85</td>
+<td align="right">17.95</td>
+<td align="right">22.78</td>
 <td align="right">44.69</td>
 </tr>
 <tr class="even">
 <td align="left">2021-01-25</td>
 <td align="right">76.79</td>
 <td align="right">19.17</td>
-<td align="right">16.74</td>
-<td align="right">21.68</td>
+<td align="right">16.66</td>
+<td align="right">21.71</td>
 <td align="right">57.62</td>
 </tr>
 <tr class="odd">
 <td align="left">2021-01-26</td>
 <td align="right">147.98</td>
 <td align="right">18.95</td>
-<td align="right">16.64</td>
-<td align="right">21.40</td>
+<td align="right">16.22</td>
+<td align="right">21.39</td>
 <td align="right">129.03</td>
 </tr>
 <tr class="even">
 <td align="left">2021-01-27</td>
 <td align="right">347.51</td>
 <td align="right">18.07</td>
-<td align="right">15.57</td>
-<td align="right">20.65</td>
+<td align="right">15.52</td>
+<td align="right">20.69</td>
 <td align="right">329.44</td>
 </tr>
 <tr class="odd">
 <td align="left">2021-01-28</td>
 <td align="right">193.60</td>
 <td align="right">17.47</td>
-<td align="right">15.02</td>
-<td align="right">19.87</td>
+<td align="right">14.93</td>
+<td align="right">19.74</td>
 <td align="right">176.13</td>
 </tr>
 <tr class="even">
 <td align="left">2021-01-29</td>
 <td align="right">325.00</td>
 <td align="right">17.61</td>
-<td align="right">15.24</td>
-<td align="right">19.99</td>
+<td align="right">15.09</td>
+<td align="right">19.98</td>
 <td align="right">307.39</td>
 </tr>
 <tr class="odd">
 <td align="left">2021-02-01</td>
 <td align="right">225.00</td>
 <td align="right">17.22</td>
-<td align="right">14.73</td>
-<td align="right">19.56</td>
+<td align="right">14.67</td>
+<td align="right">19.65</td>
 <td align="right">207.78</td>
 </tr>
 <tr class="even">
 <td align="left">2021-02-02</td>
 <td align="right">90.00</td>
 <td align="right">17.61</td>
-<td align="right">15.12</td>
-<td align="right">20.09</td>
+<td align="right">14.97</td>
+<td align="right">20.02</td>
 <td align="right">72.39</td>
 </tr>
 <tr class="odd">
 <td align="left">2021-02-03</td>
 <td align="right">92.41</td>
 <td align="right">21.18</td>
-<td align="right">18.61</td>
-<td align="right">23.42</td>
+<td align="right">18.40</td>
+<td align="right">23.63</td>
 <td align="right">71.23</td>
 </tr>
 <tr class="even">
 <td align="left">2021-02-04</td>
 <td align="right">53.50</td>
 <td align="right">21.25</td>
-<td align="right">18.88</td>
-<td align="right">23.75</td>
+<td align="right">18.75</td>
+<td align="right">23.61</td>
 <td align="right">32.25</td>
 </tr>
 </tbody>
@@ -764,80 +764,80 @@ knitr::kable(predictions_causal_inference, digits = 2)</code></pre>
 <td align="left">2021-01-22</td>
 <td align="right">65.01</td>
 <td align="right">39.17</td>
-<td align="right">34.46</td>
-<td align="right">44.17</td>
+<td align="right">34.08</td>
+<td align="right">44.21</td>
 <td align="right">25.84</td>
 </tr>
 <tr class="even">
 <td align="left">2021-01-25</td>
 <td align="right">76.79</td>
 <td align="right">38.40</td>
-<td align="right">33.38</td>
-<td align="right">43.69</td>
+<td align="right">32.58</td>
+<td align="right">43.85</td>
 <td align="right">38.39</td>
 </tr>
 <tr class="odd">
 <td align="left">2021-01-26</td>
 <td align="right">147.98</td>
 <td align="right">38.71</td>
-<td align="right">32.95</td>
-<td align="right">44.50</td>
+<td align="right">33.25</td>
+<td align="right">44.76</td>
 <td align="right">109.27</td>
 </tr>
 <tr class="even">
 <td align="left">2021-01-27</td>
 <td align="right">347.51</td>
 <td align="right">38.58</td>
-<td align="right">32.84</td>
-<td align="right">44.34</td>
+<td align="right">32.86</td>
+<td align="right">44.85</td>
 <td align="right">308.93</td>
 </tr>
 <tr class="odd">
 <td align="left">2021-01-28</td>
 <td align="right">193.60</td>
 <td align="right">39.06</td>
-<td align="right">32.81</td>
-<td align="right">45.76</td>
+<td align="right">33.24</td>
+<td align="right">45.83</td>
 <td align="right">154.54</td>
 </tr>
 <tr class="even">
 <td align="left">2021-01-29</td>
 <td align="right">325.00</td>
 <td align="right">39.21</td>
-<td align="right">32.27</td>
-<td align="right">45.94</td>
+<td align="right">32.71</td>
+<td align="right">45.93</td>
 <td align="right">285.79</td>
 </tr>
 <tr class="odd">
 <td align="left">2021-02-01</td>
 <td align="right">225.00</td>
 <td align="right">38.29</td>
-<td align="right">31.65</td>
-<td align="right">45.49</td>
+<td align="right">32.08</td>
+<td align="right">45.04</td>
 <td align="right">186.71</td>
 </tr>
 <tr class="even">
 <td align="left">2021-02-02</td>
 <td align="right">90.00</td>
 <td align="right">38.60</td>
-<td align="right">32.14</td>
-<td align="right">45.96</td>
+<td align="right">31.59</td>
+<td align="right">45.92</td>
 <td align="right">51.40</td>
 </tr>
 <tr class="odd">
 <td align="left">2021-02-03</td>
 <td align="right">92.41</td>
 <td align="right">38.40</td>
-<td align="right">31.29</td>
-<td align="right">45.37</td>
+<td align="right">31.52</td>
+<td align="right">45.83</td>
 <td align="right">54.01</td>
 </tr>
 <tr class="even">
 <td align="left">2021-02-04</td>
 <td align="right">53.50</td>
 <td align="right">38.96</td>
-<td align="right">31.75</td>
-<td align="right">46.33</td>
+<td align="right">31.11</td>
+<td align="right">46.97</td>
 <td align="right">14.54</td>
 </tr>
 </tbody>

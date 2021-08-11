@@ -32,7 +32,7 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, error = FAL
 
 # Introduction
 
-Between January 13th and January 27th, 2021 the stock price for Gamestop ([GME](https://www.google.com/finance/quote/GME:NYSE)) rose 10x from $31 to $374 dollars.  This rise was in part due to increased popularity on the Reddit forum [r/wallstreetbets](https://www.reddit.com/r/wallstreetbets/) looking to create a short squeeze and because they "liked the stock".  This rapid rise also drew attention of popular media such as [CNBC](https://www.cnbc.com/2021/01/26/gamestop-shares-are-jumping-again-but-short-sellers-arent-backing-down.html):
+Between January 13th and January 27th, 2021 the stock price for Gamestop ([GME](https://www.google.com/finance/quote/GME:NYSE)) rose 10x from $31 to $347 dollars.  This rise was in part due to increased popularity on the Reddit forum [r/wallstreetbets](https://www.reddit.com/r/wallstreetbets/) looking to create a short squeeze and because they "liked the stock".  This rapid rise also drew attention of popular media such as [CNBC](https://www.cnbc.com/2021/01/26/gamestop-shares-are-jumping-again-but-short-sellers-arent-backing-down.html):
 
 ![](Capture.PNG)
 
@@ -40,7 +40,7 @@ However, this post will not try to understand the mechanics of why GME rose or w
 
 * Anomalize
 * Prophet
-* Auto.Arima from Forecast
+* Forecast (auto.arima)
 * CausalImpact
 
 From these methods we should get a good idea of just how unexpected this rise was.  The method for doing this will be using historical price data through January 21st to predict the Gamestop stock price for the period of January 22nd, through February 4th and looking at the mean average percent error (MAPE[^1]) to quantify the amount of unexpectedness.
