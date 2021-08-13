@@ -1,0 +1,982 @@
+---
+title: '$GME To The Moon: How Much of an Outlier Was Gamestop''s January Rise?'
+author: JLaw
+date: '2021-08-12'
+slug: gme-to-the-moon-how-unexpected-was-gamestop-s-january-stock-rally
+categories:
+  - R
+  - Forecasting
+  - Anomaly Detection
+tags:
+  - anomalize
+  - prophet
+  - forecast
+  - CausalInference
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2021-08-12T02:12:37-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+<script src="{{< blogdown/postref >}}index_files/header-attrs/header-attrs.js"></script>
+
+
+<div id="introduction" class="section level1">
+<h1>Introduction</h1>
+<p>Between January 13th and January 27th, 2021 the stock price for Gamestop (<a href="https://www.google.com/finance/quote/GME:NYSE">GME</a>) rose 10x from $31 to $347 dollars. This rise was in part due to increased popularity on the Reddit forum <a href="https://www.reddit.com/r/wallstreetbets/">r/wallstreetbets</a> looking to create a short squeeze and because they “liked the stock”. This rapid rise also drew attention of popular media such as <a href="https://www.cnbc.com/2021/01/26/gamestop-shares-are-jumping-again-but-short-sellers-arent-backing-down.html">CNBC</a>:</p>
+<p><img src="Capture.PNG" /></p>
+<p>However, this post will not try to understand the mechanics of why GME rose or whether it <em>should</em> have risen. What I will try to answer is <strong>“how unexpected was its rise”</strong> using an array of different forecasting tools. To assess how expected this rise in GME stock is, I’ll be using the following packages:</p>
+<ul>
+<li>Anomalize</li>
+<li>Prophet</li>
+<li>Forecast (auto.arima)</li>
+<li>CausalImpact</li>
+</ul>
+<p>From these methods we should get a good idea of just how unexpected this rise was. The method for doing this will be using historical price data through January 21st to predict the Gamestop stock price for the period of January 22nd, through February 4th and looking at the mean average percent error (MAPE<a href="#fn1" class="footnote-ref" id="fnref1"><sup>1</sup></a>) to quantify the amount of unexpectedness.</p>
+As a reminder the MAPE is calculated as:
+<center>
+<img src="mape.png" style="width:25.0%" />
+</center>
+<p>where A is the actual and F is the forecasted value.</p>
+<div id="peer-sets" class="section level2">
+<h2>Peer Sets</h2>
+<p>While I can look at the GME time-series and know that its an outlier relative to past performance maybe something in early January caused <strong>all</strong> video games related stocks to increase. The peer set that I will look at using as external regressors are:</p>
+<ul>
+<li>Nintendo (NTDOF) - <em>Maker of the Switch System</em></li>
+<li>Sony (SONY) - <em>Maker of the Playstation System</em></li>
+<li>Microsoft (MSFT) - <em>Maker of the XBox System</em></li>
+</ul>
+</div>
+</div>
+<div id="data" class="section level1">
+<h1>Data</h1>
+<p>I’ll be using the stock prices for these four stocks from 1/1/2016 through 2/22/2021 for this analysis and I will use the <a href="https://business-science.github.io/tidyquant/"><code>tidyquant</code></a> package to get this data through the <em>tq_get()</em> function.</p>
+<pre class="r"><code>library(tidyquant) #Get Stock Data 
+library(tidyverse) #Data Manipulation
+library(lubridate) #Date Manipulation</code></pre>
+<pre class="r"><code>### Make Data Weekly
+dt &lt;- tq_get(c(&#39;GME&#39;, &#39;SONY&#39;, &#39;NTDOF&#39;, &#39;MSFT&#39;),
+             get=&#39;stock.prices&#39;,
+             from = &#39;2016-01-01&#39;,
+             to = &#39;2021-02-22&#39;) </code></pre>
+<p>With the data pulled we can visualize each of the time-series for the four stocks. While the peer stocks all rose between 2020 and Feb 2021 it does appear that Gamestop truly “goes to the moon” above and beyond the peer stocks.</p>
+<pre class="r"><code>dt %&gt;% 
+  filter(ymd(date) &gt;= ymd(20200101)) %&gt;% 
+  ggplot(aes(x = date, y=close, color = symbol, group = symbol)) + 
+     geom_line() + 
+    geom_vline(xintercept = ymd(20210122), lty = 2, color = &#39;red&#39;) + 
+    geom_vline(xintercept = ymd(20210204), lty = 2, color = &#39;red&#39;) + 
+   labs(x = &quot;Date&quot;, y = &quot;Closing Price&quot;, title = &quot;Gamestop&#39;s Ride to the Moon &amp;#128640;&amp;#128640;&amp;#128640;&quot;,
+         subtitle = &quot;Fueled by &lt;span style=&#39;color:#ff4500&#39;&gt;&lt;b&gt;r/wallstreetbets&lt;/b&gt;&lt;/span&gt; $GME rose nearly 10x in a week&quot;,
+        caption = &quot;&lt;i&gt;Prediction zone bounded by the &lt;span style=&#39;color:red&#39;&gt;red dashed&lt;/span&gt; lines&lt;/i&gt;&quot;
+        ) +
+     scale_color_discrete(guide = &#39;none&#39;) +
+     scale_x_date(date_breaks = &quot;6 months&quot;, date_labels = &quot;%b %Y&quot;) + 
+      facet_wrap(~symbol, ncol = 1, scales = &quot;free_y&quot;) + 
+      cowplot::theme_cowplot() + 
+      theme(
+        plot.title = ggtext::element_markdown(),
+        plot.subtitle = ggtext::element_markdown(),
+        plot.caption = ggtext::element_markdown(),
+        strip.background = element_blank(),
+        strip.text = ggtext::element_textbox(
+          size = 12,
+          color = &quot;white&quot;, fill = &quot;#5D729D&quot;, box.color = &quot;#4A618C&quot;,
+          halign = 0.5, linetype = 1, r = unit(5, &quot;pt&quot;), width = unit(1, &quot;npc&quot;),
+          padding = margin(2, 0, 1, 0), margin = margin(3, 3, 3, 3)
+        )
+      )</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/plot_stock-1.png" width="672" /></p>
+</div>
+<div id="anomalize" class="section level1">
+<h1>Anomalize</h1>
+<p><a href="https://github.com/business-science/anomalize"><code>anomalize</code></a> is a package developed by <a href="https://www.business-science.io/">Business Science</a> to enable tidy anomaly detection. This package has three primarily functions:</p>
+<ol style="list-style-type: decimal">
+<li><code>time_decompose()</code> - which separates the data into its components</li>
+<li><code>anomalize()</code> - which runs anomaly detection on the remainder component</li>
+<li><code>time_recompose()</code> - recomposes the data to create limits around the “normal” data.</li>
+</ol>
+<p>The package also provides two options for calculating the remainders, STL and Twitter. The STL method does seasonal decomposition through loess while the Twitter method does seasonal decomposition through medians. Additionally there are two options for calculating the anomalies from the remainders, IQR and GESD.</p>
+<p>As for which methods to choose, a talk from <a href="https://www.youtube.com/watch?v=n9GOvto69aQ&amp;t=6s">Catherine Zhou</a> summarizes the choice as:</p>
+<ul>
+<li>Twitter + GESD is better for highly seasonal data</li>
+<li>STL + IQR better if seasonality isn’t a factor.</li>
+</ul>
+<p>More details on these methods are available in the <a href="https://cran.r-project.org/web/packages/anomalize/vignettes/anomalize_methods.html">anomalize methods</a> vignettes.</p>
+<p>Since all of these stocks benefit from increases in holiday sales I’ll use <strong>STL + IQR</strong>. Unfortunately, <code>anomalize</code> (to my knowledge) cannot handle covariates, so I’ll only be checking for anomalies for the Gamestop stock. Although I’ll add other regressors in the other packages.</p>
+<pre class="r"><code>library(anomalize)
+
+anomalize_dt &lt;- dt %&gt;%
+  filter(symbol == &#39;GME&#39;) %&gt;% 
+  # Merge keeps all of the original data in the decomposition
+  time_decompose(close, method = &#39;stl&#39;, merge = T, trend = &quot;1 year&quot;) %&gt;% 
+  anomalize(remainder, method = &quot;iqr&quot;) %&gt;% 
+  time_recompose() %&gt;% 
+  filter(between(date, ymd(20210122), ymd(20210204)))</code></pre>
+<p>Looking at our prediction window returns:</p>
+<pre class="r"><code>predictions_anomalize &lt;- anomalize_dt %&gt;% 
+  transmute(date, actual = close, predicted = trend + season, 
+            normal_lower = recomposed_l1, normal_upper = recomposed_l2, 
+            residual = remainder, anomaly)
+
+
+knitr::kable(predictions_anomalize, digits = 2)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">date</th>
+<th align="right">actual</th>
+<th align="right">predicted</th>
+<th align="right">normal_lower</th>
+<th align="right">normal_upper</th>
+<th align="right">residual</th>
+<th align="left">anomaly</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">2021-01-22</td>
+<td align="right">65.01</td>
+<td align="right">16.97</td>
+<td align="right">10.08</td>
+<td align="right">23.68</td>
+<td align="right">48.04</td>
+<td align="left">Yes</td>
+</tr>
+<tr class="even">
+<td align="left">2021-01-25</td>
+<td align="right">76.79</td>
+<td align="right">17.06</td>
+<td align="right">10.17</td>
+<td align="right">23.77</td>
+<td align="right">59.73</td>
+<td align="left">Yes</td>
+</tr>
+<tr class="odd">
+<td align="left">2021-01-26</td>
+<td align="right">147.98</td>
+<td align="right">17.15</td>
+<td align="right">10.26</td>
+<td align="right">23.86</td>
+<td align="right">130.83</td>
+<td align="left">Yes</td>
+</tr>
+<tr class="even">
+<td align="left">2021-01-27</td>
+<td align="right">347.51</td>
+<td align="right">17.27</td>
+<td align="right">10.37</td>
+<td align="right">23.98</td>
+<td align="right">330.24</td>
+<td align="left">Yes</td>
+</tr>
+<tr class="odd">
+<td align="left">2021-01-28</td>
+<td align="right">193.60</td>
+<td align="right">17.36</td>
+<td align="right">10.47</td>
+<td align="right">24.07</td>
+<td align="right">176.24</td>
+<td align="left">Yes</td>
+</tr>
+<tr class="even">
+<td align="left">2021-01-29</td>
+<td align="right">325.00</td>
+<td align="right">17.44</td>
+<td align="right">10.54</td>
+<td align="right">24.15</td>
+<td align="right">307.56</td>
+<td align="left">Yes</td>
+</tr>
+<tr class="odd">
+<td align="left">2021-02-01</td>
+<td align="right">225.00</td>
+<td align="right">17.53</td>
+<td align="right">10.64</td>
+<td align="right">24.24</td>
+<td align="right">207.47</td>
+<td align="left">Yes</td>
+</tr>
+<tr class="even">
+<td align="left">2021-02-02</td>
+<td align="right">90.00</td>
+<td align="right">17.62</td>
+<td align="right">10.73</td>
+<td align="right">24.33</td>
+<td align="right">72.38</td>
+<td align="left">Yes</td>
+</tr>
+<tr class="odd">
+<td align="left">2021-02-03</td>
+<td align="right">92.41</td>
+<td align="right">17.74</td>
+<td align="right">10.84</td>
+<td align="right">24.45</td>
+<td align="right">74.67</td>
+<td align="left">Yes</td>
+</tr>
+<tr class="even">
+<td align="left">2021-02-04</td>
+<td align="right">53.50</td>
+<td align="right">17.83</td>
+<td align="right">10.94</td>
+<td align="right">24.54</td>
+<td align="right">35.67</td>
+<td align="left">Yes</td>
+</tr>
+</tbody>
+</table>
+<p>So <code>anomalize</code> correctly identified all dates as anomalies vs what was expected. Now I can calculate the MAPE as 84.09% which means that only 16% of Gamestop’s stock movement was predicted.</p>
+</div>
+<div id="prophet" class="section level1">
+<h1>Prophet</h1>
+<p><a href="https://facebook.github.io/prophet/"><code>Prophet</code></a> is a forecasting library that was developed by Facebook. To calculate the MAPE, I will fit the prophet model to the data before the prediction period and then predict for the data in our prediction period (post). Prophet does allow for the addition of other regressors so I will run two version of the model. The first will just be on the Gamestop time series and the second will bring in the Sony, Nintendo, and Microsoft regressors.</p>
+<div id="data-processing" class="section level2">
+<h2>Data Processing</h2>
+<p>Currently, the data is in a tidy format where all symbols are in a separate row. In order to use them in prophet (and in future packages), I need to have the data in a format where each row is a date and all of the symbols are separate columns. Additionally, to be used in prophet the data must have a <code>ds</code> column for for the date and a <code>y</code> column for the time series being projected. The following code block will split into the pre-period and the prediction period as well as rename the GME series to <code>y</code> and date to <code>ds</code>.</p>
+<pre class="r"><code>prep_data &lt;- dt %&gt;% 
+  select(date, symbol, close) %&gt;% 
+  pivot_wider(names_from = &#39;symbol&#39;, values_from = &#39;close&#39;) %&gt;% 
+  rename(y = GME, ds = date)
+
+pre &lt;- prep_data %&gt;% filter(ds &lt;= ymd(20210121))
+pred &lt;- prep_data %&gt;% filter(between(ds, ymd(20210122), ymd(20210204)))</code></pre>
+</div>
+<div id="model-1-only-the-gamestop-time-series" class="section level2">
+<h2>Model 1: Only the Gamestop Time Series</h2>
+<pre class="r"><code>library(prophet)
+
+#Build the Model
+model_no_regressors &lt;- prophet(pre)
+#Predict on the Future Data
+model_no_regressors_pred &lt;- predict(model_no_regressors, pred)</code></pre>
+<p>We can look at the predicted results and the residuals by joining the actual data back to the predicted data:</p>
+<pre class="r"><code>predictions_prophet_no_reg &lt;- model_no_regressors_pred %&gt;% 
+  inner_join(pred %&gt;% select(ds, y), by = &quot;ds&quot;) %&gt;% 
+  transmute(ds, actual = y, predicted = yhat, lower = yhat_lower, 
+            upper = yhat_upper, residual = y-yhat)
+
+knitr::kable(predictions_prophet_no_reg, digits = 2)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">ds</th>
+<th align="right">actual</th>
+<th align="right">predicted</th>
+<th align="right">lower</th>
+<th align="right">upper</th>
+<th align="right">residual</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">2021-01-22</td>
+<td align="right">65.01</td>
+<td align="right">17.74</td>
+<td align="right">14.91</td>
+<td align="right">20.59</td>
+<td align="right">47.27</td>
+</tr>
+<tr class="even">
+<td align="left">2021-01-25</td>
+<td align="right">76.79</td>
+<td align="right">17.31</td>
+<td align="right">14.56</td>
+<td align="right">20.15</td>
+<td align="right">59.48</td>
+</tr>
+<tr class="odd">
+<td align="left">2021-01-26</td>
+<td align="right">147.98</td>
+<td align="right">17.14</td>
+<td align="right">14.13</td>
+<td align="right">19.90</td>
+<td align="right">130.84</td>
+</tr>
+<tr class="even">
+<td align="left">2021-01-27</td>
+<td align="right">347.51</td>
+<td align="right">17.03</td>
+<td align="right">14.29</td>
+<td align="right">19.93</td>
+<td align="right">330.48</td>
+</tr>
+<tr class="odd">
+<td align="left">2021-01-28</td>
+<td align="right">193.60</td>
+<td align="right">16.89</td>
+<td align="right">13.89</td>
+<td align="right">19.31</td>
+<td align="right">176.71</td>
+</tr>
+<tr class="even">
+<td align="left">2021-01-29</td>
+<td align="right">325.00</td>
+<td align="right">16.55</td>
+<td align="right">13.99</td>
+<td align="right">19.29</td>
+<td align="right">308.45</td>
+</tr>
+<tr class="odd">
+<td align="left">2021-02-01</td>
+<td align="right">225.00</td>
+<td align="right">16.24</td>
+<td align="right">13.43</td>
+<td align="right">19.01</td>
+<td align="right">208.76</td>
+</tr>
+<tr class="even">
+<td align="left">2021-02-02</td>
+<td align="right">90.00</td>
+<td align="right">16.16</td>
+<td align="right">13.66</td>
+<td align="right">18.90</td>
+<td align="right">73.84</td>
+</tr>
+<tr class="odd">
+<td align="left">2021-02-03</td>
+<td align="right">92.41</td>
+<td align="right">16.14</td>
+<td align="right">13.46</td>
+<td align="right">18.83</td>
+<td align="right">76.27</td>
+</tr>
+<tr class="even">
+<td align="left">2021-02-04</td>
+<td align="right">53.50</td>
+<td align="right">16.11</td>
+<td align="right">13.47</td>
+<td align="right">18.79</td>
+<td align="right">37.39</td>
+</tr>
+</tbody>
+</table>
+<p>From this I can calculate the MAPE as 84.71% again indicatoring that only 16% of the movement was “expected”.</p>
+</div>
+<div id="model-2-gamestop-regressors" class="section level2">
+<h2>Model 2: Gamestop + Regressors</h2>
+<p>To run a prophet model with regressions the syntax is a little bit different as rather than pass a dataset into the <code>prophet()</code> function, I’ll need to start with the <code>prophet()</code> function, add the regressors and then pass the data into a <code>fit_prophet()</code> function to actually fit the model.</p>
+<pre class="r"><code># Initialize Model
+prophet_reg &lt;- prophet()
+
+#Add Regressors
+prophet_reg &lt;- add_regressor(prophet_reg, &#39;MSFT&#39;)
+prophet_reg &lt;- add_regressor(prophet_reg, &#39;SONY&#39;)
+prophet_reg &lt;- add_regressor(prophet_reg, &#39;NTDOF&#39;)
+
+#Fit Model
+prophet_reg &lt;- fit.prophet(prophet_reg, pre)
+
+# Predict on Future Data
+prophet_reg_pred &lt;- predict(prophet_reg, pred)</code></pre>
+<p>Then looking at the predictions:</p>
+<pre class="r"><code>predictions_prophet_reg &lt;- prophet_reg_pred %&gt;% 
+  inner_join(pred %&gt;% select(ds, y), by = &quot;ds&quot;) %&gt;% 
+  transmute(ds, actual = y, predicted = yhat, lower = yhat_lower, 
+            upper = yhat_upper, residual = y-yhat)
+
+knitr::kable(predictions_prophet_reg, digits = 2)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">ds</th>
+<th align="right">actual</th>
+<th align="right">predicted</th>
+<th align="right">lower</th>
+<th align="right">upper</th>
+<th align="right">residual</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">2021-01-22</td>
+<td align="right">65.01</td>
+<td align="right">20.32</td>
+<td align="right">17.95</td>
+<td align="right">22.78</td>
+<td align="right">44.69</td>
+</tr>
+<tr class="even">
+<td align="left">2021-01-25</td>
+<td align="right">76.79</td>
+<td align="right">19.17</td>
+<td align="right">16.66</td>
+<td align="right">21.71</td>
+<td align="right">57.62</td>
+</tr>
+<tr class="odd">
+<td align="left">2021-01-26</td>
+<td align="right">147.98</td>
+<td align="right">18.95</td>
+<td align="right">16.22</td>
+<td align="right">21.39</td>
+<td align="right">129.03</td>
+</tr>
+<tr class="even">
+<td align="left">2021-01-27</td>
+<td align="right">347.51</td>
+<td align="right">18.07</td>
+<td align="right">15.52</td>
+<td align="right">20.69</td>
+<td align="right">329.44</td>
+</tr>
+<tr class="odd">
+<td align="left">2021-01-28</td>
+<td align="right">193.60</td>
+<td align="right">17.47</td>
+<td align="right">14.93</td>
+<td align="right">19.74</td>
+<td align="right">176.13</td>
+</tr>
+<tr class="even">
+<td align="left">2021-01-29</td>
+<td align="right">325.00</td>
+<td align="right">17.61</td>
+<td align="right">15.09</td>
+<td align="right">19.98</td>
+<td align="right">307.39</td>
+</tr>
+<tr class="odd">
+<td align="left">2021-02-01</td>
+<td align="right">225.00</td>
+<td align="right">17.22</td>
+<td align="right">14.67</td>
+<td align="right">19.65</td>
+<td align="right">207.78</td>
+</tr>
+<tr class="even">
+<td align="left">2021-02-02</td>
+<td align="right">90.00</td>
+<td align="right">17.61</td>
+<td align="right">14.97</td>
+<td align="right">20.02</td>
+<td align="right">72.39</td>
+</tr>
+<tr class="odd">
+<td align="left">2021-02-03</td>
+<td align="right">92.41</td>
+<td align="right">21.18</td>
+<td align="right">18.40</td>
+<td align="right">23.63</td>
+<td align="right">71.23</td>
+</tr>
+<tr class="even">
+<td align="left">2021-02-04</td>
+<td align="right">53.50</td>
+<td align="right">21.25</td>
+<td align="right">18.75</td>
+<td align="right">23.61</td>
+<td align="right">32.25</td>
+</tr>
+</tbody>
+</table>
+<p>which gives us a MAPE of 82.14%. The addition of the external regressors make the forecast errors <em>slightly</em> lower. Now the movement is 18% expected.</p>
+</div>
+</div>
+<div id="auto.arima" class="section level1">
+<h1>Auto.Arima</h1>
+<p><a href="https://otexts.com/fpp2/arima-r.html"><code>auto.arima()</code></a> is a function within the <code>forecast</code> package that algorithmically determines the proper specification for an ARIMA (auto-regressive integrated moving average) model. The basic version of auto-arima fits on a univariate series which I will do first, and then I’ll use external regressors similar to what was done with Prophet.</p>
+<div id="model-1-only-gamestop-time-series" class="section level2">
+<h2>Model 1: Only Gamestop Time Series</h2>
+<pre class="r"><code>library(forecast)
+
+# Fit auto arima model
+auto_arima_model &lt;- auto.arima(pre$y)</code></pre>
+<p>The function returns an ARIMA(1, 2, 2) model. The <code>forecast()</code> function is then used for use the model to forecast into the future.</p>
+<pre class="r"><code># Forecast 10 Periods Ahead
+auto_arima_pred &lt;- forecast(auto_arima_model, 10)</code></pre>
+<p>Then as with the earlier models I can look at the predictions vs. the actuals. The forecast object returns a list where I can pull out the forecast from the “mean” item and the predicted bound using <em>lower</em> and <em>upper</em>. The list contains intervals for both 80% and 95% so the <code>[, 2]</code> pulls the 95% intervals.</p>
+<pre class="r"><code>predictions_auto_arima &lt;- pred %&gt;% 
+  bind_cols(
+    tibble(
+      predicted = auto_arima_pred$mean %&gt;% as.numeric(),
+      lower = auto_arima_pred$lower[, 2] %&gt;% as.numeric(),
+      upper = auto_arima_pred$upper[, 2] %&gt;% as.numeric()
+    )
+  ) %&gt;% 
+  transmute(
+    ds, actual = y, predicted, lower, upper, residuals = y - predicted
+  )
+  
+knitr::kable(predictions_auto_arima, digits = 2)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">ds</th>
+<th align="right">actual</th>
+<th align="right">predicted</th>
+<th align="right">lower</th>
+<th align="right">upper</th>
+<th align="right">residuals</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">2021-01-22</td>
+<td align="right">65.01</td>
+<td align="right">43.71</td>
+<td align="right">42.35</td>
+<td align="right">45.07</td>
+<td align="right">21.30</td>
+</tr>
+<tr class="even">
+<td align="left">2021-01-25</td>
+<td align="right">76.79</td>
+<td align="right">44.37</td>
+<td align="right">42.41</td>
+<td align="right">46.32</td>
+<td align="right">32.42</td>
+</tr>
+<tr class="odd">
+<td align="left">2021-01-26</td>
+<td align="right">147.98</td>
+<td align="right">45.04</td>
+<td align="right">42.62</td>
+<td align="right">47.47</td>
+<td align="right">102.94</td>
+</tr>
+<tr class="even">
+<td align="left">2021-01-27</td>
+<td align="right">347.51</td>
+<td align="right">45.70</td>
+<td align="right">42.87</td>
+<td align="right">48.54</td>
+<td align="right">301.81</td>
+</tr>
+<tr class="odd">
+<td align="left">2021-01-28</td>
+<td align="right">193.60</td>
+<td align="right">46.38</td>
+<td align="right">43.17</td>
+<td align="right">49.59</td>
+<td align="right">147.22</td>
+</tr>
+<tr class="even">
+<td align="left">2021-01-29</td>
+<td align="right">325.00</td>
+<td align="right">47.04</td>
+<td align="right">43.48</td>
+<td align="right">50.60</td>
+<td align="right">277.96</td>
+</tr>
+<tr class="odd">
+<td align="left">2021-02-01</td>
+<td align="right">225.00</td>
+<td align="right">47.72</td>
+<td align="right">43.82</td>
+<td align="right">51.61</td>
+<td align="right">177.28</td>
+</tr>
+<tr class="even">
+<td align="left">2021-02-02</td>
+<td align="right">90.00</td>
+<td align="right">48.37</td>
+<td align="right">44.16</td>
+<td align="right">52.59</td>
+<td align="right">41.63</td>
+</tr>
+<tr class="odd">
+<td align="left">2021-02-03</td>
+<td align="right">92.41</td>
+<td align="right">49.05</td>
+<td align="right">44.53</td>
+<td align="right">53.57</td>
+<td align="right">43.36</td>
+</tr>
+<tr class="even">
+<td align="left">2021-02-04</td>
+<td align="right">53.50</td>
+<td align="right">49.71</td>
+<td align="right">44.89</td>
+<td align="right">54.53</td>
+<td align="right">3.79</td>
+</tr>
+</tbody>
+</table>
+<p>This gives a MAPE of 57.20%, which is much better than the prior methods.</p>
+</div>
+<div id="adding-in-external-regressors" class="section level2">
+<h2>Adding in External Regressors</h2>
+<p><code>auto.arima</code> can also take into account external regressors through the <code>xreg</code> parameter. Its a little trickier to implement since the regressors need to be in a Matrix. But as usual, <a href="https://stats.stackexchange.com/questions/41070/how-to-setup-xreg-argument-in-auto-arima-in-r">StackOverflow</a> comes through with a solution. In this case its from the package author himself!</p>
+<pre class="r"><code># Create Matrix of External Regressors
+xreg &lt;- model.matrix(~ SONY + NTDOF + MSFT - 1, data = pre)
+# Fit ARIMA Model
+auto_arima_reg &lt;- auto.arima(pre$y, xreg = xreg)
+
+# Create Matrix of Extenral Regressors for Forecasting
+xreg_pred &lt;- model.matrix(~ SONY + NTDOF + MSFT - 1, data = pred)
+# Forecast with External Regressors
+auto_arima_reg_fcst &lt;- forecast(auto_arima_reg, h = 10, xreg = xreg_pred)</code></pre>
+<pre class="r"><code>predictions_auto_arima_reg &lt;- pred %&gt;% 
+  bind_cols(
+    tibble(
+      predicted = auto_arima_reg_fcst$mean %&gt;% as.numeric(),
+      lower = auto_arima_reg_fcst$lower[, 2] %&gt;% as.numeric(),
+      upper = auto_arima_reg_fcst$upper[, 2] %&gt;% as.numeric()
+    )
+  ) %&gt;% 
+  transmute(
+    ds, actual = y, predicted, lower, upper, residuals = y - predicted
+  )
+  
+knitr::kable(predictions_auto_arima_reg, digits = 2)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">ds</th>
+<th align="right">actual</th>
+<th align="right">predicted</th>
+<th align="right">lower</th>
+<th align="right">upper</th>
+<th align="right">residuals</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">2021-01-22</td>
+<td align="right">65.01</td>
+<td align="right">43.70</td>
+<td align="right">42.34</td>
+<td align="right">45.06</td>
+<td align="right">21.31</td>
+</tr>
+<tr class="even">
+<td align="left">2021-01-25</td>
+<td align="right">76.79</td>
+<td align="right">44.37</td>
+<td align="right">42.42</td>
+<td align="right">46.32</td>
+<td align="right">32.42</td>
+</tr>
+<tr class="odd">
+<td align="left">2021-01-26</td>
+<td align="right">147.98</td>
+<td align="right">45.10</td>
+<td align="right">42.69</td>
+<td align="right">47.52</td>
+<td align="right">102.88</td>
+</tr>
+<tr class="even">
+<td align="left">2021-01-27</td>
+<td align="right">347.51</td>
+<td align="right">45.69</td>
+<td align="right">42.86</td>
+<td align="right">48.52</td>
+<td align="right">301.82</td>
+</tr>
+<tr class="odd">
+<td align="left">2021-01-28</td>
+<td align="right">193.60</td>
+<td align="right">46.51</td>
+<td align="right">43.31</td>
+<td align="right">49.71</td>
+<td align="right">147.09</td>
+</tr>
+<tr class="even">
+<td align="left">2021-01-29</td>
+<td align="right">325.00</td>
+<td align="right">46.96</td>
+<td align="right">43.41</td>
+<td align="right">50.51</td>
+<td align="right">278.04</td>
+</tr>
+<tr class="odd">
+<td align="left">2021-02-01</td>
+<td align="right">225.00</td>
+<td align="right">47.88</td>
+<td align="right">44.00</td>
+<td align="right">51.76</td>
+<td align="right">177.12</td>
+</tr>
+<tr class="even">
+<td align="left">2021-02-02</td>
+<td align="right">90.00</td>
+<td align="right">48.53</td>
+<td align="right">44.33</td>
+<td align="right">52.73</td>
+<td align="right">41.47</td>
+</tr>
+<tr class="odd">
+<td align="left">2021-02-03</td>
+<td align="right">92.41</td>
+<td align="right">49.55</td>
+<td align="right">45.04</td>
+<td align="right">54.06</td>
+<td align="right">42.86</td>
+</tr>
+<tr class="even">
+<td align="left">2021-02-04</td>
+<td align="right">53.50</td>
+<td align="right">50.17</td>
+<td align="right">45.36</td>
+<td align="right">54.99</td>
+<td align="right">3.33</td>
+</tr>
+</tbody>
+</table>
+<p>This gives a MAPE of 57.03%. Again the addition of external regressors only makes things <em>slightly</em> better.</p>
+</div>
+</div>
+<div id="causalimpact" class="section level1">
+<h1>CausalImpact</h1>
+<p><a href="https://github.com/google/CausalImpact"><code>CausalImpact</code></a> is a package developed by Google to measure the causal impact of an intervention on a time series. The package uses a Bayesian Structural Time-Series model to estimate a counter-factual of how a response would have evolved without the intervention. This package works by comparing a time-series of interest to a set of control time series and uses the relationships pre-intervention to predict the counterfactual.</p>
+<p>CasualInference also will require some data preparation as it requires a <code>zoo</code> object as an input. But I can largely leverage the <code>prep_data</code> data set created in the prophet section as CausalInference only requires that the field of interest is in the first column. The construction of the <code>zoo</code> object take in the data and the date index as its two parameters.</p>
+<p>Then for running the causal impact analysis, I pass in the <code>zoo</code> data set and specific what are the pre-period and the post-period. The <em>model.args</em> options of <code>model.args = list(nseasons = 5, season.duration = 1)</code> adds day of week seasonality by specifying that there are 5 periods to a seasonal component that each point represents 1 period of a season. For another example to add day of week seasonality to data with hourly granularity then I would specify <code>nseasons=7</code> and <code>season.duration=24</code> to say that there are 7 period in a season and 24 data points in a period.</p>
+<pre class="r"><code>library(CausalImpact)
+
+#Create Zoo Object
+dt_ci &lt;- zoo(prep_data %&gt;% dplyr::select(-ds), prep_data$ds)
+
+#Run Causal Impact
+ci &lt;- CausalImpact(dt_ci, 
+                   pre.period = c(as.Date(&#39;2020-05-03&#39;), as.Date(&#39;2021-01-21&#39;)),
+                   post.period = c(as.Date(&#39;2021-01-22&#39;), as.Date(&#39;2021-02-04&#39;)),
+                   model.args = list(nseasons = 5, season.duration = 1)
+                   )</code></pre>
+<p>To get the information about the predictions, I can pull them out of the <em>series</em> attribute within the <code>ci</code> object. While not being used in this analysis, the <code>summary()</code> and <code>plot()</code> functions are very useful. And the option for <code>summary(ci, "report")</code> is interesting in that it gives a full paragraph description of the results.</p>
+<pre class="r"><code>predictions_causal_inference &lt;- ci$series %&gt;% 
+  as_tibble(rownames = &#39;ds&#39;) %&gt;% 
+  filter(between(ymd(ds), ymd(20210122), ymd(20210204))) %&gt;% 
+  transmute(ds, actual = response, predicted = point.pred, 
+            lower = point.pred.lower, upper = point.pred.upper, 
+            residual = point.effect)
+  
+knitr::kable(predictions_causal_inference, digits = 2)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">ds</th>
+<th align="right">actual</th>
+<th align="right">predicted</th>
+<th align="right">lower</th>
+<th align="right">upper</th>
+<th align="right">residual</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">2021-01-22</td>
+<td align="right">65.01</td>
+<td align="right">39.17</td>
+<td align="right">34.08</td>
+<td align="right">44.21</td>
+<td align="right">25.84</td>
+</tr>
+<tr class="even">
+<td align="left">2021-01-25</td>
+<td align="right">76.79</td>
+<td align="right">38.40</td>
+<td align="right">32.58</td>
+<td align="right">43.85</td>
+<td align="right">38.39</td>
+</tr>
+<tr class="odd">
+<td align="left">2021-01-26</td>
+<td align="right">147.98</td>
+<td align="right">38.71</td>
+<td align="right">33.25</td>
+<td align="right">44.76</td>
+<td align="right">109.27</td>
+</tr>
+<tr class="even">
+<td align="left">2021-01-27</td>
+<td align="right">347.51</td>
+<td align="right">38.58</td>
+<td align="right">32.86</td>
+<td align="right">44.85</td>
+<td align="right">308.93</td>
+</tr>
+<tr class="odd">
+<td align="left">2021-01-28</td>
+<td align="right">193.60</td>
+<td align="right">39.06</td>
+<td align="right">33.24</td>
+<td align="right">45.83</td>
+<td align="right">154.54</td>
+</tr>
+<tr class="even">
+<td align="left">2021-01-29</td>
+<td align="right">325.00</td>
+<td align="right">39.21</td>
+<td align="right">32.71</td>
+<td align="right">45.93</td>
+<td align="right">285.79</td>
+</tr>
+<tr class="odd">
+<td align="left">2021-02-01</td>
+<td align="right">225.00</td>
+<td align="right">38.29</td>
+<td align="right">32.08</td>
+<td align="right">45.04</td>
+<td align="right">186.71</td>
+</tr>
+<tr class="even">
+<td align="left">2021-02-02</td>
+<td align="right">90.00</td>
+<td align="right">38.60</td>
+<td align="right">31.59</td>
+<td align="right">45.92</td>
+<td align="right">51.40</td>
+</tr>
+<tr class="odd">
+<td align="left">2021-02-03</td>
+<td align="right">92.41</td>
+<td align="right">38.40</td>
+<td align="right">31.52</td>
+<td align="right">45.83</td>
+<td align="right">54.01</td>
+</tr>
+<tr class="even">
+<td align="left">2021-02-04</td>
+<td align="right">53.50</td>
+<td align="right">38.96</td>
+<td align="right">31.11</td>
+<td align="right">46.97</td>
+<td align="right">14.54</td>
+</tr>
+</tbody>
+</table>
+<p>This would give us a MAPE of 64.60%, which is between the <code>auto.arima</code> models and the other methods.</p>
+</div>
+<div id="conclusion" class="section level1">
+<h1>Conclusion</h1>
+<p>This post looked at five different mechanisms to forecast what Gamestop’s stock price would be during the period when it spiked. Bringing all of the projections together with the actuals gives us:</p>
+<pre class="r"><code>all_combined &lt;- bind_rows(
+  #Actuals
+  dt %&gt;% filter(symbol == &#39;GME&#39;) %&gt;% 
+    transmute(ds = ymd(date), lbl = &#39;actuals&#39;, y = close),
+  #Anomalize
+  predictions_anomalize %&gt;% 
+    transmute(ds = ymd(date), lbl = &quot;Anomalize&quot;, y = predicted),
+  #Prophet Regressors
+  predictions_prophet_no_reg %&gt;% 
+    transmute(ds = ymd(ds), lbl = &quot;Prophet (No Regressors)&quot;, y = predicted),
+  #Prophet No Regressors
+  predictions_prophet_reg %&gt;% 
+    transmute(ds = ymd(ds), lbl = &quot;Prophet (w/ Regressors)&quot;, y = predicted),
+  #Auto.Arima (No Regressors)
+  predictions_auto_arima %&gt;% 
+    transmute(ds = ymd(ds), lbl = &quot;Auto.Arima (No Regressors)&quot;, y = predicted),
+  #Auto.Arima (w/ Regressors)
+  predictions_auto_arima_reg %&gt;% 
+    transmute(ds = ymd(ds), lbl = &quot;Auto.Arima (w/ Regressors)&quot;, y = predicted),
+  #Causal Inference
+  predictions_causal_inference %&gt;% 
+    transmute(ds = ymd(ds), lbl = &quot;CausalImpact&quot;, y = predicted)
+) 
+
+all_combined %&gt;%
+  filter(ds &gt;= &#39;2021-01-18&#39; &amp; ds &lt;= &#39;2021-02-04&#39;) %&gt;% 
+  ggplot(aes(x = ds, y = y, color = lbl)) + 
+    geom_line() + 
+    geom_vline(xintercept = ymd(20210122), lty = 2, color = &#39;darkred&#39;) + 
+    geom_vline(xintercept = ymd(20210204), lty = 2, color = &#39;darkred&#39;) + 
+    labs(title = &quot;Comparing GME Price Projections 1/22/21 - 2/4/21&quot;,
+         x = &quot;Date&quot;,
+         y = &quot;GME Closing Price ($)&quot;,
+         color = &quot;&quot;) + 
+    scale_x_date(date_breaks = &quot;2 days&quot;, date_labels = &quot;%b %d&quot;) + 
+    scale_y_log10() + 
+    scale_color_manual(values = wesanderson::wes_palette(&quot;Zissou1&quot;, 
+                                                       n = 7,
+                                                       type = &#39;continuous&#39;)) +
+    cowplot::theme_cowplot() + 
+    theme(
+      legend.direction = &#39;horizontal&#39;,
+      legend.position = &#39;bottom&#39;
+    ) + 
+    guides(color=guide_legend(nrow=3,byrow=TRUE))</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/combined_plots-1.png" width="672" /></p>
+<p>Looking at all the projections together its clear that no forecasting method really saw the massive spike in price coming. Although it looks like the Auto.Arima method comes closest, but potentially more because its started from the highest point rather than any forecast being particularly sensitive.</p>
+<p>Looking just at January 27th, the peak of the spike gives the clearest perspective on the difference between the actual and all the projections:</p>
+<pre class="r"><code>all_combined %&gt;% 
+  filter(ds == &#39;2021-01-27&#39;) %&gt;% 
+  ggplot(aes(x = fct_reorder(lbl, y), y = y, fill = lbl)) + 
+    geom_col() + 
+    geom_text(aes(label = y %&gt;% scales::dollar(),
+                  hjust = (y &gt;= 300))) + 
+    labs(x = &quot;Projection Method&quot;,
+         y = &quot;GME Closing Price on Jan 27&quot;,
+         title = &quot;Looking at the Peak of the Spike&quot;,
+         subtitle = &quot;Gamestop Closing Price on January 27, 2021&quot;,
+         fill = &quot;&quot;) +
+   scale_fill_manual(guide = F, 
+                     values = wesanderson::wes_palette(&quot;Zissou1&quot;, 
+                                                       n = 7,
+                                                       type = &#39;continuous&#39;)) + 
+   scale_y_continuous(label = scales::dollar) +
+   coord_flip() + 
+   cowplot::theme_cowplot()</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/jan27only-1.png" width="672" />
+No methodology really comes within $300 of the actual price. To quantify just <em>how</em> unexpected Gamestop’s rise is, I’ll look at the MAPEs for all the forecasting methods.</p>
+<pre class="r"><code>format_mape &lt;- function(dt, method){
+ return(
+   dt %&gt;% 
+    yardstick::mape(actual, predicted) %&gt;% 
+    transmute(Method = method, MAPE = .estimate %&gt;% scales::percent(scale = 1, accuracy = .01))
+ )
+}
+
+bind_rows(
+  #Anomalize
+  format_mape(predictions_anomalize, &quot;Anomalize&quot;),
+  #Prophet Regressors
+  format_mape(predictions_prophet_no_reg, &quot;Prophet (No Regressors)&quot;),
+  #Prophet No Regressors
+  format_mape(predictions_prophet_reg, &quot;Prophet (w/ Regressors)&quot;), 
+  #Auto.Arima
+  format_mape(predictions_auto_arima, &quot;Auto.Arima (No Regressors)&quot;), 
+  #Auto.Arima (w/ Rregressors)
+  format_mape(predictions_auto_arima_reg, &quot;Auto.Arima (w/ Regressors)&quot;), 
+  #Causal Inference
+  format_mape(predictions_causal_inference, &quot;CausalImpact&quot;)
+) %&gt;% 
+  knitr::kable(align = c(&#39;l&#39;, &#39;r&#39;))</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">Method</th>
+<th align="right">MAPE</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Anomalize</td>
+<td align="right">84.09%</td>
+</tr>
+<tr class="even">
+<td align="left">Prophet (No Regressors)</td>
+<td align="right">84.71%</td>
+</tr>
+<tr class="odd">
+<td align="left">Prophet (w/ Regressors)</td>
+<td align="right">82.14%</td>
+</tr>
+<tr class="even">
+<td align="left">Auto.Arima (No Regressors)</td>
+<td align="right">57.20%</td>
+</tr>
+<tr class="odd">
+<td align="left">Auto.Arima (w/ Regressors)</td>
+<td align="right">57.03%</td>
+</tr>
+<tr class="even">
+<td align="left">CausalImpact</td>
+<td align="right">64.60%</td>
+</tr>
+</tbody>
+</table>
+<p>Using the MAPE as the measure of “unexpectedness” I would conclude that this outcome 57% to 85% unexpected (although a lot of the accuracy comes less from the models doing a good job of predicting the spike and more from the models being flat and the stock price coming back down). So despite a small rise before the projection period, its clear that Gamestops’s meteoric rise and then fall would a very unexpected event.</p>
+</div>
+<div class="footnotes">
+<hr />
+<ol>
+<li id="fn1"><p>Practically, the MAPE function is being calculated using the <code>yardstick</code> package where the format is <code>yardstick::mape(truth, estimate)</code> where truth and estimate are the columns for the actual and predicted values.<a href="#fnref1" class="footnote-back">↩︎</a></p></li>
+</ol>
+</div>
