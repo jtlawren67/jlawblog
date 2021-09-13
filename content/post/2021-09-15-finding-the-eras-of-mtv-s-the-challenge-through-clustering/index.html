@@ -1,0 +1,528 @@
+---
+title: Finding the Eras of MTV's The Challenge Through Clustering
+author: JLaw
+date: '2021-09-15'
+slug: finding-the-eras-of-mtv-s-the-challenge-through-clustering
+categories:
+  - R
+tags:
+  - rvest
+  - ggraph
+  - tidygraph
+  - widyr
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2021-09-15T09:33:29-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+<script src="{{< blogdown/postref >}}index_files/header-attrs/header-attrs.js"></script>
+
+
+<p>Since 1998, <a href="https://en.wikipedia.org/wiki/The_Challenge_(TV_series)">MTV’s The Challenge</a> (formerly the Real World/Road Rules Challenge) has graced the airwaves where it is currently in Season 37. In a prior <a href="https://jlaw.netlify.app/2021/03/01/exploring-wednesday-night-cable-ratings-with-ocr/">post</a> I had mentioned that this is one of my guilty pleasure shows so this will likely not be the last post that is based around the Challenge.</p>
+<p>For casting the show, the early years revolved around having alumni from MTV’s The Real World and Road Rules compete against each other (in an odd bit of irony or misnaming, the first season called Real World: All Stars actually consisted of <strong>only</strong> Real World alumni). Over the next 37 seasons, the series has evolved bringing in other MTV properties such as “Are You the One?” and expanding internationally to properties like “Survivor: Turkey” and “Love Island UK”.</p>
+<p>Since the cast of characters has continuously evolved over the 37 seasons, I thought it would be interested to see if I can algorithmically classify the eras of the show based on the cast of each season through Hierarchical Clustering and visualizing using UMAP.</p>
+<div id="libraries" class="section level2">
+<h2>Libraries</h2>
+<pre class="r"><code>library(tidygraph) # For manipulating network data sets
+library(ggraph) # For visualizing network data sets
+library(tidyverse) # General Data Manipulation
+library(rvest) # For webscraping data from wikipedia
+library(widyr) # For calculating cosine similarity of seasons
+library(umap) # For dimensionality reduction</code></pre>
+</div>
+<div id="getting-the-data" class="section level2">
+<h2>Getting the Data</h2>
+<p>Since the goal is to cluster the seasons of the The Challenge based on similarity of their casts, I need to get the cast list from each of the 37 seasons. Fortunately, Wikipedia contains the casts within each season’s page. Unfortunately, I’m lazy and really don’t want to specifically hunt down the URLs for each of 37 seasons and write individual rvest code. So I’ll use the <a href="https://en.wikipedia.org/wiki/The_Challenge_(TV_series)#Seasons">Seasons</a> table on Wikipedia to act as a driver file for each season’s page using <code>rvest</code> to extract the table using its xpath, pulling out all of the anchor elements (<a>) <em>html_attrs()</em> to extract all of the attributes into a list and using <code>purrr</code>’s <code>map_dfr</code> function to combine all of the links into a list. Unforunately, there are multiple links on row of the table (one for the title and one of the location of the season), so using <code>stringr</code>’s <em>str_detect</em>, I’ll keep only the rows that has the word “Challenge” in the title. Or “Stars” in the case of the first season which was just called “Road Rules: All-Stars”.</p>
+<pre class="r"><code>seasons &lt;- read_html(&#39;https://en.wikipedia.org/wiki/The_Challenge_(TV_series)&#39;) %&gt;%
+  html_element(xpath = &#39;/html/body/div[3]/div[3]/div[5]/div[1]/table[2]&#39;) %&gt;% 
+  html_elements(&#39;a&#39;) %&gt;% 
+  html_attrs() %&gt;% 
+  map_dfr(bind_rows) %&gt;% 
+  filter(str_detect(title, &#39;Challenge|Stars&#39;)) %&gt;%
+  select(-class)</code></pre>
+<table>
+<colgroup>
+<col width="53%" />
+<col width="46%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left">href</th>
+<th align="left">title</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">/wiki/Road_Rules:_All_Stars</td>
+<td align="left">Road Rules: All Stars</td>
+</tr>
+<tr class="even">
+<td align="left">/wiki/Real_World/Road_Rules_Challenge_(season)</td>
+<td align="left">Real World/Road Rules Challenge (season)</td>
+</tr>
+<tr class="odd">
+<td align="left">/wiki/Real_World/Road_Rules_Challenge_2000</td>
+<td align="left">Real World/Road Rules Challenge 2000</td>
+</tr>
+</tbody>
+</table>
+<p>The dataset now has the Wikipedia link for each season in the <em>href</em> column and a more human-reading title in the <em>title</em> column.</p>
+<p>The next problem to tackle is iterating through each season to extract the cast table. The issue here is that the Cast table is not uniform on each season’s page and the cast table is not always the same ordered table. In fact, there are three classes of tables to have to deal with:</p>
+<ol style="list-style-type: decimal">
+<li>Multiple Tables - Single Names</li>
+</ol>
+<p>For many of The Challenge seasons there are two teams (originally Real World vs. Road Rules but eventually taking on other themes like Rookies vs. Vets, Champions vs. Challengers, etc.). In this cases, there are two tables to exact with each table having one column for cast the member name.</p>
+<p><img src="two_table_one_name.png" /></p>
+<ol start="2" style="list-style-type: decimal">
+<li>Single Table - Two Names</li>
+</ol>
+<p>In seasons where there are pairs instead of teams, such as Fresh Meat, Rivals and Battle of the Exes, there will be one table for the cast but two columns of names to extract.</p>
+<p><img src="one_table_two_names.PNG" /></p>
+<ol start="3" style="list-style-type: decimal">
+<li>Multiple Tables - Two Names</li>
+</ol>
+<p>In the original Battle of the Seasons there were pairs (one male and one female from each season) that were also classified into teams (Real World or Road Rules). For this season, there were two tables to extract and each with two columns, one for the male and one for the female.</p>
+<p><img src="two_table_two_names.jpg" /></p>
+<p>There was no easy way (or at least one that I wanted to deal with) to automatically classify each of the 37 seasons into these three types so I manually looked at all 37 season Wikipedia pages and coded in which tables to extract and which columns to extract within each table.</p>
+<pre class="r"><code>## Set up which tables and columns to extract from WikiPedia
+seasons &lt;- seasons %&gt;%
+  mutate(
+    season_num = row_number(), #Define Season Identifier
+    table_num = case_when(
+      season_num %in% c(1, 12, 16, 19) ~ &#39;2&#39;,
+      season_num %in% c(27) ~ &#39;3&#39;,
+      season_num %in% c(2, 4, 5, 6, 9, 11) ~ &#39;4,5&#39;,
+      TRUE ~ &#39;3, 4&#39;
+    ),
+    keep_cols = case_when(
+      season_num %in% c(5) ~ &#39;1, 2&#39;,
+      season_num %in% c(12, 19, 27) ~ &#39;1, 3&#39;,
+      TRUE ~ &#39;1&#39;
+    )
+  )</code></pre>
+<p>For example, the default was Multiple Tables - One Column where the two tables were the 3rd and 4th tables on the page and we only needed the first column.</p>
+<p>With this additional metadata, I could now write a function to read the URL and extract the correct tables and table columns:</p>
+<pre class="r"><code>### Write Function to Scrape the Names
+get_cast &lt;- function(url, table_num, keep_cols, title, order){
+  
+  ##Convert the String Inputs into a numeric vector
+  table_num = str_split(table_num, &#39;,&#39;) %&gt;% unlist() %&gt;% as.numeric()
+  keep_cols = str_split(keep_cols, &#39;,&#39;) %&gt;% unlist() %&gt;% as.numeric()
+  
+  #Read Page and Filter Tables
+  ct &lt;- read_html(paste0(&#39;https://en.wikipedia.com/&#39;,url)) %&gt;%
+    # Extract Table Tags
+    html_elements(&#39;table&#39;) %&gt;%
+    # Keep only the specified tables
+    .[table_num] %&gt;% 
+    # Extract the information from the tables into a list (if more than 1)
+    html_table() %&gt;% 
+    # Use MAP to keep only the selected columns from each table
+    map(~select(.x, all_of(keep_cols)))
+  
+  #If Keeping Multiple Columns Gather to a Single Column Called Name
+  if(length(keep_cols) == 1){
+    ct &lt;- ct %&gt;% 
+      map(~rename(.x, &quot;Name&quot; = 1)) 
+  }else if(length(keep_cols) &gt; 1){
+    ct &lt;- ct %&gt;%
+      map(~gather(.x, &quot;Field&quot;, &quot;Name&quot;)) %&gt;% 
+      map(~select(.x, 2)) 
+  }
+  
+  # Combine all the tables into 1 columns and append title column
+  ct &lt;- ct %&gt;% map_dfr(bind_rows) %&gt;% mutate(title = title, order = order)
+
+  return(ct)
+  
+}</code></pre>
+<p>The five parameters passed to this function are all contained in the driver file created above. In order to iterate through the seasons to create a data set of the cast members I’ll use the <code>pmap_dfr()</code> function from <code>purrr</code> to provide more than two inputs to a function (pmap vs. map and map2) and combine all the outputs into a single data frame by binding the rows (the dfr part of the function name).</p>
+<p>In pmap, the first parameter is a list of the various parameters to pass to the function and the second parameter is the function to be called. The elements of the list can then be referred to as ..1 being the href parameters (first parameter from the list), ..2 the table_name parameter, and so on.</p>
+<pre class="r"><code>###Create Dataset with all names
+all_cast &lt;- pmap_dfr(list(seasons$href, 
+                          seasons$table_num, 
+                          seasons$keep_cols,
+                          seasons$title,
+                          seasons$season_num), 
+                     ~get_cast(..1, ..2, ..3, ..4, ..5))</code></pre>
+<p>The results of this new table now looks like:</p>
+<table>
+<thead>
+<tr class="header">
+<th align="left">Name</th>
+<th align="left">title</th>
+<th align="right">order</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Cynthia Roberts</td>
+<td align="left">Road Rules: All Stars</td>
+<td align="right">1</td>
+</tr>
+<tr class="even">
+<td align="left">Eric Nies</td>
+<td align="left">Road Rules: All Stars</td>
+<td align="right">1</td>
+</tr>
+<tr class="odd">
+<td align="left">Jon Brennan</td>
+<td align="left">Road Rules: All Stars</td>
+<td align="right">1</td>
+</tr>
+</tbody>
+</table>
+<div id="cleaning-the-data-and-final-preparations" class="section level3">
+<h3>Cleaning the Data and Final Preparations</h3>
+<p>The data on Wikipedia is <em>fairly</em> clean but there are places where automation is no substitute for domain knowledge. In this case the cast tables refer to what people were called in that specific season. But in some cases as cast members have returned for multiple seasons what they have been called has changed. For example. the now host of NBC’s First Look, Johnny “Bananas” Devenanzio, began his time on The Challenge as “John Devenanzio”, then “Johnny Devenanzio”, and finally, “Johnny ‘Bananas’ Devenanzio” for his most recent 12 seasons. Some female cast members married as “Tori Hall” became “Tori Fiorenza”. And in the most subtle of changes, “Nany González” appears both with and without the accent over the “a” (huge shoutout to the <a href="https://www.reddit.com/r/MtvChallenge/comments/pj8by1/oc_visualizing_the_most_frequently_appearing/">r/MtvChallenge</a> sub-reddit for calling me out on that when it cause Nany to not appear in my data visualization).</p>
+<p>Other changes are less interesting such as removing footnotes from people’s names, fixing that in the Seasons table both Season 5 and Season 23 are called “Battle of the Seasons”, and appending the season’s names onto the cast table</p>
+<pre class="r"><code>###Clean up the Cast Member Columns and Clean up The Title Columns
+###Domain Knowledge that these are all the same people (especially the married ones)
+all_cast_clean &lt;- all_cast %&gt;%
+  mutate(
+    #Remove Footnotes
+    Name = str_remove_all(Name, &#39;\\[.*\\]&#39;),
+    #Fix the Various References to Johnny Bananas
+    Name = if_else(str_detect(Name, &#39;John.* Devenanzio&#39;),&#39;Johnny &quot;Bananas&quot; Devenanzio&#39;,Name),
+    Name = if_else(str_detect(Name, &#39;Jordan.*Wiseley&#39;), &#39;Jordan Wiseley&#39;, Name),
+    Name = if_else(str_detect(Name, &#39;Natalie.*Duran&#39;), &#39;Natalie &quot;Ninja&quot; Duran&#39;, Name),
+    Name = if_else(str_detect(Name, &#39;Theresa Gonz&#39;), &#39;Theresa Jones&#39;, Name),
+    Name = if_else(str_detect(Name, &#39;Tori Fiorenza&#39;), &#39;Tori Hall&#39;, Name),
+    Name = if_else(str_detect(Name, &#39;Nany&#39;), &#39;Nany González&#39;, Name)
+  )
+
+##Season Table
+seasons_table &lt;- read_html(&#39;https://en.wikipedia.org/wiki/The_Challenge_(TV_series)&#39;) %&gt;%
+  html_element(xpath = &#39;/html/body/div[3]/div[3]/div[5]/div[1]/table[2]&#39;) %&gt;%
+  html_table() %&gt;%
+  janitor::clean_names() %&gt;%
+  mutate(year = str_extract(original_release, &#39;\\d{4}&#39;) %&gt;% as.integer()) %&gt;%
+  select(order, short_title = title, year) %&gt;%
+  distinct() %&gt;%
+  mutate(short_title = if_else(order == 23, &#39;Battle of the Seasons 2&#39;, short_title))
+
+
+all_cast_info &lt;- all_cast_clean %&gt;%
+  left_join(seasons_table, by = &quot;order&quot;)</code></pre>
+</div>
+</div>
+<div id="exploring-the-data" class="section level2">
+<h2>Exploring the Data</h2>
+<p>Before getting into the real meat of the analysis, I’m going to do some quick EDA to answer some potentially interesting questions about The Challenge Cast that we can see in the data.</p>
+<div id="who-has-been-on-the-most-challenges" class="section level3">
+<h3>Who Has Been on the Most Challenges?</h3>
+<p>A quick question might be what challenger has been on the most seasons. This can be answered pretty quickly with the <code>count()</code> function from <code>dplyr</code>.</p>
+<pre class="r"><code>all_cast_info %&gt;%
+  count(Name, sort = T) %&gt;%
+  head(7) %&gt;%
+  ggplot(aes(x = fct_reorder(Name, n), y = n, fill = Name)) + 
+    geom_col() + 
+    geom_text(aes(label = n, hjust = 0)) +
+    ghibli::scale_fill_ghibli_d(name = &#39;LaputaMedium&#39;, guide = &#39;none&#39;) + 
+    scale_y_continuous(expand = expansion(mult = c(0, .1))) + 
+    coord_flip() + 
+    labs(x = &quot;Challenger&quot;, y = &quot;# of Appearances&quot;, 
+         title = &quot;Who Has Been on the Most Seasons of the Challenge?&quot;) + 
+    cowplot::theme_cowplot() + 
+    theme(
+      plot.title.position = &#39;plot&#39;
+    )</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/most_challenges-1.png" width="672" />
+As any Challenge fan knows, Johnny Bananas has been on the most seasons with 20 and CT just behind at 19.</p>
+</div>
+</div>
+<div id="looking-at-consecutive-season-behavior" class="section level2">
+<h2>Looking at Consecutive Season Behavior</h2>
+<p>An interesting visualization we can do is to explore how frequently Challengers are on consecutive seasons using a series of dumbbell plots. In this plot there will be a point for each endpoint of a stretch of consecutive seasons and they will be connected by a line.</p>
+<p>Check out the post on the <a href="https://www.reddit.com/r/MtvChallenge/comments/pj8by1/oc_visualizing_the_most_frequently_appearing/">r/MtvChallenge</a> sub-reddit for a nicer (although slightly wrong) version of this plot.</p>
+<pre class="r"><code>all_cast_info %&gt;% 
+    ## Add the number of seasons for each challenger as a new column
+    add_count(Name, name = &#39;num_seasons&#39;) %&gt;%
+    # Filter to only those who have been on 7+ seasons
+    filter(num_seasons &gt;= 7) %&gt;%
+    # For each challenger define consecutive segments based on when the prior
+    # season number is more than 1 or missing (for the first observation)
+    group_by(Name) %&gt;%
+    arrange(order, .by_group = T) %&gt;%
+    mutate(
+      diff = order - lag(order),
+      new_segment = if_else(is.na(diff) | diff &gt; 1, 1, 0),
+      run = cumsum(new_segment)
+    ) %&gt;% 
+    # Define the endpoints of each segment
+    group_by(Name, run) %&gt;% 
+    summarize(start = min(order),
+              end = max(order),
+              num_seasons = max(num_seasons)) %&gt;%
+  ggplot(aes(x = fct_rev(fct_reorder(Name, start, min)), 
+             color = Name, fill = Name)) + 
+    geom_linerange(aes(ymin = start, ymax = end), size = 1) + 
+    geom_point(aes(y = start), size = 2) + 
+    geom_point(aes(y = end), size = 2) + 
+    scale_fill_discrete(guide = &#39;none&#39;) + 
+    scale_color_discrete(guide = &#39;none&#39;) +
+    scale_y_continuous(breaks = seq(1, 37, 2)) + 
+    labs(x = &quot;&quot;, y = &quot;Seasons&quot;, title = &quot;How Often Were Challengers On The Show?&quot;,
+         subtitle = &quot;*Only Challengers Appearing On At Least 7 Seasons Ordered By First Appearance*&quot;,
+         caption = &quot;*Source:* Wikipedia | **Author:** Jlaw&quot;) + 
+    coord_flip() + 
+    cowplot::theme_cowplot() + 
+    theme(
+      panel.grid.major.y = element_line(size = .5, color = &#39;#DDDDDD&#39;),
+      plot.title = element_text(hjust = .5),
+      plot.caption = ggtext::element_markdown(),
+      plot.subtitle = ggtext::element_markdown(hjust = .5),
+      axis.ticks.y = element_blank()
+    )</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/dumbbell-1.png" width="768" /></p>
+</div>
+<div id="which-seasons-had-the-highest-percentage-of-one-and-done-challengers" class="section level2">
+<h2>Which Seasons Had the Highest Percentage of “one and done” Challengers?</h2>
+<p>Sometimes the show will bring a cast member on and it doesn’t work out and you never see them again. I can also look at which seasons had the largest number of cast members who were never seen again. Since Season 37 is still airing and we don’t know who will / won’t come back, I’ve excluded that season:</p>
+<pre class="r"><code>all_cast_info %&gt;% 
+  add_count(Name, name = &quot;num_seasons&quot;) %&gt;%
+  filter(num_seasons == 1 &amp; order != 37) %&gt;%
+  count(short_title, year) %&gt;% 
+  ggplot(aes(x = fct_reorder(short_title, n), y = n, fill = year)) + 
+    geom_col() + 
+    geom_text(aes(label = n), hjust = 0) +
+    labs(x = &quot;Season Title&quot;, y = &quot;Number of &#39;one and done&#39; Challengers&quot;,
+         title = &quot;What Season Had the Most &#39;One and Done&#39; Challengers&quot;,
+         subtitle = &quot;Lighter Colors are Later Seasons&quot;,
+         fill = &quot;Season Airing&quot;) +
+    expand_limits(x = 0, y = 0) + 
+    coord_flip() + 
+    cowplot::theme_cowplot() + 
+    theme(
+        legend.position = &#39;bottom&#39;
+    )</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/one_and_done-1.png" width="672" /></p>
+<p>The seasons with the largest number of one and done’s tended to be seasons where the shows had large influxes of new challengers due to different formats. Battle of the Seasons was a very large cast and the first to not have small teams. Battle of the Bloodlines was a concept where 50% of the challengers were family members who had never been on the show and thankfully never were again.</p>
+</div>
+<div id="what-are-the-most-similar-episodes-of-the-challenge" class="section level2">
+<h2>What Are the Most Similar Episodes of the Challenge?</h2>
+<p>I can visualize season similarity in a network graph, however, I need to first restructure the data. Right now I just have all the positive cases but I need to build data that has every person/season combination with 1/0 indicators. Then I can use the <code>pairwise_similarity()</code> function from <code>widyr</code> to get the consine similarity of each season. The <code>upper=F</code> setting makes it so there’s only 1 row for each combination (e.g, only A, B rather than both A,B and B,A):</p>
+<pre class="r"><code>similarity &lt;- all_cast_info %&gt;%
+  #Create an indicator for all the positive cases
+  transmute(order, short_title, Name, ind = 1) %&gt;%
+  # Make a wide data set and fill in 0s for all the negative cases
+  pivot_wider(
+    names_from = &#39;Name&#39;,
+    values_from = &#39;ind&#39;,
+    values_fill = 0
+  ) %&gt;% 
+  # Bring the table back to long format with 1/0s
+  pivot_longer(
+    cols = c(-order, -short_title),
+    names_to = &quot;Name&quot;,
+    values_to = &quot;ind&quot;
+  ) %&gt;% 
+  pairwise_similarity(short_title, Name, ind, upper = F, diag = F) %&gt;% 
+  arrange(-similarity)  %&gt;%
+  filter(similarity &gt; .29)</code></pre>
+<pre class="r"><code>similarity %&gt;% head(3) %&gt;% kable()</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">item1</th>
+<th align="left">item2</th>
+<th align="right">similarity</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Vendettas</td>
+<td align="left">Final Reckoning</td>
+<td align="right">0.6806139</td>
+</tr>
+<tr class="even">
+<td align="left">War of the Worlds</td>
+<td align="left">War of the Worlds 2</td>
+<td align="right">0.5760221</td>
+</tr>
+<tr class="odd">
+<td align="left">Invasion of the Champions</td>
+<td align="left">XXX: Dirty 30</td>
+<td align="right">0.5635760</td>
+</tr>
+</tbody>
+</table>
+<p>The most similar seasons in the data are Vendettas (Season 31) and Final Reckoning (Season 32) which makes sense as these were consecutive seasons that were also the last two pieces of a trilogy.</p>
+<p>The similarity threshold of 0.29 was chosen judgmentally to include as many seasons as possible without over-complicating the graph. The next step in building the network graph itself. I’m setting a seed since the layout in <code>ggraph</code> is non-deterministic and I’d like to make it reproducible. The similarity dataframe is converted to a tbl_graph object with <code>as_tbl_graph</code>, I join in the short titles to from the labels and then set edges to have alpha values (transparency) tied to similarity and use the names for the node labels.</p>
+<pre class="r"><code>set.seed(20210904)
+as_tbl_graph(similarity) %&gt;%
+  #mutate(community = as.factor(group_infomap())) %&gt;%
+  left_join(seasons_table, by = c(&#39;name&#39; = &quot;short_title&quot;)) %&gt;%
+  ggraph(layout = &#39;fr&#39;) + 
+    geom_edge_link(aes(alpha = similarity), width = 1.5) + 
+    geom_node_label(aes(label = name, fill = order), size = 5) + 
+    scale_fill_viridis_c(begin = .3) + 
+    scale_shape_discrete(guide = &#39;none&#39;) + 
+    labs(title = &quot;Network of Challenge Seasons&quot;,
+         subtitle = &quot;Edges measured by Cosine Similarity of Cast&quot;,
+         caption = &quot;All Stars and RW vs RR did not have &gt;.0.29 Similarity to Any Other Season&quot;,
+         alpha = &quot;Cosine Similarity&quot;,
+         fill = &quot;Season #&quot;) + 
+    theme_graph() + 
+    theme(
+      legend.position = &#39;bottom&#39;
+    )</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/network_graph-1.png" width="1152" />
+Through the network graph we can see that the first two seasons aren’t connected to anything and don’t appear and then Seasons 3 and 5 and Seasons 4 and 6 exist in their own clusters. But the rest of the structure you can trace from early seasons to later season.</p>
+</div>
+<div id="clustering-the-seasons-with-hierarchical-clustering" class="section level2">
+<h2>Clustering the Seasons with Hierarchical Clustering</h2>
+<p>Now that EDA is done, its time to determine our eras through clustering. In order to use hierarchical clustering I need to create a distance matrix. So do so I will replicate some of the code from above where each row will be a season and each column a Challenger and the value will be either 1 if they were on that season or 0 otherwise.</p>
+<p>Since this data is binary I will be using a binary distance where 1 and 1 is a match and anything else is a mismatch (e.g, 0 and 0 despite being the same value does not count as similarity). The definition is the proportion of bits in which only one is one among those where at least one is one.</p>
+<p>Then the hierarchical clustering algorithm is run with <code>hclust</code>. There are many different agglomeration methods that can be used ranging from single (where difference between clusters is defined by their closest elements), complete (which defines differences by farthest apart elements), average (which is the average of all the points distance), and Ward which is the minimal distance beween sum of squres. For more information, see this <a href="https://stats.stackexchange.com/questions/195446/choosing-the-right-linkage-method-for-hierarchical-clustering/217742#217742">CrossValidated</a> answer.</p>
+<pre class="r"><code># Cast Data to Wide Format
+dt &lt;- all_cast_info %&gt;%
+  transmute(order, short_title, Name, ind = 1) %&gt;%
+  pivot_wider(
+    names_from = &#39;Name&#39;,
+    values_from = &#39;ind&#39;,
+    values_fill = 0
+  )
+
+# 
+dst &lt;- dt %&gt;%
+  # Remove fields I don&#39;t want part of the distance function
+  select(-order, -short_title) %&gt;%
+  dist(method = &#39;binary&#39;) %&gt;%
+  #the agglomeration method to be used. 
+  # This should be (an unambiguous abbreviation of) one of &quot;ward.D&quot;, 
+  #&quot;ward.D2&quot;, &quot;single&quot;, &quot;complete&quot;, &quot;average&quot; (= UPGMA), &quot;mcquitty&quot; (= WPGMA),
+  #&quot;median&quot; (= WPGMC) or &quot;centroid&quot; (= UPGMC).
+  hclust(method = &#39;ward.D2&#39;)</code></pre>
+<p>I can then visualize the resulting dendrogram using the <code>plot()</code> function and supplying the short_title field I can previously excluded as a label parameter. By looking at the dendrogram it seems like there are five clusters which I will highlight with the <code>rect.hclust</code> function and specifing k=5:</p>
+<pre class="r"><code>plot(dst, labels = dt$short_title, 
+     main = &#39;Hierarchical Clustering of Challenge Seasons&#39;,
+     xlab = &#39;&#39;)
+rect.hclust(dst, k = 5)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/dendrogram-1.png" width="672" />
+Based on the dendrogram, there are five clusters:</p>
+<ul>
+<li>Cluster 1: Seasons 1 (All Stars) through 11 (Gauntlet 2)</li>
+</ul>
+<p>This are the originals before they brought in people who weren’t on either Real World or Road Rules</p>
+<ul>
+<li>Cluster 2: Seasons 12 (Fresh Meat) through 18 (The Ruins)</li>
+</ul>
+<p>Fresh Meat is the first season where people not appealing on a prior MTV show joined. This group of new people also formed a core backbone of the show for the next block of seasons.</p>
+<ul>
+<li>Cluster 3: Seasons 19 (Fresh Meat 2) through Season 26 (Battle of the Exes 2)</li>
+</ul>
+<p>In Fresh Meat 2, they again introduce half of the cast that were new.</p>
+<ul>
+<li>Cluster 4: Seasons 27 (Battle of the Bloodlines) through Season 32 (Final Reckoning)</li>
+</ul>
+<p>Battle of the Bloodlines, similar to Fresh Meat, was a season where half the cast was new. Although this time they were family members rather than unaffiliated challengers.</p>
+<ul>
+<li>Cluster 5: Season 33 (War of the World) through Season 37 (Current Season)</li>
+</ul>
+<p>War of the Worlds was again a large influx of new cast members</p>
+<p>So it seems like the algorithm latched on to changepoints where the casts became heavily rookies, which would make sense since that is a forced dissimilarity.</p>
+<p>Going back to the data, I can then add the get the cluster results through the <code>cuttree</code> function and providing it with the k=5 value and add it back to the original dataset with <code>mutate()</code>:</p>
+<pre class="r"><code>h_clust_results &lt;- dt %&gt;%
+  mutate(cluster = cutree(dst, k = 5))</code></pre>
+</div>
+<div id="dimensionality-reduction-with-umap" class="section level2">
+<h2>Dimensionality Reduction with UMAP</h2>
+<p>The data set used for the clustering contained 37 rows representing each season of The Challenge and 360 columns representing every challenge who has ever been on the show. This type of data is prime for dimensionality reduction. Uniform Manifold Approximation and Projection (UMAP) is a dimensional technique that can be used for dimensionality reduction and visualization similar to T-SNE. The UMAP algorithm can be found in the <code>umap</code> package.</p>
+<p>Running UMAP is pretty straightforward with the <code>umap()</code> function and here I provide it the very wide data set used for cluster. In the returned object there is an element called <em>layout</em> which contains the compressed two dimensional space returned by UMAP.</p>
+<pre class="r"><code>set.seed(20210904)
+ump &lt;- umap(dt %&gt;% select(-order, -short_title))</code></pre>
+<p>I can add those dimensions to the clustering results from above to see how closely the UMAP compression will match the clustering from the <code>hclust</code> function:</p>
+<pre class="r"><code>h_clust_results %&gt;% 
+  select(order, short_title, cluster) %&gt;%
+  mutate(
+    dim1 = ump$layout[, 1],
+    dim2 = ump$layout[, 2]
+  ) %&gt;%
+  ggplot(aes(x = dim1, y = dim2, color = factor(cluster))) + 
+  geom_text(aes(label = short_title)) + 
+  labs(title = &#39;UMAP Projection of Challenge Seasons&#39;,
+       subtitle = &quot;Colors Represent Prior Clustering&quot;) + 
+  scale_color_discrete(guide = &#39;none&#39;) + 
+  cowplot::theme_cowplot() + 
+  theme(
+    axis.ticks = element_blank(),
+    axis.text = element_blank()
+  )</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/umap_viz-1.png" width="672" />
+Overall, the UMAP projection captures similar information to the clustering since both methods were unsupervised and the colors (the prior clusters) are very close in the UMAP projected space.</p>
+<div id="predicting-new-observations-with-umap" class="section level3">
+<h3>Predicting New Observations with UMAP</h3>
+<p>In the summer of 2020, <a href="https://en.wikipedia.org/wiki/The_Challenge:_All_Stars">THe Challenge: All Stars</a> aired on Paramount+. The series was intended to bring back fan favorites from early seasons of the challenge (although whether the actual cast would be considered fan favorites, all-stars, or from early seasons was debatable). An interesting final question to ask is: <em>what cluster would The Challenge: All Stars belong to in the UMAP space?</em>.</p>
+<p>This next block of code is going to do a lot of heavy lifting but isn’t dissimilar from what was done in the earlier parts of this post. I will be downloading the cast from Wikipedia, cleaning it (more marriages and nicknames), and adding it to the original data set to get the 0 cases and the filtering it back to The Challenge: All Stars season.</p>
+<pre class="r"><code>all_stars &lt;- 
+  # Take Original Data Set
+  all_cast_info %&gt;%
+  # Add Indicators
+  transmute(order, short_title, Name, ind = 1) %&gt;%
+  # Get the New Challenge Season
+  bind_rows(
+    get_cast(&#39;wiki/The_Challenge:_All_Stars&#39;, &#39;3, 4&#39;, &#39;1&#39;, &#39;The Challenge: All Stars&#39;, 99)  %&gt;%
+      transmute(order, short_title = title, Name, ind = 1)  %&gt;%
+      #Cleaning Names
+      mutate(
+        Name = case_when(
+          Name == &quot;Katie Cooley&quot; ~ &quot;Katie Doyle&quot;,
+          Name ==  &#39;Eric &quot;Big Easy&quot; Banks&#39; ~ &#39;Eric Banks&#39;,
+          Name == &#39;Teck Holmes&#39; ~ &#39;Tecumshea &quot;Teck&quot; Holmes III&#39;,
+          TRUE ~ Name
+        )
+      )
+  ) %&gt;% 
+  # Cast to Wider
+  pivot_wider(
+    names_from = &#39;Name&#39;,
+    values_from = &#39;ind&#39;,
+    values_fill = 0
+  ) %&gt;% 
+  # Filter back to the All Stars Season
+  filter(short_title == &#39;The Challenge: All Stars&#39;) %&gt;%
+  # Removing Things that Won&#39;t Be Predicted
+  select(-order, -short_title)</code></pre>
+<p>Then predicting the All Stars season in the UMAP space can be done similar to other predictions in R with the <code>predict</code> function:</p>
+<pre class="r"><code>all_stars_pred &lt;- predict(ump, all_stars)</code></pre>
+<p>which returns a matrix with 1 row for the reason and 2 columns for the UMAP x and y dimensions. Then this can be visualized on top of the original UMAP projection.</p>
+<pre class="r"><code># Take Original Data
+h_clust_results %&gt;% 
+  select(order, short_title, cluster) %&gt;%
+  # Add in the original UMAP data
+  mutate(
+    dim1 = ump$layout[, 1],
+    dim2 = ump$layout[, 2]
+  ) %&gt;%
+  ggplot(aes(x = dim1, y = dim2, color = factor(cluster))) +
+  #ggrepel::geom_text_repel(aes(label = short_title)) + 
+  geom_text(aes(label = short_title)) +
+  # Add Annotation for the Challenge All Stars Season with the predicted
+  # projection.
+  annotate(
+    &#39;label&#39;,
+    label = &#39;The Challenge: All Stars&#39;,
+            x = all_stars_pred[, 1],
+            y = all_stars_pred[, 2],
+            color = &#39;black&#39;) + 
+  labs(title = &#39;Predicting Challenge All-Stars Onto Prior UMAP Projection&#39;,
+       subtitle = &quot;Colors Represent Prior Clustering&quot;) + 
+  scale_color_discrete(guide = &#39;none&#39;) + 
+  scale_fill_discrete(guide = &#39;none&#39;) + 
+  cowplot::theme_cowplot() + 
+  theme(
+    axis.ticks = element_blank(),
+    axis.text = element_blank()
+  )</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/viz_new_umap-1.png" width="672" />
+It seems like Challenge All-Stars would be part of the first cluster of the original group of seasons but is somewhat between the “green cluster” which could make sense as there were a couple of cast members on the show who first showed up in Battle of the Seasons 2.</p>
+</div>
+</div>
