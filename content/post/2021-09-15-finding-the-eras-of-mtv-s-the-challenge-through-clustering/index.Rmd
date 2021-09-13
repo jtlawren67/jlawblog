@@ -38,7 +38,7 @@ Since the cast of characters has continuously evolved over the 37 seasons, I tho
 library(tidygraph) # For manipulating network data sets
 library(ggraph) # For visualizing network data sets
 library(tidyverse) # General Data Manipulation
-library(rvest) # For webscraping data from wikipedia
+library(rvest) # For web scraping data from Wikipedia
 library(widyr) # For calculating cosine similarity of seasons
 library(umap) # For dimensionality reduction
 
@@ -46,7 +46,7 @@ library(umap) # For dimensionality reduction
 
 ## Getting the Data
 
-Since the goal is to cluster the seasons of the The Challenge based on similarity of their casts, I need to get the cast list from each of the 37 seasons.  Fortunately, Wikipedia contains the casts within each season's page.  Unfortunately, I'm lazy and really don't want to specifically hunt down the URLs for each of 37 seasons and write individual rvest code.  So I'll use the [Seasons](https://en.wikipedia.org/wiki/The_Challenge_(TV_series)#Seasons) table on Wikipedia to act as a driver file for each season's page using `rvest` to extract the table using its xpath, pulling out all of the anchor elements (<a>) *html_attrs()* to extract all of the attributes into a list and using `purrr`'s `map_dfr` function to combine all of the links into a list.  Unforunately, there are multiple links on row of the table (one for the title and one of the location of the season), so using `stringr`'s *str_detect*, I'll keep only the rows that has the word "Challenge" in the title.  Or "Stars" in the case of the first season which was just called "Road Rules: All-Stars".
+Since the goal is to cluster the seasons of the The Challenge based on similarity of their casts, I need to get the cast list from each of the 37 seasons.  Fortunately, Wikipedia contains the casts within each season's page.  Unfortunately, I'm lazy and really don't want to specifically hunt down the URLs for each of 37 seasons and write individual rvest code.  So I'll use the [Seasons](https://en.wikipedia.org/wiki/The_Challenge_(TV_series)#Seasons) table on Wikipedia to act as a driver file for each season's page using `rvest` to extract the table using its xpath, pulling out all of the anchor elements (<a>) *html_attrs()* to extract all of the attributes into a list and using `purrr`'s `map_dfr` function to combine all of the links into a list.  Unfortunately, there are multiple links on row of the table (one for the title and one of the location of the season), so using `stringr`'s *str_detect*, I'll keep only the rows that has the word "Challenge" in the title.  Or "Stars" in the case of the first season which was just called "Road Rules: All-Stars".
 
 ```{r driver}
 seasons <- read_html('https://en.wikipedia.org/wiki/The_Challenge_(TV_series)') %>%
@@ -90,16 +90,18 @@ In the original Battle of the Seasons there were pairs (one male and one female 
 There was no easy way (or at least one that I wanted to deal with) to automatically classify each of the 37 seasons into these three types so I manually looked at all 37 season Wikipedia pages and coded in which tables to extract and which columns to extract within each table.
 
 ```{r table_metadata}
-## Set up which tables and columns to extract from WikiPedia
+## Set up which tables and columns to extract from Wikipedia
 seasons <- seasons %>%
   mutate(
     season_num = row_number(), #Define Season Identifier
+    # Set Table Numbers On Page To Extract
     table_num = case_when(
       season_num %in% c(1, 12, 16, 19) ~ '2',
       season_num %in% c(27) ~ '3',
       season_num %in% c(2, 4, 5, 6, 9, 11) ~ '4,5',
       TRUE ~ '3, 4'
     ),
+    # Set Column Numbers to Extract From Each Table
     keep_cols = case_when(
       season_num %in% c(5) ~ '1, 2',
       season_num %in% c(12, 19, 27) ~ '1, 3',
@@ -175,7 +177,7 @@ kable(
 ### Cleaning the Data and Final Preparations
 
 The data on Wikipedia is *fairly* clean but there are places where automation is no substitute for domain knowledge.  In this case the cast tables refer to what people were called in that specific season.  But in some cases as cast members have returned for multiple seasons what they have been called has changed.  For example. the now host of NBC's First Look, Johnny “Bananas” Devenanzio, began his time on The Challenge as "John Devenanzio", then "Johnny Devenanzio
-", and finally, "Johnny 'Bananas' Devenanzio" for his most recent 12 seasons.  Some female cast members married as "Tori Hall" became "Tori Fiorenza".  And in the most subtle of changes, "Nany González" appears both with and without the accent over the "a" (huge shoutout to the [r/MtvChallenge](https://www.reddit.com/r/MtvChallenge/comments/pj8by1/oc_visualizing_the_most_frequently_appearing/) sub-reddit for calling me out on that when it cause Nany to not appear in my data visualization).
+", and finally, "Johnny 'Bananas' Devenanzio" for his most recent 12 seasons.  Some female cast members married as "Tori Hall" became "Tori Fiorenza".  And in the most subtle of changes, "Nany González" appears both with and without the accent over the "a" (huge shoutout to the [r/MtvChallenge](https://www.reddit.com/r/MtvChallenge/comments/pj8by1/oc_visualizing_the_most_frequently_appearing/) sub-Reddit for calling me out on that when it cause Nany to not appear in my data visualization).
 
 Other changes are less interesting such as removing footnotes from people's names, fixing that in the Seasons table both Season 5 and Season 23 are called "Battle of the Seasons", and appending the season's names onto the cast table
 
@@ -241,14 +243,14 @@ As any Challenge fan knows, Johnny Bananas has been on the most seasons with 20 
 
 An interesting visualization we can do is to explore how frequently Challengers are on consecutive seasons using a series of dumbbell plots.  In this plot there will be a point for each endpoint of a stretch of consecutive seasons and they will be connected by a line.
 
-Check out the post on the [r/MtvChallenge](https://www.reddit.com/r/MtvChallenge/comments/pj8by1/oc_visualizing_the_most_frequently_appearing/) sub-reddit for a nicer (although slightly wrong) version of this plot.
+Check out the post on the [r/MtvChallenge](https://www.reddit.com/r/MtvChallenge/comments/pj8by1/oc_visualizing_the_most_frequently_appearing/) sub-Reddit for a nicer (although slightly wrong) version of this plot.
 
-```{r dumbbell, fig.height=12, fig.width=8}
+```{r dumbbell}
 all_cast_info %>% 
     ## Add the number of seasons for each challenger as a new column
     add_count(Name, name = 'num_seasons') %>%
-    # Filter to only those who have been on 7+ seasons
-    filter(num_seasons >= 7) %>%
+    # Filter to only those who have been on 10+ seasons
+    filter(num_seasons >= 10) %>%
     # For each challenger define consecutive segments based on when the prior
     # season number is more than 1 or missing (for the first observation)
     group_by(Name) %>%
@@ -272,15 +274,15 @@ all_cast_info %>%
     scale_color_discrete(guide = 'none') +
     scale_y_continuous(breaks = seq(1, 37, 2)) + 
     labs(x = "", y = "Seasons", title = "How Often Were Challengers On The Show?",
-         subtitle = "*Only Challengers Appearing On At Least 7 Seasons Ordered By First Appearance*",
+         subtitle = "*Only Challengers Appearing On At Least 10 Seasons Ordered By First Appearance*",
          caption = "*Source:* Wikipedia | **Author:** Jlaw") + 
     coord_flip() + 
     cowplot::theme_cowplot() + 
     theme(
       panel.grid.major.y = element_line(size = .5, color = '#DDDDDD'),
-      plot.title = element_text(hjust = .5),
+      plot.subtitle = ggtext::element_markdown(),
+      plot.title.position = 'plot',
       plot.caption = ggtext::element_markdown(),
-      plot.subtitle = ggtext::element_markdown(hjust = .5),
       axis.ticks.y = element_blank()
     )
 
@@ -291,7 +293,7 @@ all_cast_info %>%
 
 Sometimes the show will bring a cast member on and it doesn't work out and you never see them again.  I can also look at which seasons had the largest number of cast members who were never seen again.  Since Season 37 is still airing and we don't know who will / won't come back, I've excluded that season:
 
-```{r one_and_done, fig.height=8}
+```{r one_and_done, fig.height=7}
 all_cast_info %>% 
   add_count(Name, name = "num_seasons") %>%
   filter(num_seasons == 1 & order != 37) %>%
@@ -302,11 +304,15 @@ all_cast_info %>%
     labs(x = "Season Title", y = "Number of 'one and done' Challengers",
          title = "What Season Had the Most 'One and Done' Challengers",
          subtitle = "Lighter Colors are Later Seasons",
-         fill = "Season Airing") +
+         fill = "Year Aired") +
+    scale_y_continuous(expand = expansion(mult = c(0, .1))) + 
+    scale_fill_viridis_c() + 
+    guides (fill = guide_colourbar(barwidth = 15, barheight = 0.5)) + 
     expand_limits(x = 0, y = 0) + 
     coord_flip() + 
     cowplot::theme_cowplot() + 
     theme(
+        plot.title.position = 'plot',
         legend.position = 'bottom'
     )
 ```
@@ -315,7 +321,7 @@ The seasons with the largest number of one and done's tended to be seasons where
 
 ## What Are the Most Similar Episodes of the Challenge?
 
-I can visualize season similarity in a network graph, however, I need to first restructure the data.  Right now I just have all the positive cases but I need to build data that has every person/season combination with 1/0 indicators.  Then I can use the `pairwise_similarity()` function from `widyr` to get the consine similarity of each season.  The `upper=F` setting makes it so there's only 1 row for each combination (e.g, only A, B rather than both A,B and B,A):
+I can visualize season similarity in a network graph, however, I need to first restructure the data.  Right now I just have all the positive cases but I need to build data that has every person/season combination with 1/0 indicators.  Then I can use the `pairwise_similarity()` function from `widyr` to get the cosine similarity of each season.  The `upper=F` setting makes it so there's only 1 row for each combination (e.g, only A, B rather than both A,B and B,A):
 
 ```{r similarity}
 similarity <- all_cast_info %>%
@@ -339,17 +345,16 @@ similarity <- all_cast_info %>%
 
 ```
 
-```{r show_similarity}
+```{r show_similarity, echo=FALSE}
 similarity %>% head(3) %>% kable()
 ```
 The most similar seasons in the data are Vendettas (Season 31) and Final Reckoning (Season 32) which makes sense as these were consecutive seasons that were also the last two pieces of a trilogy.
 
-The similarity threshold of 0.29 was chosen judgmentally to include as many seasons as possible without over-complicating the graph.  The next step in building the network graph itself.  I'm setting a seed since the layout in `ggraph` is non-deterministic and I'd like to make it reproducible.  The similarity dataframe is converted to a tbl_graph object with `as_tbl_graph`, I join in the short titles to from the labels and then set edges to have alpha values (transparency) tied to similarity and use the names for the node labels.
+The similarity threshold of 0.29 was chosen judgmentally to include as many seasons as possible without over-complicating the graph.  The next step in building the network graph itself.  I'm setting a seed since the layout in `ggraph` is non-deterministic and I'd like to make it reproducible.  The similarity data frame is converted to a tbl_graph object with `as_tbl_graph`, I join in the short titles to from the labels and then set edges to have alpha values (transparency) tied to similarity and use the names for the node labels.
 
 ```{r network_graph, fig.width=12, fig.height=12}
 set.seed(20210904)
 as_tbl_graph(similarity) %>%
-  #mutate(community = as.factor(group_infomap())) %>%
   left_join(seasons_table, by = c('name' = "short_title")) %>%
   ggraph(layout = 'fr') + 
     geom_edge_link(aes(alpha = similarity), width = 1.5) + 
@@ -374,7 +379,7 @@ Now that EDA is done, its time to determine our eras through clustering.  In ord
 
 Since this data is binary I will be using a binary distance where 1 and 1 is a match and anything else is a mismatch (e.g, 0 and 0 despite being the same value does not count as similarity).  The definition is the proportion of bits in which only one is one among those where at least one is one.
 
-Then the hierarchical clustering algorithm is run with `hclust`.  There are many different agglomeration methods that can be used ranging from single (where difference between clusters is defined by their closest elements), complete (which defines differences by farthest apart elements), average (which is the average of all the points distance), and Ward which is the minimal distance beween sum of squres.  For more information, see this [CrossValidated](https://stats.stackexchange.com/questions/195446/choosing-the-right-linkage-method-for-hierarchical-clustering/217742#217742) answer.
+Then the hierarchical clustering algorithm is run with `hclust`.  There are many different agglomeration methods that can be used ranging from single (where difference between clusters is defined by their closest elements), complete (which defines differences by farthest apart elements), average (which is the average of all the points distance), and Ward which is the minimal distance between sum of squares.  For more information, see this [CrossValidated](https://stats.stackexchange.com/questions/195446/choosing-the-right-linkage-method-for-hierarchical-clustering/217742#217742) answer.
 
 ```{r hclust}
 # Cast Data to Wide Format
@@ -399,7 +404,7 @@ dst <- dt %>%
 
 ```
 
-I can then visualize the resulting dendrogram using the `plot()` function and supplying the short_title field I can previously excluded as a label parameter.  By looking at the dendrogram it seems like there are five clusters which I will highlight with the `rect.hclust` function and specifing k=5:
+I can then visualize the resulting dendrogram using the `plot()` function and supplying the short_title field I can previously excluded as a label parameter.  By looking at the dendrogram it seems like there are five clusters which I will highlight with the `rect.hclust` function and specifying k=5:
 
 ```{r dendrogram}
 plot(dst, labels = dt$short_title, 
@@ -430,7 +435,7 @@ Battle of the Bloodlines, similar to Fresh Meat, was a season where half the cas
 
 War of the Worlds was again a large influx of new cast members 
 
-So it seems like the algorithm latched on to changepoints where the casts became heavily rookies, which would make sense since that is a forced dissimilarity.
+So it seems like the algorithm latched on to change points where the casts became heavily rookies, which would make sense since that is a forced dissimilarity.
 
 Going back to the data, I can then add the get the cluster results through the `cuttree` function and providing it with the k=5 value and add it back to the original dataset with `mutate()`:
 
@@ -475,7 +480,7 @@ Overall, the UMAP projection captures similar information to the clustering sinc
 
 ### Predicting New Observations with UMAP
 
-In the summer of 2020, [THe Challenge: All Stars](https://en.wikipedia.org/wiki/The_Challenge:_All_Stars) aired on Paramount+.  The series was intended to bring back fan favorites from early seasons of the challenge (although whether the actual cast would be considered fan favorites, all-stars, or from early seasons was debatable).  An interesting final question to ask is: *what cluster would The Challenge: All Stars belong to in the UMAP space?*.
+In the summer of 2020, [The Challenge: All Stars](https://en.wikipedia.org/wiki/The_Challenge:_All_Stars) aired on Paramount+.  The series was intended to bring back fan favorites from early seasons of the challenge (although whether the actual cast would be considered fan favorites, all-stars, or from early seasons was debatable).  An interesting final question to ask is: *what cluster would The Challenge: All Stars belong to in the UMAP space?*.
 
 This next block of code is going to do a lot of heavy lifting but isn't dissimilar from what was done in the earlier parts of this post.  I will be downloading the cast from Wikipedia, cleaning it (more marriages and nicknames), and adding it to the original data set to get the 0 cases and the filtering it back to The Challenge: All Stars season.
 
