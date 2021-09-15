@@ -25,8 +25,8 @@ projects: []
 <script src="{{< blogdown/postref >}}index_files/header-attrs/header-attrs.js"></script>
 
 
-<p>Since 1998, <a href="https://en.wikipedia.org/wiki/The_Challenge_(TV_series)">MTV’s The Challenge</a> (formerly the Real World/Road Rules Challenge) has graced the airwaves where it is currently in Season 37. In a prior <a href="https://jlaw.netlify.app/2021/03/01/exploring-wednesday-night-cable-ratings-with-ocr/">post</a> I had mentioned that this is one of my guilty pleasure shows so this will likely not be the last post that is based around the Challenge.</p>
-<p>For casting the show, the early years revolved around having alumni from MTV’s The Real World and Road Rules compete against each other (in an odd bit of irony or misnaming, the first season called Real World: All Stars actually consisted of <strong>only</strong> Real World alumni). Over the next 37 seasons, the series has evolved bringing in other MTV properties such as “Are You the One?” and expanding internationally to properties like “Survivor: Turkey” and “Love Island UK”.</p>
+<p>Since 1998, <a href="https://en.wikipedia.org/wiki/The_Challenge_(TV_series)">MTV’s The Challenge</a> (formerly the Real World/Road Rules Challenge) has graced the airwaves where it is currently in Season 37. In a prior <a href="https://jlaw.netlify.app/2021/03/01/exploring-wednesday-night-cable-ratings-with-ocr/">post</a> I had mentioned that this is one of my guilty pleasure shows so this will likely not be the last post that is based around <a href="https://www.complex.com/pop-culture/2015/01/the-challenge-mtv-americas-fifth-sport">America’s 5th professional sport</a>.</p>
+<p>For casting the show, the early years revolved around having alumni from MTV’s The Real World and Road Rules compete against each other (in an odd bit of irony or misnaming, the first season called Road Rules: All Stars actually consisted of <strong>only</strong> Real World alumni). Over the next 37 seasons, the series has evolved bringing in other MTV properties such as “Are You the One?” and expanding internationally to properties like “Survivor: Turkey” and “Love Island UK”.</p>
 <p>Since the cast of characters has continuously evolved over the 37 seasons, I thought it would be interested to see if I can algorithmically classify the eras of the show based on the cast of each season through Hierarchical Clustering and visualizing using UMAP.</p>
 <div id="libraries" class="section level2">
 <h2>Libraries</h2>
@@ -39,7 +39,8 @@ library(umap) # For dimensionality reduction</code></pre>
 </div>
 <div id="getting-the-data" class="section level2">
 <h2>Getting the Data</h2>
-<p>Since the goal is to cluster the seasons of the The Challenge based on similarity of their casts, I need to get the cast list from each of the 37 seasons. Fortunately, Wikipedia contains the casts within each season’s page. Unfortunately, I’m lazy and really don’t want to specifically hunt down the URLs for each of 37 seasons and write individual rvest code. So I’ll use the <a href="https://en.wikipedia.org/wiki/The_Challenge_(TV_series)#Seasons">Seasons</a> table on Wikipedia to act as a driver file for each season’s page using <code>rvest</code> to extract the table using its xpath, pulling out all of the anchor elements (<a>) <em>html_attrs()</em> to extract all of the attributes into a list and using <code>purrr</code>’s <code>map_dfr</code> function to combine all of the links into a list. Unfortunately, there are multiple links on row of the table (one for the title and one of the location of the season), so using <code>stringr</code>’s <em>str_detect</em>, I’ll keep only the rows that has the word “Challenge” in the title. Or “Stars” in the case of the first season which was just called “Road Rules: All-Stars”.</p>
+<p>Since the goal is to cluster the seasons of the The Challenge based on similarity of their casts, I need to get the cast list from each of the 37 seasons. Fortunately, Wikipedia contains the casts within each season’s page. Unfortunately, I’m lazy and really don’t want to specifically hunt down the URLs for each of 37 seasons and write individual rvest code.</p>
+<p>So I’ll use the <a href="https://en.wikipedia.org/wiki/The_Challenge_(TV_series)#Seasons">Seasons</a> table on Wikipedia to act as a driver file for each season’s page using <code>rvest</code> to extract the table using its xpath, pulling out all of the anchor elements (<code>&lt;a&gt;</code>), using <em>html_attrs()</em> to extract all of the attributes into a list and using <code>purrr</code>’s <code>map_dfr</code> function to combine all of the links into a list. Unfortunately, there are multiple links on row of the table (one for the title and one of the location of the season), so using <code>stringr</code>’s <em>str_detect</em>, I’ll keep only the rows that has the word “Challenge” in the title. Or “Stars” in the case of the first season which was just called “Road Rules: All-Stars”.</p>
 <pre class="r"><code>seasons &lt;- read_html(&#39;https://en.wikipedia.org/wiki/The_Challenge_(TV_series)&#39;) %&gt;%
   html_element(xpath = &#39;/html/body/div[3]/div[3]/div[5]/div[1]/table[2]&#39;) %&gt;% 
   html_elements(&#39;a&#39;) %&gt;% 
@@ -74,23 +75,7 @@ library(umap) # For dimensionality reduction</code></pre>
 </tbody>
 </table>
 <p>The dataset now has the Wikipedia link for each season in the <em>href</em> column and a more human-reading title in the <em>title</em> column.</p>
-<p>The next problem to tackle is iterating through each season to extract the cast table. The issue here is that the Cast table is not uniform on each season’s page and the cast table is not always the same ordered table. In fact, there are three classes of tables to have to deal with:</p>
-<ol style="list-style-type: decimal">
-<li>Multiple Tables - Single Names</li>
-</ol>
-<p>For many of The Challenge seasons there are two teams (originally Real World vs. Road Rules but eventually taking on other themes like Rookies vs. Vets, Champions vs. Challengers, etc.). In this cases, there are two tables to exact with each table having one column for cast the member name.</p>
-<p><img src="two_table_one_name.png" /></p>
-<ol start="2" style="list-style-type: decimal">
-<li>Single Table - Two Names</li>
-</ol>
-<p>In seasons where there are pairs instead of teams, such as Fresh Meat, Rivals and Battle of the Exes, there will be one table for the cast but two columns of names to extract.</p>
-<p><img src="one_table_two_names.PNG" /></p>
-<ol start="3" style="list-style-type: decimal">
-<li>Multiple Tables - Two Names</li>
-</ol>
-<p>In the original Battle of the Seasons there were pairs (one male and one female from each season) that were also classified into teams (Real World or Road Rules). For this season, there were two tables to extract and each with two columns, one for the male and one for the female.</p>
-<p><img src="two_table_two_names.jpg" /></p>
-<p>There was no easy way (or at least one that I wanted to deal with) to automatically classify each of the 37 seasons into these three types so I manually looked at all 37 season Wikipedia pages and coded in which tables to extract and which columns to extract within each table.</p>
+<p>The next problem to tackle is iterating through each season to extract the cast table. The issue here is that the Cast table is not uniform on each season’s page and the cast table is not always the same ordered table. So in the end I did have to look at all 37 pages to determine which tables and which columns within those tables to extract.</p>
 <pre class="r"><code>## Set up which tables and columns to extract from Wikipedia
 seasons &lt;- seasons %&gt;%
   mutate(
@@ -109,7 +94,7 @@ seasons &lt;- seasons %&gt;%
       TRUE ~ &#39;1&#39;
     )
   )</code></pre>
-<p>For example, the default was Multiple Tables - One Column where the two tables were the 3rd and 4th tables on the page and we only needed the first column.</p>
+<p>For example, the default was where the two tables to extract were the 3rd and 4th tables on the page and I only needed the first column.</p>
 <p>With this additional metadata, I could now write a function to read the URL and extract the correct tables and table columns:</p>
 <pre class="r"><code>### Write Function to Scrape the Names
 get_cast &lt;- function(url, table_num, keep_cols, title, order){
@@ -369,12 +354,13 @@ as_tbl_graph(similarity) %&gt;%
     geom_node_label(aes(label = name, fill = order), size = 5) + 
     scale_fill_viridis_c(begin = .3) + 
     scale_shape_discrete(guide = &#39;none&#39;) + 
+    scale_x_continuous(expand = expansion(add = c(.6, .8))) +
     labs(title = &quot;Network of Challenge Seasons&quot;,
          subtitle = &quot;Edges measured by Cosine Similarity of Cast&quot;,
          caption = &quot;All Stars and RW vs RR did not have &gt;.0.29 Similarity to Any Other Season&quot;,
          alpha = &quot;Cosine Similarity&quot;,
          fill = &quot;Season #&quot;) + 
-    theme_graph() + 
+    theme_graph(plot_margin = margin(30, 0, 0, 30)) + 
     theme(
       legend.position = &#39;bottom&#39;
     )</code></pre>
@@ -383,9 +369,9 @@ Through the network graph we can see that the first two seasons aren’t connect
 </div>
 <div id="clustering-the-seasons-with-hierarchical-clustering" class="section level2">
 <h2>Clustering the Seasons with Hierarchical Clustering</h2>
-<p>Now that EDA is done, its time to determine our eras through clustering. In order to use hierarchical clustering I need to create a distance matrix. So do so I will replicate some of the code from above where each row will be a season and each column a Challenger and the value will be either 1 if they were on that season or 0 otherwise.</p>
-<p>Since this data is binary I will be using a binary distance where 1 and 1 is a match and anything else is a mismatch (e.g, 0 and 0 despite being the same value does not count as similarity). The definition is the proportion of bits in which only one is one among those where at least one is one.</p>
-<p>Then the hierarchical clustering algorithm is run with <code>hclust</code>. There are many different agglomeration methods that can be used ranging from single (where difference between clusters is defined by their closest elements), complete (which defines differences by farthest apart elements), average (which is the average of all the points distance), and Ward which is the minimal distance between sum of squares. For more information, see this <a href="https://stats.stackexchange.com/questions/195446/choosing-the-right-linkage-method-for-hierarchical-clustering/217742#217742">CrossValidated</a> answer.</p>
+<p>Now that EDA is done, its time to determine our eras through clustering. In order to use hierarchical clustering I need to create a distance matrix. To do so I will replicate some of the code from above where each row will be a season and each column a Challenger and the value will be either 1 if they were on that season or 0 otherwise.</p>
+<p>Since this data is binary I will be using a binary distance where 1 and 1 is a match and any 1/0 pair is a mismatch (e.g, 0 and 0 despite being the same value does not count as similarity). The definition is the proportion of bits in which only one is on among those where at least one is on.</p>
+<p>Then the hierarchical clustering algorithm is run with <code>hclust</code>. There are many different agglomeration methods that can be used ranging from <strong>single</strong> (where difference between clusters is defined by their closest elements), <strong>complete</strong> (which defines differences by farthest apart elements), <strong>average</strong> (which is the average of all the points distance), and <strong>Ward</strong> which is the minimal distance between sum of squares. For more information, see this <a href="https://stats.stackexchange.com/questions/195446/choosing-the-right-linkage-method-for-hierarchical-clustering/217742#217742">CrossValidated</a> answer.</p>
 <pre class="r"><code># Cast Data to Wide Format
 dt &lt;- all_cast_info %&gt;%
   transmute(order, short_title, Name, ind = 1) %&gt;%
@@ -401,51 +387,89 @@ dst &lt;- dt %&gt;%
   select(-order, -short_title) %&gt;%
   dist(method = &#39;binary&#39;) %&gt;%
   #the agglomeration method to be used. 
-  # This should be (an unambiguous abbreviation of) one of &quot;ward.D&quot;, 
-  #&quot;ward.D2&quot;, &quot;single&quot;, &quot;complete&quot;, &quot;average&quot; (= UPGMA), &quot;mcquitty&quot; (= WPGMA),
-  #&quot;median&quot; (= WPGMC) or &quot;centroid&quot; (= UPGMC).
   hclust(method = &#39;ward.D2&#39;)</code></pre>
-<p>I can then visualize the resulting dendrogram using the <code>plot()</code> function and supplying the short_title field I can previously excluded as a label parameter. By looking at the dendrogram it seems like there are five clusters which I will highlight with the <code>rect.hclust</code> function and specifying k=5:</p>
+<p>I can then visualize the resulting dendrogram using the <code>plot()</code> function and supplying the short_title field I previously excluded as a label parameter. By looking at the dendrogram it seems like there are five clusters which I will highlight with the <code>rect.hclust</code> function and specifying k=5:</p>
 <pre class="r"><code>plot(dst, labels = dt$short_title, 
      main = &#39;Hierarchical Clustering of Challenge Seasons&#39;,
      xlab = &#39;&#39;)
 rect.hclust(dst, k = 5)</code></pre>
 <p><img src="{{< blogdown/postref >}}index_files/figure-html/dendrogram-1.png" width="672" />
 Based on the dendrogram, there are five clusters:</p>
-<ul>
-<li>Cluster 1: Seasons 1 (All Stars) through 11 (Gauntlet 2)</li>
-</ul>
-<p>This are the originals before they brought in people who weren’t on either Real World or Road Rules</p>
-<ul>
-<li>Cluster 2: Seasons 12 (Fresh Meat) through 18 (The Ruins)</li>
-</ul>
-<p>Fresh Meat is the first season where people not appealing on a prior MTV show joined. This group of new people also formed a core backbone of the show for the next block of seasons.</p>
-<ul>
-<li>Cluster 3: Seasons 19 (Fresh Meat 2) through Season 26 (Battle of the Exes 2)</li>
-</ul>
-<p>In Fresh Meat 2, they again introduce half of the cast that were new.</p>
-<ul>
-<li>Cluster 4: Seasons 27 (Battle of the Bloodlines) through Season 32 (Final Reckoning)</li>
-</ul>
-<p>Battle of the Bloodlines, similar to Fresh Meat, was a season where half the cast was new. Although this time they were family members rather than unaffiliated challengers.</p>
-<ul>
-<li>Cluster 5: Season 33 (War of the World) through Season 37 (Current Season)</li>
-</ul>
-<p>War of the Worlds was again a large influx of new cast members</p>
+<table>
+<tr>
+<th>
+</th>
+<th>
+Cluster #1
+</th>
+<th>
+Cluster #2
+</th>
+<th>
+Cluster #3
+</th>
+<th>
+Cluster #4
+</th>
+<th>
+Cluster #5
+</th>
+</tr>
+<tr>
+<td>
+Seasons:
+</td>
+<td>
+1 (All-Stars) to 11 (Gauntlet 2)
+</td>
+<td>
+12 (Fresh Meat) to 18 (The Ruins)
+</td>
+<td>
+19 (Fresh Meat 2) to 26 (Battle of the Exes 2)
+</td>
+<td>
+27 (Battle of the Bloodlines) to 32 (Final Reckoning)
+</td>
+<td>
+33 (War of the Worlds) to 37 (Spies, Lies, and Allies)
+</td>
+<tr>
+<td>
+Why?
+</td>
+<td>
+Original seasons when challengers were only from Real World or Road Rules
+</td>
+<td>
+First Introduction of challengers not from prior properties
+</td>
+<td>
+Second Injection of challenges not from prior properties
+</td>
+<td>
+Half of the case are family members of prior challengers
+</td>
+<td>
+Introduction of large influx of new challengers from internaional reality shows
+</td>
+</tr>
+</table>
 <p>So it seems like the algorithm latched on to change points where the casts became heavily rookies, which would make sense since that is a forced dissimilarity.</p>
-<p>Going back to the data, I can then add the get the cluster results through the <code>cuttree</code> function and providing it with the k=5 value and add it back to the original dataset with <code>mutate()</code>:</p>
+<p>Returning to the data I can append the cluster assignment to the orignal data with the <code>cuttree</code> function and providing it the number of clusters to return.</p>
 <pre class="r"><code>h_clust_results &lt;- dt %&gt;%
   mutate(cluster = cutree(dst, k = 5))</code></pre>
 </div>
 <div id="dimensionality-reduction-with-umap" class="section level2">
 <h2>Dimensionality Reduction with UMAP</h2>
-<p>The data set used for the clustering contained 37 rows representing each season of The Challenge and 360 columns representing every challenge who has ever been on the show. This type of data is prime for dimensionality reduction. Uniform Manifold Approximation and Projection (UMAP) is a dimensional technique that can be used for dimensionality reduction and visualization similar to T-SNE. The UMAP algorithm can be found in the <code>umap</code> package.</p>
-<p>Running UMAP is pretty straightforward with the <code>umap()</code> function and here I provide it the very wide data set used for cluster. In the returned object there is an element called <em>layout</em> which contains the compressed two dimensional space returned by UMAP.</p>
+<p>The data set used for the clustering contained 37 rows representing each season of The Challenge and 360 columns representing every challenge who has ever been on the show. This type of data is prime for dimensionality reduction. Uniform Manifold Approximation and Projection (UMAP) is a technique that can be used for dimensionality reduction and visualization similar to T-SNE. The UMAP algorithm can be found in the <code>umap</code> package.</p>
+<p>Running UMAP is pretty straightforward with the <code>umap()</code> function and here I give it the very wide data set used for clustering. In the returned object there is an element called <em>layout</em> which contains the compressed two dimensional space returned by UMAP. Again I’m setting a seed as the results of UMAP can be non-deterministic.</p>
 <pre class="r"><code>set.seed(20210904)
 ump &lt;- umap(dt %&gt;% select(-order, -short_title))</code></pre>
-<p>I can add those dimensions to the clustering results from above to see how closely the UMAP compression will match the clustering from the <code>hclust</code> function:</p>
+<p>I can add then those dimensions to the clustering results from above to see how closely the UMAP compression will match the clustering from the <code>hclust</code> function:</p>
 <pre class="r"><code>h_clust_results %&gt;% 
   select(order, short_title, cluster) %&gt;%
+  # Add in UMAP dimensions
   mutate(
     dim1 = ump$layout[, 1],
     dim2 = ump$layout[, 2]
@@ -455,6 +479,7 @@ ump &lt;- umap(dt %&gt;% select(-order, -short_title))</code></pre>
   labs(title = &#39;UMAP Projection of Challenge Seasons&#39;,
        subtitle = &quot;Colors Represent Prior Clustering&quot;) + 
   scale_color_discrete(guide = &#39;none&#39;) + 
+  scale_x_continuous(expand = expansion(add = c(.3, .4))) + 
   cowplot::theme_cowplot() + 
   theme(
     axis.ticks = element_blank(),
@@ -464,7 +489,7 @@ ump &lt;- umap(dt %&gt;% select(-order, -short_title))</code></pre>
 Overall, the UMAP projection captures similar information to the clustering since both methods were unsupervised and the colors (the prior clusters) are very close in the UMAP projected space.</p>
 <div id="predicting-new-observations-with-umap" class="section level3">
 <h3>Predicting New Observations with UMAP</h3>
-<p>In the summer of 2020, <a href="https://en.wikipedia.org/wiki/The_Challenge:_All_Stars">The Challenge: All Stars</a> aired on Paramount+. The series was intended to bring back fan favorites from early seasons of the challenge (although whether the actual cast would be considered fan favorites, all-stars, or from early seasons was debatable). An interesting final question to ask is: <em>what cluster would The Challenge: All Stars belong to in the UMAP space?</em>.</p>
+<p>In the summer of 2020, <a href="https://en.wikipedia.org/wiki/The_Challenge:_All_Stars">The Challenge: All Stars</a> aired on Paramount+. The series was intended to bring back fan favorites from early seasons of the challenge (although whether the actual cast would be considered fan favorites, all-stars, or even from early seasons was debatable). An interesting final question to ask is: <em>what cluster would The Challenge: All Stars belong to in the UMAP space?</em>.</p>
 <p>This next block of code is going to do a lot of heavy lifting but isn’t dissimilar from what was done in the earlier parts of this post. I will be downloading the cast from Wikipedia, cleaning it (more marriages and nicknames), and adding it to the original data set to get the 0 cases and the filtering it back to The Challenge: All Stars season.</p>
 <pre class="r"><code>all_stars &lt;- 
   # Take Original Data Set
@@ -497,7 +522,7 @@ Overall, the UMAP projection captures similar information to the clustering sinc
   select(-order, -short_title)</code></pre>
 <p>Then predicting the All Stars season in the UMAP space can be done similar to other predictions in R with the <code>predict</code> function:</p>
 <pre class="r"><code>all_stars_pred &lt;- predict(ump, all_stars)</code></pre>
-<p>which returns a matrix with 1 row for the reason and 2 columns for the UMAP x and y dimensions. Then this can be visualized on top of the original UMAP projection.</p>
+<p>which returns a matrix with 1 row for the season and 2 columns for the UMAP x and y dimensions. Then this can be visualized on top of the original UMAP projection as an annotation.</p>
 <pre class="r"><code># Take Original Data
 h_clust_results %&gt;% 
   select(order, short_title, cluster) %&gt;%
@@ -520,13 +545,14 @@ h_clust_results %&gt;%
   labs(title = &#39;Predicting Challenge All-Stars Onto Prior UMAP Projection&#39;,
        subtitle = &quot;Colors Represent Prior Clustering&quot;) + 
   scale_color_discrete(guide = &#39;none&#39;) + 
-  scale_fill_discrete(guide = &#39;none&#39;) + 
+  scale_fill_discrete(guide = &#39;none&#39;) +
+  scale_x_continuous(expand = expansion(add = c(.3, .4))) +
   cowplot::theme_cowplot() + 
   theme(
     axis.ticks = element_blank(),
     axis.text = element_blank()
   )</code></pre>
 <p><img src="{{< blogdown/postref >}}index_files/figure-html/viz_new_umap-1.png" width="672" />
-It seems like Challenge All-Stars would be part of the first cluster of the original group of seasons but is somewhat between the “green cluster” which could make sense as there were a couple of cast members on the show who first showed up in Battle of the Seasons 2.</p>
+It seems like Challenge All-Stars would be part of the first cluster of the first group of seasons but is somewhat between the “green cluster” which could make sense as there were a couple of cast members on the show who first showed up in the 23rd season (Battle of the Seasons 2).</p>
 </div>
 </div>
