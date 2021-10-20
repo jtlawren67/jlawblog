@@ -1,0 +1,545 @@
+---
+title: What's the Most American of American Films?  An Analysis with {gt} and {gtExtras}
+author: JLaw
+date: '2021-10-18'
+slug: what-s-the-most-american-of-american-films-an-analysis-with-gt-and-gtextras
+categories:
+  - R
+  - DataViz
+tags:
+  - rvest
+  - glue
+  - httr
+  - gt
+  - gtExtras
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2021-10-20T20:52:52-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+self_contained: false
+---
+
+<script src="{{< blogdown/postref >}}index_files/header-attrs/header-attrs.js"></script>
+
+
+<p><img src="tbl_small.PNG" /></p>
+<p><strong>I love movies</strong>. I enjoy watching them, I enjoy reading about the industry (sometimes), and as a bit of a data-nerd (exhibit a: <a href="https://jlaw.netlify.app">my blog</a>), I enjoy learning about the outliers in the industry. One of my favorite trends to follow is the shifting dynamics of Hollywood being driven more by International Box Office and the impact this has on the types of movies being made. One of my favorite examples is the movie <a href="https://www.boxofficemojo.com/title/tt0803096/?ref_=bo_se_r_1">Warcraft</a>. From a critical perspective the movie is not good sporting a <a href="https://www.rottentomatoes.com/m/warcraft">Rotten Tomatoes score</a> of 28% (although the audience score is 76%). However, there is a massive disparity in the box office gross with only $47M of its $439M coming from the United States. Ultimately, this movie was a failure in the US but incredibly popular internationally.</p>
+<p>With the announcement of the <a href="https://blog.rstudio.com/2021/09/30/rstudio-table-contest-2021/">RStudio 2021 Table Contest</a>, I wanted to look into identifying what are the movies that were the successful abroad but a failure in the US. But after playing with the data a bit I decided to flip the question to ask <strong>what is the most “American” movie</strong>. That is what were the most successful movies in the US that did not perform well abroad.</p>
+<div id="part-1-gathering-the-data" class="section level1">
+<h1>Part 1: Gathering the Data</h1>
+<p><a href="https://www.boxofficemojo.com/chart/ww_top_lifetime_gross/?offset=0">Box Office Mojo</a> has a table with the Top 1000 grossing movies with their split between Domestic and International grosses. This table should form the best backbone of finding successful US movies. However, since the most “American” movie could be anywhere in the Top 1000, I’ll need to gather all 1000.</p>
+<div id="loading-libraries" class="section level2">
+<h2>Loading Libraries</h2>
+<p>Aside from <code>tidyverse</code> the main package needed to extract this table will be <code>rvest</code> which is used for tidy web scraping. The <code>glue</code> package will be used to make string construction a bit easier and <code>httr</code> will be used to access the <a href="https://www.omdbapi.com">Open Movie Database API</a> to augment the initial Box Office gross data.</p>
+<pre class="r"><code>library(rvest) # Scrape Table From BoxOfficeMofo
+library(tidyverse) # Data Manipulations
+library(glue) # String Interpolation
+library(httr) # Accessing the OMDB API</code></pre>
+<p>Since the Box Office Mojo table is paginated, I’ll need a loop to get through all 1000. The starting point for the table is controlled by the offset parameter in the URL. The <code>map_dfr</code> function from <code>purrr</code> will make it very easy to loop through the different offset parameters and combine each run into a single data set.</p>
+<p>I’ll be feeding <code>map_dfr</code> parameter values of 0, 200, 400, 600, and 800 iteratively and passing it into the Box Office Mojo URL. The <code>glue()</code> function allows me to insert the offset value directly into the string through the <code>{}</code>. In this code block each iteration:</p>
+<ol style="list-style-type: decimal">
+<li>Grabs an offset parameter (0 to 800, by 200)</li>
+<li>Passes that into an anonymous function that as the parameter <code>x</code></li>
+<li>Runs <code>read_html()</code> on the URL with the offset and extracts the <em>table</em> element with <code>html_elements()</code></li>
+<li>Extract the information from the table with <code>html_table()</code> into a tibble</li>
+<li>When I get to the OMDB API piece rather than searching by title I can search directly by IMDB ID and since Box Office Mojo is owned by IMDB, I’m going to extract the ID from the links in the table:
+<ul>
+<li>From the previously extracted <em>table</em> element, extract the <em><a></em> tags with <code>html_elements()</code> and extract the <em>href</em> attributes from those <em><a></em> tags using <code>html_attr()</code>.</li>
+<li>Since <code>html_attr()</code> returns <strong>all</strong> the <em>href</em> attributes as a vector, not just the IMDB ids, I use <code>keep()</code> from <code>purrr</code> to only keep the elements that contain the string “tt” as all IMDB Ids start with “tt”.</li>
+<li>Then finally, I pull the “tt” and the numeric portion out of the vector using <code>str_extract()</code> from <code>stringr</code>.</li>
+</ul></li>
+</ol>
+<pre class="r"><code># Iterate through 0 to 800 by 200 and pass as X into the function
+tbl &lt;- map_dfr(seq(0, 800, 200),
+               function(x){
+                 #Read URL
+                 base &lt;- glue(&quot;https://www.boxofficemojo.com/chart/ww_top_lifetime_gross/?offset={x}&quot;) %&gt;%
+                   read_html() %&gt;% 
+                   # Extract Table Structure
+                   html_element(&#39;table&#39;)
+                 
+                   bind_cols(
+                     #Get Actual Table Data
+                     base %&gt;% html_table(convert = F),
+                     
+                     #Get IMDB IDs From Links
+                     imdb_id = base %&gt;% 
+                       html_elements(&#39;a&#39;) %&gt;% 
+                       html_attr(&#39;href&#39;) %&gt;%
+                       keep(~str_detect(.x, &#39;tt&#39;)) %&gt;%
+                       str_extract(&#39;tt\\d+&#39;)
+                     
+                   )
+               })</code></pre>
+<p>In order to get the <code>html_table()</code> piece to work correctly, I needed to set <code>convert=F</code> which tells the function not to try to turn numeric-looking values into numbers. Since everything was read in as a character, I need to do some light data cleaning using the <code>parse_number()</code> function from <code>readr</code> to turn characters that look like numbers into numbers.</p>
+<p>I’ll also need to define what I mean when I say a movie is the “Most American”. What I want is to find movies that did well in the US and didn’t do well abroad. But…</p>
+<ul>
+<li>If I look at the highest percentage of Domestic Gross I’ll get movies that might not have had an International release or did not have a large US gross (and therefore might not have been successful in the US)</li>
+<li>If I look at the highest differences between US and International Gross I might find things that made a lot of money both Domestically and Internationally but just more domestically.</li>
+</ul>
+<p>In order to find a balance between the two, I create the “domestic score” which is ratio of the percent of Worldwide Gross that was Domestic to the percent of Worldwide Gross that was International (in order to maximum "US-centric movies) but also to weight this ratio by the <em>log2</em> of the Domestic Lifetime Gross in order to make sure that we’re finding successful movies and not just small movies that were only released in the US.</p>
+<center>
+<img src="equation.PNG" />
+</center>
+<p>Then since I want my results to be in a table I don’t need all 1,000 movies, so I’ll use <code>arrange()</code> and <code>head()</code> to grab the Top 5 by the domestic score.</p>
+<pre class="r"><code>tbl_clean &lt;- tbl %&gt;% 
+  janitor::clean_names() %&gt;% 
+  mutate(
+    rank = parse_number(rank),
+    worldwide_lifetime_gross = parse_number(worldwide_lifetime_gross),
+    domestic_lifetime_gross = parse_number(domestic_lifetime_gross),
+    domestic_percent = parse_number(domestic_percent)/100,
+    foreign_lifetime_gross = parse_number(foreign_lifetime_gross),
+    foreign_percent = parse_number(foreign_percent)/100,
+    year = parse_number(year),
+    # Developing a way to get the highest domestic percentages that also did well domestically
+    domestic_score = (domestic_percent / foreign_percent)*log2(domestic_lifetime_gross)
+  ) %&gt;%
+  arrange(-domestic_score) %&gt;%
+  # Keep The Top 10 As Candidates for the API
+  head(5)</code></pre>
+<p>To make this table a little more fun there’s a couple elements that I’d like to bring in from the <a href="https://www.ombdapi.com">Open Movie Database</a> such as the Rotten Tomatoes score, release dates, awards, and URL for the movie’s poster. In order to use the API you first need to register for an API key. I’ve stored that in my <em>.Renviron</em> file so I can place it into glue.</p>
+<p>To use the API I can search for movies using the IMDB Id that I had gotten from above which gets used as part of the <em>i=</em> parameter to the URL which gets passed to the <code>GET()</code> function from the <code>httr</code> package. The information for the 5 movies from above get passed in using the <code>map_dfr()</code> function. The anonymous function takes in the IMDB id and returns a tibble that contains the extra information that I wanted for the table.</p>
+<pre class="r"><code>###Use OMDB Data for the Country Filters and Poster Data
+omdb_data &lt;- map_dfr(tbl_clean$imdb_id,
+                      function(id){
+                        omdb_resp &lt;- GET(URLencode(glue(&quot;https://www.omdbapi.com/?apikey={Sys.getenv(&#39;OMDB_API_KEY&#39;)}&amp;i={id}&amp;type=movie&amp;r=json&quot;)))
+                        if(content(omdb_resp)$Response == &quot;True&quot;){
+                          return(
+                            content(omdb_resp, as = &#39;parsed&#39;) %&gt;% 
+                              tibble(
+                                imdb_id = id,
+                                api_title = .$Title,
+                                release_date = .$Released,
+                                runtime = .$Runtime,
+                                language = .$Language,
+                                country = .$Country,
+                                awards = .$Awards,
+                                poster_url = .$Poster,
+                                ratings_source = ifelse(length(.$Ratings) &gt; 0,
+                                                        .$Ratings[[2]]$Source,
+                                                        &quot;missing&quot;),
+                                rating = ifelse(length(.$Ratings) &gt; 0,
+                                                .$Ratings[[2]]$Value,
+                                                &quot;-99&quot;)
+                              ) %&gt;% select(-.) %&gt;% distinct() 
+                          )
+                        }
+                      })</code></pre>
+<p>The raw JSON returned from the API looks like:
+<img src="json_output.PNG" /></p>
+<p>and output of the OMDB data table looks like:</p>
+<table>
+<colgroup>
+<col width="13%" />
+<col width="86%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="center">field</th>
+<th align="center">value</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="center">imdb_id</td>
+<td align="center">tt0878804</td>
+</tr>
+<tr class="even">
+<td align="center">api_title</td>
+<td align="center">The Blind Side</td>
+</tr>
+<tr class="odd">
+<td align="center">release_date</td>
+<td align="center">20 Nov 2009</td>
+</tr>
+<tr class="even">
+<td align="center">runtime</td>
+<td align="center">129 min</td>
+</tr>
+<tr class="odd">
+<td align="center">language</td>
+<td align="center">English</td>
+</tr>
+<tr class="even">
+<td align="center">country</td>
+<td align="center">United States</td>
+</tr>
+<tr class="odd">
+<td align="center">awards</td>
+<td align="center">Won 1 Oscar. 9 wins &amp; 30 nominations total</td>
+</tr>
+<tr class="even">
+<td align="center">poster_url</td>
+<td align="center"><a href="https://m.media-amazon.com/images/M/MV5BMjEzOTE3ODM3OF5BMl5BanBnXkFtZTcwMzYyODI4Mg@@._V1_SX300.jpg" class="uri">https://m.media-amazon.com/images/M/MV5BMjEzOTE3ODM3OF5BMl5BanBnXkFtZTcwMzYyODI4Mg@@._V1_SX300.jpg</a></td>
+</tr>
+<tr class="odd">
+<td align="center">ratings_source</td>
+<td align="center">Rotten Tomatoes</td>
+</tr>
+<tr class="even">
+<td align="center">rating</td>
+<td align="center">66%</td>
+</tr>
+</tbody>
+</table>
+<p>With the Box Office Data and the OMDB Data in separate data sets, I can combine them together through the common IMDB id. Finally, I’ll keep only movies listed as the United States (can’t be American if not at least partially made in the good ol USA) and I’ll extract the number of Oscars won our of the awards string to be used later.</p>
+<pre class="r"><code>#Combine All Data
+combine_dt &lt;- tbl_clean %&gt;% 
+  inner_join(omdb_data, by = &quot;imdb_id&quot;) %&gt;%
+  #Keep US Movies
+  filter(str_detect(country, &quot;United States&quot;)) %&gt;%
+  extract(awards, &quot;num_oscars&quot;, &quot;Won (\\d+) Oscar&quot;, remove = F, convert = T) %&gt;%
+  replace_na(list(num_oscars = 0))</code></pre>
+<p>With the data set constructed, now onto the table.</p>
+</div>
+</div>
+<div id="part-2-constructing-the-table" class="section level1">
+<h1>Part 2: Constructing the Table</h1>
+<p>The libraries used to construct the table are <code>gt</code> and <code>gtExtras</code></p>
+<pre class="r"><code>library(gt)
+library(gtExtras)</code></pre>
+<p>I plan to use images for the number of Oscars won, the Rotten Tomatoes score (fresh or rotten), and flags to show the Domestic Box Office and International Box Office so rather than have long URLs in the table construction itself, I’ll create constant variables and refer to those in the code:</p>
+<pre class="r"><code>ROTTEN_URL = &#39;https://www.rottentomatoes.com/assets/pizza-pie/images/icons/tomatometer/tomatometer-rotten.f1ef4f02ce3.svg&#39;
+FRESH_URL = &#39;https://www.rottentomatoes.com/assets/pizza-pie/images/icons/tomatometer/tomatometer-fresh.149b5e8adc3.svg&#39;
+OSCAR_URL = &#39;https://upload.wikimedia.org/wikipedia/en/7/7f/Academy_Award_trophy.png&#39;
+US_FLAG_URL = &#39;https://upload.wikimedia.org/wikipedia/en/thumb/a/a4/Flag_of_the_United_States.svg/188px-Flag_of_the_United_States.svg.png&#39;
+WORLD_FLAG_URL = &#39;https://upload.wikimedia.org/wikipedia/commons/thumb/3/3b/EarthFlag1.svg/525px-EarthFlag1.svg.png&#39;</code></pre>
+<p>Since <code>gt</code> has a lot of syntax, I’ll combine a bunch of steps together rather than showing each individual change. But the start of the table is just the <code>gt()</code> function.</p>
+<pre class="r"><code>p &lt;- combine_dt %&gt;%
+  select(poster_url, title, release_date, domestic_lifetime_gross, foreign_lifetime_gross,
+         domestic_percent, worldwide_lifetime_gross, num_oscars, rating) %&gt;%
+  gt() </code></pre>
+<p><iframe src="p1.html" scrolling="no" seamless="seamless" frameBorder="0" height="350" width="800"></iframe></p>
+<p>At first this is pretty ugly as a table but fortunately <code>gt</code> and <code>gtExtras</code> have a lot of very convenient features to make the table very pretty very quickly. The first set of steps will be:</p>
+<ul>
+<li>Turn the URL to the movie poster into the action poster with <code>gt_img_rows()</code> from <code>gtExtras</code></li>
+<li>Turn the domestic percentage field to a percent format with <code>fmt_percent()</code> from <code>gt</code></li>
+<li>Turn the Domestic and Foreign Box Office Gross Values to dollar in millions with <code>fmt_currency</code> from <code>gt</code></li>
+<li>Turn the Worldwide Lifetime Gross into a bar plot with <code>gt_plt_bar()</code> from <code>gtExtas</code></li>
+</ul>
+<pre class="r"><code>p &lt;- combine_dt %&gt;%
+  select(poster_url, title, release_date, domestic_lifetime_gross, foreign_lifetime_gross,
+         domestic_percent, worldwide_lifetime_gross, num_oscars, rating) %&gt;%
+  gt() %&gt;%
+  
+  #New Code
+  gt_img_rows(poster_url, height = 75) %&gt;%
+  fmt_percent(domestic_percent, decimals = 1) %&gt;%
+  fmt_currency(columns = c(&quot;domestic_lifetime_gross&quot;, &quot;foreign_lifetime_gross&quot;),
+               suffixing = T, decimals = 1) %&gt;%
+  gt_plt_bar(worldwide_lifetime_gross, color = &#39;darkgreen&#39;, width = 50)</code></pre>
+<p><iframe src="p2.html" scrolling="no" seamless="seamless" frameBorder="0" height="540" width="800"></iframe></p>
+<p>The next steps will use the <code>text_transform</code> functions from <code>gt</code> to turn the number of Oscars won into the literal Oscar image for each Oscar won, and for the Rotten Tomatoes score, I’ll use with the “Fresh” image if the score is above 60% or the “Rotten” image if below 60%.</p>
+<p>In general the <code>text_tranform()</code> function takes two parameters. The first is where is the function will be applied. In the first example, <code>locations = cells_body(rating)</code> means that I will apply the function defined in <code>fn</code> to the <em>rating</em> column. Then for the <code>fn</code> I’m using <code>glue()</code> to choose the <em>FRESH_URL</em> or <em>ROTTEN_URL</em> based on the numeric value of the rating itself and using <code>web_image()</code> to display the image.</p>
+<p>For the number of Oscars…. I’m not 100% sure why I needed to use the <code>lapply()</code> and <code>html()</code> rendering to get the number Oscar statues to repeat. I suppose its has to do with the way that data is being passed around in the <code>text_transform()</code> function. However, “working” is better than perfect in this case. The function takes the <code>num_oscars</code> field and replicates the Oscar image as many times as necessary.</p>
+<pre class="r"><code>p &lt;- combine_dt %&gt;%
+  select(poster_url, title, release_date, domestic_lifetime_gross, foreign_lifetime_gross,
+         domestic_percent, worldwide_lifetime_gross, num_oscars, rating) %&gt;%
+  gt() %&gt;%
+    gt_img_rows(poster_url, height = 75) %&gt;%
+    fmt_percent(domestic_percent, decimals = 1) %&gt;%
+    fmt_currency(columns = c(&quot;domestic_lifetime_gross&quot;, &quot;foreign_lifetime_gross&quot;),
+                 suffixing = T, decimals = 1) %&gt;%
+    gt_plt_bar(worldwide_lifetime_gross, color = &#39;darkgreen&#39;, width = 50) %&gt;% 
+  
+  
+    #### NEW CODE
+    text_transform(
+        locations = cells_body(rating),
+        fn = function(rating){
+          glue(&#39;{web_image(img)}&lt;br /&gt;{rating}&#39;, 
+               img = if_else(parse_number(rating) &lt; 60, ROTTEN_URL, FRESH_URL)
+          )
+        }
+      ) %&gt;%
+      text_transform(
+        locations = cells_body(num_oscars),
+        fn = function(x){
+          int_x &lt;- as.integer(x)
+          lapply(int_x, function(y){
+            rep(web_image(OSCAR_URL, height=60), y) %&gt;%
+              gt::html()
+          })
+          }
+      )</code></pre>
+<p><iframe src="p3.html" scrolling="no" seamless="seamless" frameBorder="0" height="540" width="800"></iframe></p>
+<p>The <code>gtExtras</code> package has an awesome function called <a href="https://jthomasmock.github.io/gtExtras/reference/gt_merge_stack.html">gt_merge_stack()</a> that will take one column and stack it on top of a second column. This is a really cool way to condense information in an easy way. Using this I will merge the title and release date columns and place the release date under the title.</p>
+<pre class="r"><code>p &lt;- combine_dt %&gt;%
+  select(poster_url, title, release_date, domestic_lifetime_gross, foreign_lifetime_gross,
+         domestic_percent, worldwide_lifetime_gross, num_oscars, rating) %&gt;%
+  gt() %&gt;%
+    gt_img_rows(poster_url, height = 75) %&gt;%
+    fmt_percent(domestic_percent, decimals = 1) %&gt;%
+    fmt_currency(columns = c(&quot;domestic_lifetime_gross&quot;, &quot;foreign_lifetime_gross&quot;),
+                 suffixing = T, decimals = 1) %&gt;%
+    gt_plt_bar(worldwide_lifetime_gross, color = &#39;darkgreen&#39;, width = 50) %&gt;% 
+    text_transform(
+        locations = cells_body(rating),
+        fn = function(rating){
+          glue(&#39;{web_image(img)}&lt;br /&gt;{rating}&#39;, 
+               img = if_else(parse_number(rating) &lt; 60, ROTTEN_URL, FRESH_URL)
+          )
+        }
+      ) %&gt;%
+      text_transform(
+        locations = cells_body(num_oscars),
+        fn = function(x){
+          int_x &lt;- as.integer(x)
+          lapply(int_x, function(y){
+            rep(web_image(OSCAR_URL, height=60), y) %&gt;%
+              gt::html()
+          })
+          }
+      ) %&gt;%
+  
+  
+  ###NEW CODE
+      gt_merge_stack(title, release_date)</code></pre>
+<p><iframe src="p4.html" scrolling="no" seamless="seamless" frameBorder="0" height="540" width="800"></iframe>
+To make a valuable info-graphic I’ll need to add in titles, subtitle, and to have appropriate attribution to myself, I’ll add in source notes as well. To this do, I’ll use the <code>tab_header()</code> to define the title and subtitle, and the <code>tab_source_note()</code> option to add the source line. Within this blocks the <code>html()</code> and <code>md()</code> functions allow for the use of HTML and Markdown respectively to render text.</p>
+<pre class="r"><code>p &lt;- combine_dt %&gt;%
+  select(poster_url, title, release_date, domestic_lifetime_gross, foreign_lifetime_gross,
+         domestic_percent, worldwide_lifetime_gross, num_oscars, rating) %&gt;%
+  gt() %&gt;%
+    gt_img_rows(poster_url, height = 75) %&gt;%
+    fmt_percent(domestic_percent, decimals = 1) %&gt;%
+    fmt_currency(columns = c(&quot;domestic_lifetime_gross&quot;, &quot;foreign_lifetime_gross&quot;),
+                 suffixing = T, decimals = 1) %&gt;%
+    gt_plt_bar(worldwide_lifetime_gross, color = &#39;darkgreen&#39;, width = 50) %&gt;% 
+    text_transform(
+        locations = cells_body(rating),
+        fn = function(rating){
+          glue(&#39;{web_image(img)}&lt;br /&gt;{rating}&#39;, 
+               img = if_else(parse_number(rating) &lt; 60, ROTTEN_URL, FRESH_URL)
+          )
+        }
+      ) %&gt;%
+    text_transform(
+        locations = cells_body(num_oscars),
+        fn = function(x){
+          int_x &lt;- as.integer(x)
+          lapply(int_x, function(y){
+            rep(web_image(OSCAR_URL, height=60), y) %&gt;%
+              gt::html()
+          })
+          }
+        ) %&gt;%
+    gt_merge_stack(title, release_date) %&gt;%
+  
+  ###NEW CODE
+    tab_header(
+      title = html(&quot;What are the most &lt;b&gt;&lt;span style=&#39;color:#002868&#39;&gt;American&lt;/span&gt;&lt;/b&gt; of American Films?&quot;),
+      subtitle = html(&quot;As measured by the share of Box Office Gross coming from the United States versus the rest of the world, movies with or about &lt;b&gt;Adam Sandler&lt;/b&gt;, &lt;b&gt;Football&lt;/b&gt;, and &lt;b&gt;Christmas&lt;/b&gt; tend to be Box Office successes in the United States but not the rest of the world.  Although, it is unclear whether it is Football or Adam Sandler that makes the movie most appealing to American tastes.&quot;)
+      ) %&gt;%
+      tab_source_note(
+      md(&quot;***Author:*** JLaw | ***Sources:*** [BoxOfficeMojo,com](https://www.boxofficemojo.com/chart/ww_top_lifetime_gross/?offset=0) and [Open Movie Database](https://www.omdbapi.com/)&quot;)
+    ) </code></pre>
+<p><iframe src="p5.html" scrolling="no" seamless="seamless" frameBorder="0" height="670" width="800"></iframe>
+Since the table can get pretty wide, it would be helpful to alternate the background colors of the rows so that its easy to follow the information. This can be done with <code>opt_row_striping()</code> which will add the striping with defaults and the <em>row.striping.background_color</em> option within <code>tab_options()</code>.</p>
+<pre class="r"><code>p &lt;- combine_dt %&gt;%
+  select(poster_url, title, release_date, domestic_lifetime_gross, foreign_lifetime_gross,
+         domestic_percent, worldwide_lifetime_gross, num_oscars, rating) %&gt;%
+  gt() %&gt;%
+    gt_img_rows(poster_url, height = 75) %&gt;%
+    fmt_percent(domestic_percent, decimals = 1) %&gt;%
+    fmt_currency(columns = c(&quot;domestic_lifetime_gross&quot;, &quot;foreign_lifetime_gross&quot;),
+                 suffixing = T, decimals = 1) %&gt;%
+    gt_plt_bar(worldwide_lifetime_gross, color = &#39;darkgreen&#39;, width = 50) %&gt;% 
+    text_transform(
+        locations = cells_body(rating),
+        fn = function(rating){
+          glue(&#39;{web_image(img)}&lt;br /&gt;{rating}&#39;, 
+               img = if_else(parse_number(rating) &lt; 60, ROTTEN_URL, FRESH_URL)
+          )
+        }
+      ) %&gt;%
+    text_transform(
+        locations = cells_body(num_oscars),
+        fn = function(x){
+          int_x &lt;- as.integer(x)
+          lapply(int_x, function(y){
+            rep(web_image(OSCAR_URL, height=60), y) %&gt;%
+              gt::html()
+          })
+          }
+        ) %&gt;%
+    gt_merge_stack(title, release_date) %&gt;%
+    tab_header(
+      title = html(&quot;What are the most &lt;b&gt;&lt;span style=&#39;color:#002868&#39;&gt;American&lt;/span&gt;&lt;/b&gt; of American Films?&quot;),
+      subtitle = html(&quot;As measured by the share of Box Office Gross coming from the United States versus the rest of the world, movies with or about &lt;b&gt;Adam Sandler&lt;/b&gt;, &lt;b&gt;Football&lt;/b&gt;, and &lt;b&gt;Christmas&lt;/b&gt; tend to be Box Office successes in the United States but not the rest of the world.  Although, it is unclear whether it is Football or Adam Sandler that makes the movie most appealing to American tastes.&quot;)
+      ) %&gt;%
+      tab_source_note(
+      md(&quot;***Author:*** JLaw | ***Sources:*** [BoxOfficeMojo,com](https://www.boxofficemojo.com/chart/ww_top_lifetime_gross/?offset=0) and [Open Movie Database](https://www.omdbapi.com/)&quot;)
+    ) %&gt;%
+  
+  ###NEW CODE
+  opt_row_striping() %&gt;%
+  tab_options(row.striping.background_color = &quot;#ececec&quot;) </code></pre>
+<p><iframe src="p6.html" scrolling="no" seamless="seamless" frameBorder="0" height="670" width="800"></iframe>
+Now every other row was has a light shade of grey.</p>
+<p>The next thing to do is to fix up the column labels. This is done with the <code>col_labels()</code> function which allows me to change how the variable names used for each column will be displayed. Using the use of <code>glue()</code>, <code>html()</code>, <code>web_image()</code>, and <code>emo::ji()</code> and I can insert images into the column titles. Also, since so many columns are related to Box Office Grosses, I’ll create a column spanner with <code>tab_spanner()</code> that goes from the <em>domestic_gross</em> column to the <em>worldwide_lifetime_gross</em>. Finally, since removing the label of <em>poster_url</em> will shrink the column width, I’ll increase the width with <code>cols_width()</code> and the <code>px()</code> function.</p>
+<pre class="r"><code>p &lt;- combine_dt %&gt;%
+  select(poster_url, title, release_date, domestic_lifetime_gross, foreign_lifetime_gross,
+         domestic_percent, worldwide_lifetime_gross, num_oscars, rating) %&gt;%
+  gt() %&gt;%
+    gt_img_rows(poster_url, height = 75) %&gt;%
+    fmt_percent(domestic_percent, decimals = 1) %&gt;%
+    fmt_currency(columns = c(&quot;domestic_lifetime_gross&quot;, &quot;foreign_lifetime_gross&quot;),
+                 suffixing = T, decimals = 1) %&gt;%
+    gt_plt_bar(worldwide_lifetime_gross, color = &#39;darkgreen&#39;, width = 50) %&gt;% 
+    text_transform(
+        locations = cells_body(rating),
+        fn = function(rating){
+          glue(&#39;{web_image(img)}&lt;br /&gt;{rating}&#39;, 
+               img = if_else(parse_number(rating) &lt; 60, ROTTEN_URL, FRESH_URL)
+          )
+        }
+      ) %&gt;%
+    text_transform(
+        locations = cells_body(num_oscars),
+        fn = function(x){
+          int_x &lt;- as.integer(x)
+          lapply(int_x, function(y){
+            rep(web_image(OSCAR_URL, height=60), y) %&gt;%
+              gt::html()
+          })
+          }
+        ) %&gt;%
+    gt_merge_stack(title, release_date) %&gt;%
+    tab_header(
+      title = html(&quot;What are the most &lt;b&gt;&lt;span style=&#39;color:#002868&#39;&gt;American&lt;/span&gt;&lt;/b&gt; of American Films?&quot;),
+      subtitle = html(&quot;As measured by the share of Box Office Gross coming from the United States versus the rest of the world, movies with or about &lt;b&gt;Adam Sandler&lt;/b&gt;, &lt;b&gt;Football&lt;/b&gt;, and &lt;b&gt;Christmas&lt;/b&gt; tend to be Box Office successes in the United States but not the rest of the world.  Although, it is unclear whether it is Football or Adam Sandler that makes the movie most appealing to American tastes.&quot;)
+      ) %&gt;%
+      tab_source_note(
+      md(&quot;***Author:*** JLaw | ***Sources:*** [BoxOfficeMojo,com](https://www.boxofficemojo.com/chart/ww_top_lifetime_gross/?offset=0) and [Open Movie Database](https://www.omdbapi.com/)&quot;)
+    ) %&gt;%
+  opt_row_striping() %&gt;%
+  tab_options(row.striping.background_color = &quot;#ececec&quot;) %&gt;%
+  
+  ### New Code
+  cols_label(
+      poster_url = &quot;&quot;,
+      title = &quot;Title&quot;,
+      domestic_lifetime_gross = html(glue(&quot;{web_image(US_FLAG_URL)}United States&quot;)),
+      foreign_lifetime_gross = html(glue(&quot;{web_image(WORLD_FLAG_URL)}Rest of World&quot;)),
+      domestic_percent = &quot;US % of Total&quot;,
+      worldwide_lifetime_gross = glue(&quot;{emo::ji(&#39;dollar&#39;)}Total{emo::ji(&#39;dollar&#39;)}&quot;),
+      num_oscars = &quot;# Oscars won&quot;,
+      rating = &quot;Rotten Tomatoes Score&quot;
+    ) %&gt;%
+  tab_spanner(label = &quot;Box Office Gross&quot;, columns = domestic_lifetime_gross:worldwide_lifetime_gross) %&gt;%
+  cols_width(
+      poster_url ~ px(75)
+    )</code></pre>
+<p><iframe src="p7.html" scrolling="no" seamless="seamless" frameBorder="0" height="770" width="800"></iframe>
+Now this has come a lot a long way from the first image but there’s a lot of cleaning up that needs to be done with the various <code>tab_style()</code> functions. The <code>tab_style()</code> function takes two arguments. The <em>style</em> which is how things will look and the <em>location</em> which is where the styling will be applied. For the style I’ll be using the <code>cell_text()</code> helper to alter the size, weight (bolding), transform (to turn to all uppercase), alignment and font (using the <code>google_font()</code> helper).</p>
+<p>For the locations, there are helpers for each part of the table. There is <code>cells_body()</code> for the cell text, <code>cells_column_labels()</code> for the column headers, <code>cells_title()</code>, which can take a “title” or “subtitle” option for those elements and <code>cells_column_spanners()</code> for the column spanners I created in the prior step. Within locations, you can further specify which columns the formatting will apply to. While it defaults to <code>everything()</code>, the columns can be entered as if they’re part of a <em>select</em> statement for <code>dplyr</code>. Finally, if wanting to include multiple locations (or multiple styles) in the same code block, the various helpers can be wrapped in a <code>list()</code>.</p>
+<p>For the formatting, I’ll:</p>
+<ol style="list-style-type: decimal">
+<li>Change the font, size, alignment, and make everything upper-case for the <strong>title</strong>.</li>
+<li>Change the font, size, and alignment for the <strong>subtitle</strong>.</li>
+<li>Change the font, size, and make everything upper-case and bold for the <strong>column headers</strong>.</li>
+<li>Make all of the <strong>column headers</strong> center aligned except for the <em>title</em> column.</li>
+<li>Change the font and center-align all of the <strong>cells</strong> except for the <em>title</em> column.</li>
+</ol>
+<pre class="r"><code>p &lt;- combine_dt %&gt;%
+  select(poster_url, title, release_date, domestic_lifetime_gross, foreign_lifetime_gross,
+         domestic_percent, worldwide_lifetime_gross, num_oscars, rating) %&gt;%
+  gt() %&gt;%
+    gt_img_rows(poster_url, height = 75) %&gt;%
+    fmt_percent(domestic_percent, decimals = 1) %&gt;%
+    fmt_currency(columns = c(&quot;domestic_lifetime_gross&quot;, &quot;foreign_lifetime_gross&quot;),
+                 suffixing = T, decimals = 1) %&gt;%
+    gt_plt_bar(worldwide_lifetime_gross, color = &#39;darkgreen&#39;, width = 50) %&gt;% 
+    text_transform(
+        locations = cells_body(rating),
+        fn = function(rating){
+          glue(&#39;{web_image(img)}&lt;br /&gt;{rating}&#39;, 
+               img = if_else(parse_number(rating) &lt; 60, ROTTEN_URL, FRESH_URL)
+          )
+        }
+      ) %&gt;%
+    text_transform(
+        locations = cells_body(num_oscars),
+        fn = function(x){
+          int_x &lt;- as.integer(x)
+          lapply(int_x, function(y){
+            rep(web_image(OSCAR_URL, height=60), y) %&gt;%
+              gt::html()
+          })
+          }
+        ) %&gt;%
+    gt_merge_stack(title, release_date) %&gt;%
+    tab_header(
+      title = html(&quot;What are the most &lt;b&gt;&lt;span style=&#39;color:#002868&#39;&gt;American&lt;/span&gt;&lt;/b&gt; of American Films?&quot;),
+      subtitle = html(&quot;As measured by the share of Box Office Gross coming from the United States versus the rest of the world, movies with or about &lt;b&gt;Adam Sandler&lt;/b&gt;, &lt;b&gt;Football&lt;/b&gt;, and &lt;b&gt;Christmas&lt;/b&gt; tend to be Box Office successes in the United States but not the rest of the world.  Although, it is unclear whether it is Football or Adam Sandler that makes the movie most appealing to American tastes.&quot;)
+      ) %&gt;%
+      tab_source_note(
+      md(&quot;***Author:*** JLaw | ***Sources:*** [BoxOfficeMojo,com](https://www.boxofficemojo.com/chart/ww_top_lifetime_gross/?offset=0) and [Open Movie Database](https://www.omdbapi.com/)&quot;)
+    ) %&gt;%
+  opt_row_striping() %&gt;%
+  tab_options(row.striping.background_color = &quot;#ececec&quot;) %&gt;%
+  cols_label(
+      poster_url = &quot;&quot;,
+      title = &quot;Title&quot;,
+      domestic_lifetime_gross = html(glue(&quot;{web_image(US_FLAG_URL)}United States&quot;)),
+      foreign_lifetime_gross = html(glue(&quot;{web_image(WORLD_FLAG_URL)}Rest of World&quot;)),
+      domestic_percent = &quot;US % of Total&quot;,
+      worldwide_lifetime_gross = glue(&quot;{emo::ji(&#39;dollar&#39;)}Total{emo::ji(&#39;dollar&#39;)}&quot;),
+      num_oscars = &quot;# Oscars won&quot;,
+      rating = &quot;Rotten Tomatoes Score&quot;
+    ) %&gt;%
+  tab_spanner(label = &quot;Box Office Gross&quot;, columns = domestic_lifetime_gross:worldwide_lifetime_gross) %&gt;%
+  cols_width(
+      poster_url ~ px(75)
+    ) %&gt;%
+  
+  ## New Code
+  tab_style(
+      style = cell_text(
+        size = &quot;x-large&quot;,
+        font = google_font(&#39;Josefin Sans&#39;),
+        align = &#39;left&#39;,
+        transform = &#39;uppercase&#39;
+      ),
+      location = cells_title(&quot;title&quot;)
+    ) %&gt;%
+  tab_style(
+      style = cell_text(
+        size = &quot;medium&quot;,
+        font = google_font(&#39;Inter&#39;),
+        align = &#39;left&#39;
+      ),
+      location = cells_title(&quot;subtitle&quot;)
+    ) %&gt;%
+  tab_style(
+      style = cell_text(
+        size = &#39;large&#39;,
+        weight = &#39;bold&#39;,
+        transform = &#39;uppercase&#39;,
+        font = google_font(&#39;Bebas Neue&#39;)
+      ),
+      locations = list(cells_column_labels(), cells_column_spanners())
+    ) %&gt;%
+  tab_style(
+      style = cell_text(align = &#39;center&#39;),
+      locations = cells_column_labels(-title)
+    ) %&gt;%
+  tab_style(
+      style = cell_text(font = google_font(&#39;Sora&#39;), align = &#39;center&#39;, size = &#39;small&#39;),
+      locations = cells_body(-title)
+    ) </code></pre>
+<p><iframe src="p8.html" scrolling="no" seamless="seamless" frameBorder="0" height="770" width="800"></iframe>
+And now our table looks pretty!!</p>
+</div>
+<div id="conclusion" class="section level1">
+<h1>Conclusion</h1>
+<p>In this blog post, I’ve defined a methodology for identifying the most “American” of US films and based on the results in the table it seems like the Most American things are Football, Adam Sandler, and Christmas.</p>
+</div>
