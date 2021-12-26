@@ -84,7 +84,7 @@ knitr::kable(head(nodes, 5))
 
 Edges will be a little trickier since I want this graph to be undirected.  If Notre Dame plays USC, I don't really care who was the home team or the away team, so I'll need to find a way to count these as the same match-up.  While I'm sure there's a better way to do this I decided to solve this problem by making the team that goes first alphabetically *school1* and the other team *school2*.  This will apply a consistent ordering between any match-up.
 
-In order to use the {tidygraph} package the edge list needs to have *from* and *to* columns even in the graph is undirected.  Then once I have the edge list I construct a *weight* column by using the `count()` function from {dplyr}.
+In order to use the {tidygraph} package the edge list needs to have *from* and *to* columns even if the graph is undirected.  Then once I have the edge list I construct a *weight* column by using the `count()` function from {dplyr}.
 
 I also exclude all conference games using a field that comes in the data set as well as an additional filter to ensure that both nodes are FBS schools since FBS schools can play non-FBS schools during the season.
 
@@ -108,6 +108,7 @@ edge_list <- schedule %>%
 knitr::kable(head(edge_list, 5))
 
 ```
+An interpretation of this first row is that Auburn played San Jose State twice between 2010 and 2019 and only played Louisville once.
 
 The {tidygraph} package has its own structure called a `tbl_graph` which combines the nodes and edges into a single data structure and allows the user to manipulate either portion.  While there is a constructor specifically for the `tbl_graph` object, I was having trouble getting it to work so I used `graph_from_data_frame` from {igraph} and then cast the graph to a `tbl_graph`.
 
@@ -131,37 +132,46 @@ Normally, a graph can be displayed using any number of algorithms to show optima
 lay = create_layout(g, 'manual', x= g %>% pull(longitude), y=g %>% pull(latitude))
 ```
 
-With the layout in place I can construct the graph.  The syntax for {{ggraph}} isn't much different from {{ggplot2}}.  The main difference is in the starting function where {{ggraph}} takes in a graph and/or a layout.  In this case because my custom layout already contains the graph I can just pass in the layout.  Then there are some specific geoms for the graphs such as `geom_node_point` which places a point at each node, and `geom_edge_arc` which draws an arc for each edge (as opposed to a straight line which could be done with `geom_edge_link`).  Then there are some specific styles like edge_alpha vs. alpha.  But if you're familiar with {ggplot2}} then this syntax shouldn't be too different.  The only other piece which I had never used before was `borders("state", color = 'grey90')` to draw the US state borders.
+With the layout in place I can construct the graph.  The syntax for {{ggraph}} isn't much different from {{ggplot2}}.  The main difference is in the starting function where {{ggraph}} takes in a graph and/or a layout.  In this case because my custom layout already contains the graph I can just pass in the layout.  Then there are some specific geoms for the graphs such as `geom_node_point` which places a point at each node, and `geom_edge_arc` which draws an arc for each edge with the *strength* parameter controlling how "arc-y" to make the edge (as opposed to a straight line which could be done with `geom_edge_link`).  Then there are some specific styles like edge_alpha vs. alpha.  But if you're familiar with {ggplot2}} then this syntax shouldn't be too different.  The only other piece which I had never used before was `borders("state", color = 'grey90')` to draw the US state borders.
 
 While the more common games will show up with thicker and brighter lines not everyone knows the location of every FBS college in the US.  So for the match-ups that occurred in at least of 8 of the 10 available years, I'll add labels to the edges.
 
-```{r final_graph, out.width = "100%"}
+```{r final_graph, fig.height=6, fig.width=8}
 ggraph(lay) + 
   borders("state", color = 'grey90') +
   geom_node_point(color = 'grey90') + 
-  geom_edge_arc(strength = 0.4, 
+  geom_edge_arc(strength = 0.1, 
                 aes(edge_alpha = weight, 
                     edge_color = weight, 
                     edge_width = weight,
-                    label = if_else(weight >= 8, paste0(first_team,'-',second_team), "")
+                    label = if_else(weight >= 8, 
+                                    paste0(first_team,'-',second_team), "")
                 ),
-                vjust = -0.5,
-                hjust = 1,
+                vjust = -.5,
+                hjust = 0,
                 label_colour = 'white',
-                label_size = 5) + 
-  scale_edge_colour_viridis(begin = .2, end = .8, option = "A", direction = 1, guide = 'none') + 
-  scale_edge_width_continuous(range = c(.5, 2), guide = 'none') + 
-  scale_edge_alpha_continuous(guide = 'none', range = c(0.3, 1)) + 
+                label_size = 6) + 
+  scale_edge_color_viridis(begin = .2, end = .8, option = "A", direction = 1,
+                           labels = round) + 
+  scale_edge_width_continuous(range = c(.5, 1.5), guide = 'none') + 
+  scale_edge_alpha_continuous(guide = 'none', range = c(0.1, 1)) + 
   labs(title = "NCAA FBS Non-Conference Games (2010 - 2019)",
-       caption = '**Source:** CollegeFootballData API') + 
+       caption = '**Source:** CollegeFootballData API',
+       edge_color = "# of Games Played") + 
   theme(
     panel.background = element_rect(fill = 'black'),
     plot.background = element_rect(fill = 'black'),
     plot.caption = element_markdown(color = 'white', size = 16),
-    plot.subtitle = element_textbox_simple(family = 'roboto', size = 20, color = 'white'),
-    plot.title = element_markdown(hjust = .5, family = 'roboto', color = 'white', size = 25),
+    plot.subtitle = element_textbox_simple(family = 'roboto', size = 20, 
+                                           color = 'white'),
+    plot.title = element_markdown(hjust = .5, family = 'roboto', 
+                                  color = 'white', size = 40),
+    legend.position = 'bottom',
+    legend.title = element_text(family = 'roboto', size = 20, color = 'white', 
+                                vjust = 1),
+    legend.text = element_text(family = 'roboto', size = 20, color = 'white'),
+    legend.background = element_rect(fill = 'black')
   )
-
 ```
 
 ## Analysis
@@ -172,6 +182,6 @@ Besides looking cool (in my opinion) this chart shows an edge for **every** non-
 2. Games between schools that are in-state but in different conferences (Florida vs. Florida State, Colorado vs. Colorado State, Clemson vs. South Carolina, Georgia vs. Georgia Tech).
 3. Games between schools that have functional reasons to be rivals such as the three service academies (Army, Navy, and Air Force).
 
-While are not terrible surprising for anyone that follows college football, this post hopefully shows how you can create a network graph out of geographic coordinates and fix the layout so that it can be applied on top of a real map.  
+While not terribly surprising for anyone that follows college football, this post hopefully shows how you can create a network graph out of geographic coordinates and fix the layout so that it can be applied on top of a real map.  
 
 In the next post I'll be continuing on the theme of College Football and network graphs to see what we can learn about Conference Realignment!
