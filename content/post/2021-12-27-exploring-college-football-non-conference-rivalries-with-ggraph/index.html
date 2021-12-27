@@ -1,0 +1,265 @@
+---
+title: Exploring College Football Non-Conference Rivalries with {ggraph}
+author: JLaw
+date: '2021-12-27'
+slug: exploring-college-football-non-conference-rivalries-with-ggraph
+categories:
+  - R
+  - DataViz
+tags:
+  - tidygraph
+  - ggraph
+  - showtext
+  - cfbfastR
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2021-12-27T05:42:08-05:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+<script src="{{< blogdown/postref >}}index_files/header-attrs/header-attrs.js"></script>
+
+
+<p>We’re in the middle of College Football’s bowl post-season and I’d been wanting to do a more in-depth post on networks using {tidygraph} and {ggraph} for a while. So now seemed like as good a time as any to explore some College Football data. I had used {ggraph} in prior posts on <a href="https://jlaw.netlify.app/2021/09/15/finding-the-eras-of-mtv-s-the-challenge-through-clustering/">exploring season’s of MTV’s The Challenge</a> and when <a href="https://jlaw.netlify.app/2020/11/01/sequence-mining-my-browsing-history-with-arulessequences/">sequence mining my web browsing</a> but this post will be more focused on the network visualization than those two posts.</p>
+<p>In this post I will explore <strong>what are the most common non-Conference games?</strong></p>
+<p>But really the goal is to create some fun visualizations that hopefully will tell a story.</p>
+<div id="getting-started-the-data" class="section level2">
+<h2>Getting Started + The Data</h2>
+<p>For many of the posts on this blog I tend to web scrape my own data. Initially I had planned to use Wikipedia to get a list of all the Football Bowl Subdivision (FBS) teams and their 2019 schedule to do this analysis. However, this proved difficult to find the right data that was easily accessible. However, <strong>there truly is an R package for everything</strong> and enter {cfbfastR} which provides access to the <a href="https://collegefootballdata.com/">College Football Database</a> API and provided me with easy access to all the information I needed. To use this package all that’s needed is registering for a free API key and adding it to your .Renviron file.</p>
+<p>In addition to {cfbfastR} for getting the data, I’ll be using {showtext} to access Google Fonts, {tidyverse} for general data manipulation, {tidygraph} for handling the network data, and {ggraph} to handle the network graph plotting. Access to the Google Font <em>Roboto</em> is done using {showtext}’s <code>font_add_google</code> function and then <code>showtext_auto()</code>.</p>
+<pre class="r"><code>library(tidyverse)
+library(cfbfastR)
+library(tidygraph)
+library(ggraph)
+library(ggtext)
+library(showtext)
+
+font_add_google(&#39;Roboto&#39;, &quot;roboto&quot;)
+showtext_auto()</code></pre>
+</div>
+<div id="what-are-the-largest-non-conference-rivalries-in-college-footballs-fbs" class="section level2">
+<h2>What are the largest non-Conference Rivalries in College Football’s FBS?</h2>
+<p>The goal will be to create a map showing the links between College Footballs largest non-Conference rivalries. In this case, “largest” will be defined as most frequent. While College Football has many rivalries that are between Conference rivals I wanted to focus on non-Conference because I felt it would make for a better visualization. Additionally, since Conference teams generally have to play each other frequently it would be more difficult to discern a “chosen” rivalry vs. one dictated by conference membership.</p>
+<p>The data that I’ll need for this analysis are:</p>
+<ol style="list-style-type: decimal">
+<li>A list of the FBS schools. I’ll use 2019 data since the 2021 season is still in progress and the 2020 was abnormal.</li>
+<li>A list of all the games played between 2010 and 2019 which is the time-frame I’ll be using for this analysis.</li>
+</ol>
+<p>Fortunately, both of these are really easily available from the College Football Data Base. The helper function <code>cfdb_team_info</code> returns all of the FBS schools for the 2019 season with information on the school itself as well as the latitudes and longitudes of the schools saving me the need to geocode.</p>
+<p><code>cfdb_game_info</code> provides all the games for a specified year. In order to get all the seasons between 2010 and 2019 I use <code>map_dfr</code> to iterate over the vector 2010-2019 and row bind each output into a combined data frame.</p>
+<pre class="r"><code>schools &lt;- cfbd_team_info(year = 2019)
+
+schedule &lt;- map_dfr(2010:2019, cfbd_game_info)</code></pre>
+<p>To create a network graph I will need to create datasets to represent the nodes of the graph, in this case schools, and the edges, the match-ups between the two schools. For the nodes this will be straight-forward since I will just need a subset of the columns in <code>schools</code>:</p>
+<pre class="r"><code>nodes &lt;- schools %&gt;%
+  select(id = team_id, school, conference, latitude, longitude)
+
+knitr::kable(head(nodes, 5))</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="right">id</th>
+<th align="left">school</th>
+<th align="left">conference</th>
+<th align="right">latitude</th>
+<th align="right">longitude</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="right">2005</td>
+<td align="left">Air Force</td>
+<td align="left">Mountain West</td>
+<td align="right">38.99697</td>
+<td align="right">-104.84362</td>
+</tr>
+<tr class="even">
+<td align="right">2006</td>
+<td align="left">Akron</td>
+<td align="left">Mid-American</td>
+<td align="right">41.07255</td>
+<td align="right">-81.50834</td>
+</tr>
+<tr class="odd">
+<td align="right">333</td>
+<td align="left">Alabama</td>
+<td align="left">SEC</td>
+<td align="right">33.20828</td>
+<td align="right">-87.55038</td>
+</tr>
+<tr class="even">
+<td align="right">2026</td>
+<td align="left">Appalachian State</td>
+<td align="left">Sun Belt</td>
+<td align="right">36.21143</td>
+<td align="right">-81.68543</td>
+</tr>
+<tr class="odd">
+<td align="right">12</td>
+<td align="left">Arizona</td>
+<td align="left">Pac-12</td>
+<td align="right">32.22881</td>
+<td align="right">-110.94887</td>
+</tr>
+</tbody>
+</table>
+<p>Edges will be a little trickier since I want this graph to be undirected. If Notre Dame plays USC, I don’t really care who was the home team or the away team, so I’ll need to find a way to count these as the same match-up. While I’m sure there’s a better way to do this I decided to solve this problem by making the team that goes first alphabetically <em>school1</em> and the other team <em>school2</em>. This will apply a consistent ordering between any match-up.</p>
+<p>In order to use the {tidygraph} package the edge list needs to have <em>from</em> and <em>to</em> columns even if the graph is undirected. Then once I have the edge list I construct a <em>weight</em> column by using the <code>count()</code> function from {dplyr}.</p>
+<p>I also exclude all conference games using a field that comes in the data set as well as an additional filter to ensure that both nodes are FBS schools since FBS schools can play non-FBS schools during the season.</p>
+<pre class="r"><code>edge_list &lt;- schedule %&gt;% 
+  # Remove any conference games
+  filter(conference_game == F,
+         #require that both the home and away teams are in our graph 
+         home_id %in% nodes$id, 
+         away_id %in% nodes$id) %&gt;% 
+  # apply alphabetical ordering to the two teams
+  mutate(
+    first_team = if_else(home_team &lt; away_team, home_team, away_team),
+    first_id = if_else(home_team &lt; away_team, home_id, away_id),
+    second_team = if_else(home_team &lt; away_team, away_team, home_team),
+    second_id = if_else(home_team &lt; away_team, away_id, home_id)
+  ) %&gt;%
+  select(from = first_id, to = second_id, first_team, second_team) %&gt;%
+  count(from, to, first_team, second_team, name = &#39;weight&#39;)
+
+knitr::kable(head(edge_list, 5))</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="right">from</th>
+<th align="right">to</th>
+<th align="left">first_team</th>
+<th align="left">second_team</th>
+<th align="right">weight</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="right">2</td>
+<td align="right">23</td>
+<td align="left">Auburn</td>
+<td align="left">San José State</td>
+<td align="right">2</td>
+</tr>
+<tr class="even">
+<td align="right">2</td>
+<td align="right">97</td>
+<td align="left">Auburn</td>
+<td align="left">Louisville</td>
+<td align="right">1</td>
+</tr>
+<tr class="odd">
+<td align="right">2</td>
+<td align="right">166</td>
+<td align="left">Auburn</td>
+<td align="left">New Mexico State</td>
+<td align="right">1</td>
+</tr>
+<tr class="even">
+<td align="right">2</td>
+<td align="right">228</td>
+<td align="left">Auburn</td>
+<td align="left">Clemson</td>
+<td align="right">5</td>
+</tr>
+<tr class="odd">
+<td align="right">2</td>
+<td align="right">264</td>
+<td align="left">Auburn</td>
+<td align="left">Washington</td>
+<td align="right">1</td>
+</tr>
+</tbody>
+</table>
+<p>An interpretation of this first row is that Auburn played San Jose State twice between 2010 and 2019 and only played Louisville once.</p>
+<p>The {tidygraph} package has its own structure called a <code>tbl_graph</code> which combines the nodes and edges into a single data structure and allows the user to manipulate either portion. While there is a constructor specifically for the <code>tbl_graph</code> object, I was having trouble getting it to work so I used <code>graph_from_data_frame</code> from {igraph} and then cast the graph to a <code>tbl_graph</code>.</p>
+<p>Also, no disrespect to the University of Hawaii but their presence really messes up the graph since Hawaii is <strong>so</strong> far from the other schools. So I’m just going to exclude them.</p>
+<pre class="r"><code>g &lt;- igraph::graph_from_data_frame(d = edge_list, directed = F, vertices = nodes) %&gt;% 
+  as_tbl_graph() %&gt;% 
+  filter(!str_detect(school, &#39;Hawai&#39;))
+
+print(g)</code></pre>
+<pre><code>## # A tbl_graph: 129 nodes and 1137 edges
+## #
+## # An undirected simple graph with 1 component
+## #
+## # Node Data: 129 x 5 (active)
+##   name  school            conference    latitude longitude
+##   &lt;chr&gt; &lt;chr&gt;             &lt;chr&gt;            &lt;dbl&gt;     &lt;dbl&gt;
+## 1 2005  Air Force         Mountain West     39.0    -105. 
+## 2 2006  Akron             Mid-American      41.1     -81.5
+## 3 333   Alabama           SEC               33.2     -87.6
+## 4 2026  Appalachian State Sun Belt          36.2     -81.7
+## 5 12    Arizona           Pac-12            32.2    -111. 
+## 6 9     Arizona State     Pac-12            33.4    -112. 
+## # ... with 123 more rows
+## #
+## # Edge Data: 1,137 x 5
+##    from    to first_team second_team      weight
+##   &lt;int&gt; &lt;int&gt; &lt;chr&gt;      &lt;chr&gt;             &lt;int&gt;
+## 1    10    90 Auburn     San José State        2
+## 2    10    52 Auburn     Louisville            1
+## 3    10    70 Auburn     New Mexico State      1
+## # ... with 1,134 more rows</code></pre>
+<p>Note that the output contains two sets of data, one for nodes and one for edges. Also note, that the nodes are noted as <em>(active)</em>. There is a function called <code>activate</code> which will let a user switch between node and edge data within the <code>tbl_graph</code> object and use functions like <code>mutate</code>, <code>filter</code>, etc. on the data.</p>
+<div id="visualizing-the-graph" class="section level3">
+<h3>Visualizing the Graph</h3>
+<p>Normally, a graph can be displayed using any number of algorithms to show optimal clustering and separation. However, in this case my nodes are actual schools with actual locations given by their latitudes and longitudes. So for my graph, if I want to show them on a United States map I will need to create a layout that forces the nodes in their true geographic positions. This can be done using the <code>create_layout</code> function which takes the graph and then <em>x</em> and <em>y</em> positions. Since those <em>x</em> and <em>y</em> positions need to be in the same order as the nodes in the graph object I’m just going to reference the graph object directly when populating <em>x</em> and <em>y</em>.</p>
+<pre class="r"><code>lay = create_layout(g, &#39;manual&#39;, x= g %&gt;% pull(longitude), y=g %&gt;% pull(latitude))</code></pre>
+<p>With the layout in place I can construct the graph. The syntax for {{ggraph}} isn’t much different from {{ggplot2}}. The main difference is in the starting function where {{ggraph}} takes in a graph and/or a layout. In this case because my custom layout already contains the graph I can just pass in the layout. Then there are some specific geoms for the graphs such as <code>geom_node_point</code> which places a point at each node, and <code>geom_edge_arc</code> which draws an arc for each edge with the <em>strength</em> parameter controlling how “arc-y” to make the edge (as opposed to a straight line which could be done with <code>geom_edge_link</code>). Then there are some specific styles like edge_alpha vs. alpha. But if you’re familiar with {ggplot2}} then this syntax shouldn’t be too different. The only other piece which I had never used before was <code>borders("state", color = 'grey90')</code> to draw the US state borders.</p>
+<p>While the more common games will show up with thicker and brighter lines not everyone knows the location of every FBS college in the US. So for the match-ups that occurred in at least of 8 of the 10 available years, I’ll add labels to the edges.</p>
+<pre class="r"><code>ggraph(lay) + 
+  borders(&quot;state&quot;, color = &#39;grey90&#39;) +
+  geom_node_point(color = &#39;grey90&#39;) + 
+  geom_edge_arc(strength = 0.1, 
+                aes(edge_alpha = weight, 
+                    edge_color = weight, 
+                    edge_width = weight,
+                    label = if_else(weight &gt;= 8, 
+                                    paste0(first_team,&#39;-&#39;,second_team), &quot;&quot;)
+                ),
+                vjust = -.5,
+                hjust = 0,
+                label_colour = &#39;white&#39;,
+                label_size = 6) + 
+  scale_edge_color_viridis(begin = .2, end = .8, option = &quot;A&quot;, direction = 1,
+                           labels = round) + 
+  scale_edge_width_continuous(range = c(.5, 1.5), guide = &#39;none&#39;) + 
+  scale_edge_alpha_continuous(guide = &#39;none&#39;, range = c(0.1, 1)) + 
+  labs(title = &quot;NCAA FBS Non-Conference Games (2010 - 2019)&quot;,
+       caption = &#39;**Source:** CollegeFootballData API&#39;,
+       edge_color = &quot;# of Games Played&quot;) + 
+  theme(
+    panel.background = element_rect(fill = &#39;black&#39;),
+    plot.background = element_rect(fill = &#39;black&#39;),
+    plot.caption = element_markdown(color = &#39;white&#39;, size = 16),
+    plot.subtitle = element_textbox_simple(family = &#39;roboto&#39;, size = 20, 
+                                           color = &#39;white&#39;),
+    plot.title = element_markdown(hjust = .5, family = &#39;roboto&#39;, 
+                                  color = &#39;white&#39;, size = 40),
+    legend.position = &#39;bottom&#39;,
+    legend.title = element_text(family = &#39;roboto&#39;, size = 20, color = &#39;white&#39;, 
+                                vjust = 1),
+    legend.text = element_text(family = &#39;roboto&#39;, size = 20, color = &#39;white&#39;),
+    legend.background = element_rect(fill = &#39;black&#39;)
+  )</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/final_graph-1.png" width="768" /></p>
+</div>
+</div>
+<div id="analysis" class="section level2">
+<h2>Analysis</h2>
+<p>Besides looking cool (in my opinion) this chart shows an edge for <strong>every</strong> non-conference game that occurred between 2010 and 2019 which is a lot of games. But to answer the questions of the largest Non-Conference rivalries there are a couple of patterns that arise:</p>
+<ol style="list-style-type: decimal">
+<li>The independent schools are over-represented which is not surprising since all of their games are non-conference games. This includes Notre Dame and BYU.</li>
+<li>Games between schools that are in-state but in different conferences (Florida vs. Florida State, Colorado vs. Colorado State, Clemson vs. South Carolina, Georgia vs. Georgia Tech).</li>
+<li>Games between schools that have functional reasons to be rivals such as the three service academies (Army, Navy, and Air Force).</li>
+</ol>
+<p>While not terribly surprising for anyone that follows college football, this post hopefully shows how you can create a network graph out of geographic coordinates and fix the layout so that it can be applied on top of a real map.</p>
+<p>In the next post I’ll be continuing on the theme of College Football and network graphs to see what we can learn about Conference Realignment!</p>
+</div>
