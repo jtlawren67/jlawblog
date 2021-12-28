@@ -198,19 +198,24 @@ I like the <a href="https://en.wikipedia.org/wiki/Big_12_Conference#Former_membe
   mutate(school = if_else(school %in% current_big_12, paste0(&quot;**&quot;,school,&quot;**&quot;), school)) %&gt;%
   group_by(school, years, conference) %&gt;% 
   summarize(start = min(season)-.5, end = max(season)+.5) %&gt;%
-  mutate(first_conference = max(if_else(start == min(start), conference, NA_character_), na.rm = T)) %&gt;% 
-  ggplot(aes(x = fct_reorder(school, -start, min))) + 
-    geom_linerange(aes(ymin = start, ymax = end, color = conference), size = 3) + 
-    labs(x = &quot;Schools&quot;, y = &quot;Season&quot;, color = &quot;Conference&quot;,
-         title = &quot;The 2021 Big 12 Schools and Prior Affiliates (1980-2021)&quot;,
-         subtitle = &quot;Current Big 12 schools are **bolded**&quot;) + 
-    coord_flip() + 
-    ggthemes::scale_color_tableau() + 
-    cowplot::theme_cowplot() + 
-    theme(
-      axis.text.y = element_markdown(),
-      plot.subtitle = element_markdown(),
-      panel.grid.major.y = element_line(color = &#39;grey90&#39;)
-    )</code></pre>
+  mutate(first_conference = max(if_else(start == min(start), conference, NA_character_), na.rm = T),
+         first_start = max(if_else(start == min(start), start, NA_real_), na.rm = T),
+         n_conferences = n_distinct(conference)) %&gt;%
+  arrange(first_start, first_conference, -years, n_conferences, school) %&gt;% 
+  ungroup() %&gt;% 
+  mutate(ord = row_number()) %&gt;% 
+  ggplot(aes(x = fct_reorder(school, ord, min, .desc = T))) + 
+  geom_linerange(aes(ymin = start, ymax = end, color = conference), size = 3) + 
+  labs(x = &quot;Schools&quot;, y = &quot;Season&quot;, color = &quot;Conference&quot;,
+       title = &quot;The 2021 Big 12 Schools and Prior Affiliates (1980-2021)&quot;,
+       subtitle = &quot;Current Big 12 schools are **bolded**&quot;) + 
+  coord_flip() + 
+  ggthemes::scale_color_tableau() + 
+  cowplot::theme_cowplot() + 
+  theme(
+    axis.text.y = element_markdown(),
+    plot.subtitle = element_markdown(),
+    panel.grid.major.y = element_line(color = &#39;grey90&#39;)
+  )</code></pre>
 <p><img src="{{< blogdown/postref >}}index_files/figure-html/school_migration-1.png" width="100%" /></p>
 </div>

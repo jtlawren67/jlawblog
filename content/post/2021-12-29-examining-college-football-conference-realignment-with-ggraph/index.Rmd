@@ -222,20 +222,26 @@ conference_graph_data %>%
   mutate(school = if_else(school %in% current_big_12, paste0("**",school,"**"), school)) %>%
   group_by(school, years, conference) %>% 
   summarize(start = min(season)-.5, end = max(season)+.5) %>%
-  mutate(first_conference = max(if_else(start == min(start), conference, NA_character_), na.rm = T)) %>% 
-  ggplot(aes(x = fct_reorder(school, -start, min))) + 
-    geom_linerange(aes(ymin = start, ymax = end, color = conference), size = 3) + 
-    labs(x = "Schools", y = "Season", color = "Conference",
-         title = "The 2021 Big 12 Schools and Prior Affiliates (1980-2021)",
-         subtitle = "Current Big 12 schools are **bolded**") + 
-    coord_flip() + 
-    ggthemes::scale_color_tableau() + 
-    cowplot::theme_cowplot() + 
-    theme(
-      axis.text.y = element_markdown(),
-      plot.subtitle = element_markdown(),
-      panel.grid.major.y = element_line(color = 'grey90')
-    )
+  mutate(first_conference = max(if_else(start == min(start), conference, NA_character_), na.rm = T),
+         first_start = max(if_else(start == min(start), start, NA_real_), na.rm = T),
+         n_conferences = n_distinct(conference)) %>%
+  arrange(first_start, first_conference, -years, n_conferences, school) %>% 
+  ungroup() %>% 
+  mutate(ord = row_number()) %>% 
+  ggplot(aes(x = fct_reorder(school, ord, min, .desc = T))) + 
+  geom_linerange(aes(ymin = start, ymax = end, color = conference), size = 3) + 
+  labs(x = "Schools", y = "Season", color = "Conference",
+       title = "The 2021 Big 12 Schools and Prior Affiliates (1980-2021)",
+       subtitle = "Current Big 12 schools are **bolded**") + 
+  coord_flip() + 
+  ggthemes::scale_color_tableau() + 
+  cowplot::theme_cowplot() + 
+  theme(
+    axis.text.y = element_markdown(),
+    plot.subtitle = element_markdown(),
+    panel.grid.major.y = element_line(color = 'grey90')
+  )
+
 ```
 
 
