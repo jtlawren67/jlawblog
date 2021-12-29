@@ -10,7 +10,6 @@ tags:
   - cfbfastR
   - ggraph
   - tidygraph
-  - ggump
 subtitle: ''
 summary: ''
 authors: []
@@ -28,11 +27,11 @@ knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, error = FAL
 library(knitr)
 ```
 
-In my previous [post](https://jlaw.netlify.app/2021/12/27/exploring-college-football-non-conference-rivalries-with-ggraph/) I looked at College Football Non-Conference games to create a network map overlaid on top of the United States using the {ggraph} package.  In this post I'll be extending that to examine Conference Realignment, which is when colleges change from one conference to the next.  Over the years, this has been reactions to internal politics between Football schools vs. Basketball schools, or schools wanting increase in clout by joining a more prestigious conferences.
+In my previous [post](https://jlaw.netlify.app/2021/12/27/exploring-college-football-non-conference-rivalries-with-ggraph/) I looked at College Football Non-Conference games to create a network map overlaid on top of the United States using the {ggraph} package.  In this post I'll be extending that to examine Conference Realignment, which is when colleges change from one conference to the next.  Over the years, this has been caused by reactions to internal politics between Football schools vs. Basketball schools, or schools wanting an increase in clout by joining a more prestigious conference.
 
-More specifically, I'll be making a network map based on historical conference affiliations to visualize the changes that have occurred due to realignment and then I'll zoom specifically into the case of the Big 12 conference to show how the graph reflects the history of the conference.
+More specifically, I'll be making a network map based on historical conference affiliations to visualize the changes that have occurred due to realignment.  Then I'll zoom specifically into the case of the Big 12 conference to show how the graph reflects the history of the conference.
 
-Since all of the packages being used in this post were described in the prior post, I'll be skipping through that sections.
+Since all of the packages being used in this post were described in the prior [post](https://jlaw.netlify.app/2021/12/27/exploring-college-football-non-conference-rivalries-with-ggraph/), I'll be skipping through that section.
 
 # Set up
 
@@ -44,7 +43,6 @@ library(tidygraph)
 library(ggraph)
 library(ggtext)
 library(showtext)
-library(ggbump)
 
 font_add_google('Roboto', "roboto")
 showtext_auto()
@@ -52,11 +50,11 @@ showtext_auto()
 
 # Creating a Network of the FBS Conference Affiliations
 
-For this both analyses I'll be creating a network graph where individual schools are the nodes and the edges represent whether those schools were in the same conference in a given year.  Since conference affiliations will change over time, the number of years that school's were in the same conference will form a strength of association.  To get this data, I'll be using the `cfdb_team_info()` function from the {cfbfastR} package to return a list of all the FBS schools and their conference affiliation for each year between 1980 and 2021.  
+For both analyses I'll be creating a network graph where individual schools are the nodes and the edges represent whether those schools were in the same conference in a given year.  Since conference affiliations will change over time, the number of years that schools were in the same conference will form a strength of association.  To get this data, I'll be using the `cfdb_team_info()` function from the {cfbfastR} package to return a list of all the FBS schools and their conference affiliation for each year between 1980 and 2021.  
 
-The choice of 1980 is arbitrary to limit the number of connections and the size of the data.  However, the package can return data at least as far back as 1900.
+The choice of 1980 is arbitrary to limit the number of connections and the size of the data.  However, the package can return data much further back in time.
 
-In order to extract the data for each year I pass a vector of years 1980 through 2021 into `map_dfr` from {purrr} to run a custom function taking each individual year as an input and stacking the results into a single data frame.  My custom function first calls the College Football Database API to retrieve all the schools for a given year and removes all the Independent schools since they do not have an affiliation (for example, Notre Dame).  Then since I need to list my list of schools into a list of co-occurrence for each conference, I `group_by()` conference so the next parts of the function get run on a conference by conference basis, expand the school column to create two columns with all within conference combinations.  Since "all within conference combinations" includes having the same school twice, I'll filter out those rows, and since A/B is different than B/A, I'll create new variables that will always put the school coming first alphabetically into `school1` and the other into `school2`.  Technically, this will double each entry but I'll run `distinct()` to get the unique set since I'm going to eventually weight by the number of years and this function runs one year at a time.
+In order to extract the data for each year I pass a vector of years 1980 through 2021 into `map_dfr` from {purrr} to run a custom function taking each individual year as an input and stacking the results into a single data frame.  My custom function first calls the College Football Database API to retrieve all the schools for a given year and removes all the Independent schools since they do not have an affiliation (for example, Notre Dame).  Then since I need to get my list of schools into a list of co-occurrences for each conference, I `group_by()` conference so the next parts of the function get run on a conference by conference basis and `expand` the school column to create two columns with all within conference combinations.  Since "all within conference combinations" includes having the same school twice, I'll filter out those rows, and since A/B is different than B/A, I'll create new variables that will always put the school coming first alphabetically into `school1` and the other into `school2`.  Technically, this will double count each entry but I'll run `distinct()` to get the unique set since I'm going to eventually weight by the number of years and this function runs one year at a time.
 
 ```{r get_data, cache=TRUE}
 conference_graph_data <- map_dfr(1980:2021, function(yr){
@@ -90,7 +88,7 @@ current_fbs <- cfbd_team_info(year = 2021) %>%
 
 ```
 
-Next, I'll use the {tidygraph} package to turn this list of edges into a `tbl_graph()` object.  First I `ungroup` the data frame since it would still be grouped from my custom function.  Then using the `count()` function I create a weight columns for each year the school schools are affiliated with each other.  Next, I leverage the vector I created in the step before to keep only edges where both schools are currently in the FBS.  Then I create the `tbl_graph` object using `as_tbl_graph()`.
+Next, I'll use the {tidygraph} package to turn this list of edges into a `tbl_graph()` object.  First I `ungroup` the data frame since it would still be grouped from my custom function.  Then using the `count()` function I create a `weight` column for each year the schools are affiliated with each other.  Next, I leverage the vector I created in the step before to keep only edges where both schools are currently in the FBS.  Then I create the `tbl_graph` object using `as_tbl_graph()`.
 
 `tbl_graph` objects can be manipulated using {dplyr} verbs to create additional information for either the nodes or the edges.  In this instance I add two additional columns to the nodes:
 
@@ -110,7 +108,7 @@ print(conf_graph_all)
 
 ```
 
-Note that in the above output, you can see the columns for `degree` and `community` that I created.  For the Arizona and Arizona State columns, the `degree` means that they are each connected to 11 schools (which I found kind of shocking, but since the Pac-10 formed in 1978 it does make sense that they've only been in a conference with the other now Pac-12 schools).  The `community` column means that they both belong to the same grouping of nodes, which is this case is probably the Pac-12.
+Note that in the above output, you can see the columns for `degree` and `community` that I created.  For the Arizona and Arizona State columns, the `degree` means that they are each connected to 11 schools (which I found kind of shocking, but since the Pac-10 formed in 1978 it does make sense that they've only been in a conference with the other now Pac-12 schools).  The `community` column means that they both belong to the same grouping of nodes, which in this case is probably the Pac-12.
 
 For creating the network visualization itself, I'm using the {ggraph} package which has a very similar syntax to {ggplot2}.  The important notes here is that I'm displaying the edges as straight lines using `geom_edge_link()` and varying the shading, color, and width based on the weight.  And I'm displaying the nodes as labels using `geom_node_label` and filling in by the `community` column.  Everything else should be pretty normal if you're familiar with {ggplot2} syntax.
 
@@ -139,13 +137,15 @@ conf_graph_all %>%
 
 ![](featured.PNG)
 
-While I normally like to have everything be reproducible it felt easier to do some annotations about what the various communities are and how they reflect the current conference structure as well as how schools that change conferences do appear as caught in a tug of war between two communities.  The piece that I enjoy the most is the depiction of the former Big East football teams with Syracuse, Virginia Tech, Miami, Pittsburgh, and Boston College being teams that left for the ACC between 2004 and 2013 (with Louisville following in 2014); West Virginia which left for the Big 12 in 2012, and Rutgers which left for the Big Ten in 2014 (along with Maryland who left the ACC for the Big Ten and shows up very clearly between those two clusters).
+While I normally like to have everything be reproducible it felt necessary to do some annotations about what the various communities are and how they reflect the current conference structure as well as how schools that change conferences appear as caught in a tug of war between two communities.  These annotations, while possible to due in R, are much easier to do outside of it.  
+
+The piece that I enjoy the most is the depiction of the former Big East football teams.  Syracuse, Virginia Tech, Miami, Pittsburgh, and Boston College left for the ACC between 2004 and 2013 (with Louisville following in 2014); West Virginia left for the Big 12 in 2012; And Rutgers left for the Big Ten in 2014 (along with Maryland who left the ACC for the Big Ten and shows up very clearly between those two clusters).
 
 # Zooming into the Big 12 
 
-Using a similar technique to the one above I can look at a sub-graph of the current Big 12 schools as well as all the schools that are one degree removed from a current Big 12 school.
+Using a similar technique to the one above I can look at a sub-graph of the current Big 12 schools.  I chose the Big 12 for this example because I think the history of the conference is both interesting and well structured when compared to the complete chaos or complete stability of other conferences.  Just to get this out of the way, College Football conference sometimes anchor more to branding in their names than accuracy.  You might notice that the Big 12 only has 10 schools and the Big Ten has 14.  Best not too think too much about this.
 
-Similar to before, I'll query the College Football Data Base API and pass in the parameter B12 for the Big 12 Conference and the year 2021 to get the list of existing schools and then I'll use that list to filter to the current Big 12 schools and any other schools that has ever been affiliated with a current Big 12 school and using community detection with `group_louvain()`.
+Similar to before, I'll query the College Football Data Base API and pass in the parameter B12 for the Big 12 Conference and the year 2021 to get the list of existing schools and then I'll use that list to filter to the current Big 12 schools and any other schools that has ever been affiliated with a current Big 12 school. For simplicity later on I create an indicator for whether the node is a current Big 12 school.
 
 ```{r b12}
 current_big_12 <- cfbd_team_info(conference = 'B12', year = 2021) %>%
@@ -161,28 +161,26 @@ conf_graph_b12 <- conference_graph_data %>%
   # Turn to tbl_graph_object
   as_tbl_graph(directed = F) %>%
   # Create indicator for a current Big 12 Schools
-  mutate(is_current_big_12 = name %in% current_big_12,
-         name = if_else(is_current_big_12, paste0("**",name,"**"), name),
-         community = group_louvain()) 
+  mutate(is_current_big_12 = name %in% current_big_12) 
 
 ```
 
-Then using similar code to the full network above, I can plot the Big 12 sub-graph.  The current Big 12 school's names will be starred:
+Using similar code to the full network above, I can plot the Big 12 sub-graph after filtering to only nodes from current Big 12 schools.  In this case, rather than using the default `ggraph()` layout, I give it the `'fr'` string which applies the Fruchterman-Reingold layout algorithm.  Since this can provide non-deterministic layouts, I set the seed before running.
 
 ```{r b12_chart, out.width="100%"}
+set.seed(20211229)
 conf_graph_b12 %>%
-ggraph() + 
-  geom_edge_link(aes(edge_alpha = weight, edge_color = weight, edge_width = weight)) + 
-  geom_node_label(aes(label = name, fill = factor(community), 
-                      size = is_current_big_12), show.legend = F,
-                  alpha = .5) + 
+  # Filter to current Big 12 Schools
+  filter(is_current_big_12) %>%
+  ggraph('fr') + 
+  geom_edge_link(aes(edge_alpha = weight, edge_color = weight, 
+                     edge_width = weight)) + 
+  geom_node_label(aes(label = name)) + 
   scale_edge_alpha_continuous(guide = 'none') + 
   scale_edge_width() + 
   scale_edge_color_viridis(option = 'C', end = .8, guide = 'none') + 
-  scale_size_discrete(range = c(3.5, 4.5)) + 
-  scale_fill_discrete(guide = F) + 
-  labs(title = "2021 Big 12 Football Conference Network",
-       subtitle = "Tracking Former Conference Members of Current Big 12 Schools (1980 - 2021)",
+  labs(title = "2021 Big 12 Football Conference",
+       subtitle = "Network Graph Based on Conference Affiliations 1980-2021",
        edge_width = "Years Affiliated",
        caption = '**Source:** CollegeFootballData API') + 
   theme_graph() + 
@@ -195,21 +193,22 @@ ggraph() +
   )
 
 ```
-I like the [Big 12](https://en.wikipedia.org/wiki/Big_12_Conference#Former_members) as an example because its the Conference that reveals the most history in its structure forming in 1996 from the merging of the [Big 8](https://en.wikipedia.org/wiki/Big_Eight_Conference#Conference_split) (Missouri, Colorado, Nebraska, Oklahoma, Oklahoma State, Iowas State, Kansas, Kansas State) with four teams from the [Southwest Conference](https://en.wikipedia.org/wiki/Southwest_Conference#Football) (Texas, Texas Tech, Baylor, Texas A&M).  Missouri, Nebraska, and Colorado left for other conferences in 2011 and 2012 creating their sub-cluster, but the strong core network of the other five schools from the Big 8 remain as well as the closer positioning of the four Southwest Conference schools that joined.  Texas A&M left for the SEC in 2012 but shows up as less of an outlier given their time with the other Texas schools in the Southwest Conference for the 16 years in this data before the conference dissolved and having been in the Big 12 for 6 years before leaving.
 
-The schools from the Southwest Conference that weren't absorbed into the Big 12 went their separate ways.  Arkansas joined the SEC.  Rice, TCU, and SMU joined the Western Athletic Conference (WAC), and Houston joined Conference USA.
+Just eyeballing the above graph it looks like there are 4 clusters of nodes:
 
-The red and blue clusters are easily explained and lack much of the history that goes with the green cluster.  TCU moved its way from the WAC to Conference USA in 2001 then onto the Mountain West Conference in 2005 before joining the Big 12 in 2012.  In its journey TCU became associated with 21 schools that are only on the chart because of them.
+1. The strong network of Oklahoma, Oklahoma State, Iowa State, Kansas, and Kansas State
+2. The strong network of Texas, Texas Tech, and Baylor
+3. TCU is a moderate strength network with the Texas schools
+4. West Virginia without any strong connections.
 
-The blue cluster, West Virginia, is connected to its former conference-mates in the Big East conference before joining the Big 12 in 2012.  Cincinnati, Louisville, and South Florida appear between TCU and West Virginia due to their being in Conference USA before joining the Big East.
+When looking through the [Big 12](https://en.wikipedia.org/wiki/Big_12_Conference#Former_members) conference history this structure makes a ton of sense.  The conference was formed in 1996 from the merging of the [Big 8](https://en.wikipedia.org/wiki/Big_Eight_Conference#Conference_split) which included the schools in group 1 (as well as Nebraska, Colorado, and Missouri who eventually left for other conferences in 2011-2012) and the [Southwest Conference](https://en.wikipedia.org/wiki/Southwest_Conference#Football) from which Texas Tech, Texas and Baylor joined (Texas A&M joined as well but left for a different conference in 2012).  So the strong networks in groups 1 and 2 and the weaker connections between them reflect these original conference and their merging.
 
-The most interesting part is the green grouping and how you can see some sub-grouping that are in line with historical conference realignment:
-1. The core group of the Big 8 that have stayed together (Kansas, Kansas State, Oklahoma, Oklahoma State, Iowa State)
-2. The piece of the Big 8 that left the Big 12 (Missouri, Nebraska, Colorado)
-3. The piece of the Southwest Conference that joined the Big 12 (Texas, Texas Tech, Texas A&M, Baylor)
-4. The piece of the Southwest Conference that left to join other Conferences (Arkansas, Rice, SMU, Houston, TCU)
+TCU was part of the original Southwest Conference with the Texas schools but did not join the Big 12 until 2012 instead journeying through the Western Athletic Conference (WAC), Conference USA, and the Mountain West Conference.  This is reflected in their connection with the Texas schools (through their time in the Southwest Conference) but with weaker strength than the other Texas schools have with each other.
 
-This was a lot of narrative, so hopefully this image can show the migration and overlap between these 50 schools a bit better.  For the non-current Big 12 schools, the chart reflects the time when they were associated.  For example, a school like Wyoming shows a gap for the time when TCU was in Conference USA between its time in the WAC and the Mountain West since for that short period they were not in a conference with any current Big 12 school.
+Finally, West Virginia joined the Big 12 in 2012 from the Big East conference and prior to that point had no affiliation with any of the other schools.
+
+While the graph is good for showing the structure of the relationships it can be difficult to follow the conference merges and changes.  This should be more apparent in the visualization below:
+
 
 ```{r school_migration, out.width="100%"}
 conference_graph_data %>%
@@ -219,7 +218,6 @@ conference_graph_data %>%
   select(-dummy) %>%
   distinct() %>% 
   add_count(school, name = 'years') %>%
-  mutate(school = if_else(school %in% current_big_12, paste0("**",school,"**"), school)) %>%
   group_by(school, years, conference) %>% 
   summarize(start = min(season)-.5, end = max(season)+.5) %>%
   mutate(first_conference = max(if_else(start == min(start), conference, NA_character_), na.rm = T),
@@ -228,11 +226,11 @@ conference_graph_data %>%
   arrange(first_start, first_conference, -years, n_conferences, school) %>% 
   ungroup() %>% 
   mutate(ord = row_number()) %>% 
+  filter(school %in% current_big_12) %>%
   ggplot(aes(x = fct_reorder(school, ord, min, .desc = T))) + 
-  geom_linerange(aes(ymin = start, ymax = end, color = conference), size = 3) + 
+  geom_linerange(aes(ymin = start, ymax = end, color = conference), size = 8) + 
   labs(x = "Schools", y = "Season", color = "Conference",
-       title = "The 2021 Big 12 Schools and Prior Affiliates (1980-2021)",
-       subtitle = "Current Big 12 schools are **bolded**") + 
+       title = "Conference Migration of the Current Big 12 Schools") + 
   coord_flip() + 
   ggthemes::scale_color_tableau() + 
   cowplot::theme_cowplot() + 
@@ -243,5 +241,5 @@ conference_graph_data %>%
   )
 
 ```
-
+Given the history of the Big 12 Conference and college football conference realignment in general it does appears that network structures work well for encoding the history of conference affiliations into a visualization.
 
