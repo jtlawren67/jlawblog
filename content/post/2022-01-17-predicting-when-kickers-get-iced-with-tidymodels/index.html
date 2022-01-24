@@ -1,0 +1,552 @@
+---
+title: Predicting When Kickers Get Iced with {tidymodels}
+author: JLaw
+date: '2022-01-24'
+slug: predicting-when-kickers-get-iced-with-tidymodels
+categories:
+  - R
+  - ML
+tags:
+  - cfbfastR
+  - tidymodels
+  - themis
+  - fasttune
+  - vip
+  - pdp
+  - SHAPforxgboost
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2022-01-24T06:56:05-05:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+<script src="{{< blogdown/postref >}}index_files/header-attrs/header-attrs.js"></script>
+
+
+<p>I’m constantly on the lookout for things I can use for future posts for this blog. My goal is usually two-fold. First, what is a tool or technique I want to try/learn and second is there an interesting data set that I can use with those tools. I’d been wanting to play around with {tidymodels} for a while but hadn’t found the right problem. Watching some of the NCAA bowl games over the winter break finally provided me with a use-case. My original question of <strong>whether icing the kicker really works?</strong> will be explored in a future post but it led to the question for this post which will explore <strong>predicting when coaches will choose to ice the kicker</strong>.</p>
+<p>This post will explore the data gathering process from the <a href="https://collegefootballdata.com/">College Football Database</a>, the modeling process using <code>tidymodels</code>, and explaining the model using tools such as variable importance plots, partial dependency plots, and SHAP values.</p>
+<p>Huge thanks to <a href="https://juliasilge.com">Julia Silge</a> whose numerous blog posts on tidymodels were instrumental as a resource for learning the ecosystem.</p>
+<div id="part-i-data-gathering" class="section level2">
+<h2>Part I: Data Gathering</h2>
+<p>To determine whether or not a potential field goal attempt will get iced or not I’ll need data on each field goal attempt, I’ll need a definition of what is <strong><em>icing the kicker</em></strong>, and I’ll need other features that would be predictive of whether or not a kicker will be iced.</p>
+<p><a href="https://en.wikipedia.org/wiki/Icing_the_kicker">Wikipedia</a> defines “icing the kicker” as “the act of calling a timeout immediately prior to the snap in order to disrupt the process of kicking a field goal”. Therefore, we’ll define a field goal attempt as being iced if a timeout is called by the defense directly before it.</p>
+<p>The data for this post comes from the <a href="https://collegefootballdata.com/">College Football Database</a> More details on this API can be found in my earlier post on <a href="https://jlaw.netlify.app/2021/12/27/exploring-college-football-non-conference-rivalries-with-ggraph/">Exploring Non-Conference Rivalries</a> so the set-up will not be covered here. Play-by-Play data from any game can be accessed from the <code>cfbd_pbp_data()</code> function.</p>
+<p>Looking at the returned data, the features that I’ll explore as potentially predictive are:</p>
+<ul>
+<li>Regulation Time Remaining in the Game (or if the game is in overtime)</li>
+<li>Distance of the Field Goal Attempt</li>
+<li>The Score Difference</li>
+<li>Whether the kicking team is the home team</li>
+<li>Whether the kicking team has missed earlier in the game</li>
+<li>The pre-game winning probability of the kicking team (to assess whether the game is expected to be close)</li>
+</ul>
+<p>The packages needed for the data gathering process are <code>tidyverse</code> for data manipulation and <code>cfbfastR</code> to access the API.</p>
+<pre class="r"><code>library(cfbfastR)
+library(tidyverse)</code></pre>
+<p>For convenience I’ll be looking at NCAA Regular Season football games between 2013 and 2021. The API notes that prior to the College Football Playoff in 2014 the regular season was weeks 1-14 and since 2014 its been weeks 1 to 15. To create a loop of the weeks and years to pass to the data pull function I’ll use <code>expand.grid()</code> to create all combinations of weeks and years and then apply a filter to keep only valid weeks.</p>
+<pre class="r"><code>grid &lt;- expand.grid(
+  year = 2013:2021,
+  week = 1:15
+) %&gt;%
+  arrange(year, week) %&gt;%
+  # Before 2014 there were only 14 regular season weeks
+  filter(year &gt; 2014 | week &lt;= 14) </code></pre>
+<p>The API does provide options to specify which types of plays to return. However, to determine whether or not a timeout was called immediately before it I’ll need to pull the data for EVERY play to accurately apply a lag function. Since I don’t want to keep every play at the end of the day, I’ll create a function to handle the API call and some post processing using the grid of weeks and years above as inputs to the function. I use <code>map2_dfr()</code> from <code>purrr</code> to iterate over two parameters into a function.</p>
+<p>The call to <code>cfbd_pbp_data()</code> with week and year parameters will return the play by play data for every game in that week. To process the data I subset to relevant columns, create some lagged columns to determine the time that the play started (since the time in the data reflects the end of play) and the plays that came immediately before. The information from the lagged variables get used to define the dependent variable <em>is_iced</em> as if the prior play was a timeout called by the defensive team during the same drive then we’ll consider the attempted to be iced.</p>
+<p>Then I create some additional values that will be used in the modeling, subset my data to only be field goal attempts (and remove any duplicated rows that unfortunately exist), and create the variable for whether the kicking team had a prior miss in the game.</p>
+<pre class="r"><code>###Get Play by Play Data
+fg_attempts &lt;- map2_dfr(grid$year, grid$week, function(year, week){
+  
+  
+  plays &lt;- cfbd_pbp_data(year=year, week=week, season_type = &#39;regular&#39;) %&gt;%
+    group_by(game_id) %&gt;%
+    arrange(id_play, .by_group = TRUE) %&gt;% 
+    #Subset to only relevant columns
+    select(offense_play, defense_play, home, away, 
+           drive_start_offense_score, drive_start_defense_score,
+           game_id, drive_id, drive_number, play_number,
+           period, clock.minutes, clock.seconds, yard_line, yards_gained,
+           play_type, play_text, id_play,
+           drive_is_home_offense, 
+           offense_timeouts,
+           defense_timeouts,
+           season, wk) %&gt;% 
+    mutate(
+      # Get prior play end time to use as current play start time
+      play_start_mins = lag(clock.minutes),
+      play_start_secs = lag(clock.seconds),
+      # Get previous plays
+      lag_play_type = lag(play_type),
+      lag_play_text = lag(play_text),
+      
+      # Create Other Variables
+      is_iced = coalesce(
+        if_else(
+          # If the same drive, the immediately prior play was a timeout 
+          # called by the defensive team
+          drive_id == lag(drive_id) &amp; 
+            play_number - 1 == lag(play_number) &amp; 
+            lag_play_type == &#39;Timeout&#39; &amp;
+            str_detect(str_to_lower(lag_play_text), str_to_lower(defense_play)),
+          1,
+          0
+        ), 
+        0
+      ),
+      score_diff = drive_start_offense_score - drive_start_defense_score,
+      time_remaining_secs = 60*play_start_mins + play_start_secs,
+      fg_made = if_else(play_type == &#39;Field Goal Good&#39;, 1, 0)
+    ) %&gt;% 
+    ungroup() %&gt;% 
+    ## Keep only Field Goal Attempt Plays
+    filter(str_detect(play_type, &#39;Field Goal&#39;),
+           !str_detect(play_type, &#39;Blocked&#39;)) %&gt;%
+    #Distinct Out Bad Rows
+    distinct(game_id, drive_id, period, clock.minutes, clock.seconds, play_type, play_text,
+             .keep_all = T) %&gt;%
+    ## Determine if the offensive team has missed a field goal once already during the game
+    group_by(game_id, offense_play) %&gt;% 
+    mutate(min_miss = min(if_else(play_type == &#39;Field Goal Missed&#39;, id_play, NA_character_), na.rm = T),
+           prior_miss = if_else(id_play &lt;= min_miss | is.na(min_miss), 0, 1)
+    ) %&gt;% 
+    ungroup()
+  }
+)</code></pre>
+<p>Getting the offensive win probabilities has to come from a separate function, <code>cfbd_metrics_wp_pregame()</code>. This function came return a season’s worth of data by only calling the year. Using <code>map_dfr</code> with the years 2013 to 2021 will return this data.</p>
+<pre class="r"><code>betting_lines &lt;- map_dfr(unique(grid$year), ~cfbd_metrics_wp_pregame(year = .x, season_type = &#39;regular&#39;))</code></pre>
+<p>The final step is adding the win probability data to the play by play data by joining the data and assigning the win probability for each play to the offensive team vs. home/away. Finally, I do some final data cleaning to not have negative timeouts remaining, extracting the attempted distance of the field goal from a play-by-play string, and defining the regulation time remaining. The last step is removing attempts where icing the kicker would be impossible. Since the defense needs a timeout to be able to ice, any attempt where the defense has no timeouts gets excluded.</p>
+<pre class="r"><code>fg_data &lt;- fg_attempts %&gt;%
+  inner_join(betting_lines %&gt;%
+               select(game_id, home_win_prob, away_win_prob),
+             by = &quot;game_id&quot;) %&gt;%
+  mutate(offense_win_prob = if_else(offense_play == home, home_win_prob, away_win_prob),
+         defense_timeouts = pmax(defense_timeouts, 0),
+         regulation_time_remaining = if_else(
+           period &gt; 4, 0, (4-period)*900+pmin(time_remaining_secs, 900)),
+         attempted_distance = coalesce(str_extract(play_text, &#39;\\d+&#39;) %&gt;% as.numeric(),
+                                       yards_gained)
+         ) %&gt;%
+  #Need to Ensure that Icing Could Occur
+  filter(defense_timeouts &gt; 0 | is_iced)</code></pre>
+<p>The result of this is a dataset of 19,072 field goal attempts covering 6,435 games over 9 seasons. of the 19,072 attempts, 804 (4%) would be considered as <em>iced</em>.</p>
+</div>
+<div id="part-2-building-the-model" class="section level2">
+<h2>Part 2: Building the Model</h2>
+<p>Normally, I would do some EDA to better understand the data set but in the interest of word count I’ll jump right into using <code>tidymodels</code> to predict whether or not a given field goal attempt will be iced. In order to make the data work with the XGBoost algorithm I’ll subset and convert some numeric variables including our dependent variable to factors. A frustrating thing I learned in writing this post is that with a factor dependent variable the assumption is that the first level is the positive class. I’m recoding <em>is_iced</em> to reflect that. The libraries I’ll be working with for the modeling section are <code>tidymodels</code> for nearly everything and <code>themis</code> to use SMOTE to attempt to correct class imbalance, and <code>finetune</code> to run the <code>tune_race</code> option.</p>
+<pre class="r"><code>library(tidymodels)
+library(themis)
+library(finetune)</code></pre>
+<pre class="r"><code>model_data &lt;- fg_data %&gt;%
+  transmute(
+    regulation_time_remaining,
+    attempted_distance,
+    drive_is_home_offense = if_else(drive_is_home_offense, 1, 0),
+    score_diff,
+    prior_miss = if_else(prior_miss==1, &#39;yes&#39;, &#39;no&#39;),
+    offense_win_prob,
+    is_overtime = if_else(period &gt; 4, 1, 0),
+    is_iced = factor(is_iced, levels = c(1, 0), labels = c(&#39;iced&#39;, &#39;not_iced&#39;))
+  )</code></pre>
+<p>One of the powerful pieces of the <code>tidymodels</code> ecosystem is that its possible to try out different pre-processing recipes and model specifications with ease. For example, this dataset is heavily class imbalanced, I can easily try two versions of the model where one attempts to correct for this and one that does not. To assess how good a job my model does at predicting future data I’ll split by data into a training set and test set, stratifying on <em>is_iced</em> to ensure the dependent variable is balanced across the slices. The <code>initial_split()</code> function creates the split with a default proportion of 75% and <code>training()</code> and <code>testing()</code> extracts the data.</p>
+<pre class="r"><code>set.seed(20220102)
+ice_split &lt;- initial_split(model_data, strata = is_iced)
+ice_train &lt;- training(ice_split)
+ice_test &lt;- testing(ice_split)</code></pre>
+<p>One thing to note is that XGBoost has many tuning parameters so I’ll use cross-validation to figure out the best combination of hyper-parameters. The <code>vfold_cv()</code> function will take the training data and split it into 5 folds again stratifying by the <em>is_iced</em> variable.</p>
+<pre class="r"><code>train_5fold &lt;- ice_train %&gt;%
+  vfold_cv(5, strata = is_iced)</code></pre>
+<div id="tidymodels" class="section level3">
+<h3>Tidymodels</h3>
+<p>My interpretation of the building blocks are <strong>recipes</strong> which handle how data should pre-processed, <strong>specifications</strong> which tells <code>tidymodels</code> which algorithms and parameters to use, and <strong>workflows</strong> that bring them together. Since I’ve done most of the pre-processing in the data gathering piece these recipes will be pretty vanilla. However, this data is <em>heavily</em> imbalanced with only 4% of attempts being iced. So I will have two recipes. The first sets up the formula and one-hot encodes the categorical variables.</p>
+<pre class="r"><code>rec_norm &lt;- recipe(is_iced ~ ., data = ice_train) %&gt;%
+  step_dummy(all_nominal_predictors(), one_hot =T) </code></pre>
+<p>and the second will add a second step that uses <code>step_smote()</code> to create new examples of the minority class to fix the class imbalance problem.</p>
+<pre class="r"><code>rec_smote &lt;- recipe(is_iced ~ ., data = ice_train) %&gt;%
+  step_dummy(all_nominal_predictors(), one_hot = T) %&gt;%
+  step_smote(is_iced) </code></pre>
+<p>Then I’ll define my specification. The hyper-parameters that I want to tune are set to <code>tune()</code> and then I tell {tidymodels} that I want to use XGBoost for a classification problem.</p>
+<pre class="r"><code>xg_spec &lt;- boost_tree(
+  trees = tune(), 
+  tree_depth = tune(), 
+  min_n = tune(), 
+  loss_reduction = tune(),                     
+  sample_size = tune(), 
+  mtry = tune(),         
+  learn_rate = tune(), 
+  stop_iter = tune()
+) %&gt;% 
+  set_engine(&quot;xgboost&quot;) %&gt;% 
+  set_mode(&quot;classification&quot;)</code></pre>
+<p>The recipes and specifications are combined in workflows (if using 1 recipe and 1 specification) or workflow sets if wanting to use different combinations. In the <code>workflow_set()</code> function you can specify a list of recipes as preproc and a list of specifications as models. The <em>cross</em> parameter being set to true creates every possible combination. For this analysis I’ll have 2 preproc/model combinations:</p>
+<pre class="r"><code>wf_sets &lt;- workflow_set(
+  preproc = list(norm = rec_norm, 
+                 smote = rec_smote),
+  models = list(vanilla = xg_spec),
+  cross = T
+)</code></pre>
+<p>Next step is setting up the grid of parameters that will be tried in the model specifications above. Since there a lot of parameters to be tuned and I don’t want this to run forever I’m using <code>grid_latin_hypercube</code> to set 100 combinations of parameters that try to cover the entire parameter space but without running every combination.</p>
+<pre class="r"><code>grid &lt;- grid_latin_hypercube(
+  trees(),
+  tree_depth(),
+  min_n(),
+  loss_reduction(),
+  sample_size = sample_prop(),
+  finalize(mtry(), ice_train),
+  learn_rate(),
+  stop_iter(range = c(10L, 50L)),
+  size = 100
+)</code></pre>
+<p>Finally its time to train the various workflows that have been designed. To do this I’ll pass the workflow_set defined above into the <code>workflow_map()</code> function. The “tune_race_anova” specification tells the training process to abandon certain hyper-parameter values if they’re not showing value. More detail can be found <a href="https://juliasilge.com/blog/baseball-racing/">Julia Silge’s post</a>. Also passed into this function are the resamples generated from the 5 folds, the grid of parameters, a control set that will save the predictions and workflows so that I can revisit them later on. Finally, I create a metric set of the performance metrics I want to calculate here choosing accuracy , ROC AUC, Multinomial Log Loss, and F1 Measure.</p>
+<pre class="r"><code>#Set up Multiple Cores
+doParallel::registerDoParallel(cores = 4)
+
+
+tuned_results &lt;- wf_sets %&gt;% 
+  workflow_map(
+    &quot;tune_race_anova&quot;,
+    resamples = train_5fold,
+    grid = grid,
+    control = control_race(save_pred = TRUE,
+                           parallel_over = &quot;everything&quot;,
+                           save_workflow = TRUE),
+    metrics = metric_set(f_meas, accuracy, roc_auc, mn_log_loss, pr_auc, precision, recall),
+    seed = 20210109
+  )</code></pre>
+<p>Tidymodels has an <code>autoplot()</code> function which will plot the best scoring model runs for each metric. However, I want a little more customization then what that function (or at least what I know of that function) provides. Using <code>map_dfr()</code> I’m going to stack the top model for each specification for each of the 5 performance metrics on top of each other using <code>rank_results()</code> to get the top model for each config for each metric.</p>
+<pre class="r"><code>perf_stats &lt;- map_dfr(c(&#39;accuracy&#39;, &#39;roc_auc&#39;, &#39;mn_log_loss&#39;, &#39;pr_auc&#39;, &#39;f_meas&#39;,
+                        &#39;precision&#39;, &#39;recall&#39;),
+                ~rank_results(tuned_results, rank_metric = .x, select_best = T) %&gt;% 
+                filter(.metric == .x) 
+        )
+
+perf_stats %&gt;% 
+  ggplot(aes(x = wflow_id, color = wflow_id, y = mean)) +
+    geom_pointrange(aes(y = mean, ymin = mean - 1.96*std_err, ymax = mean + 1.96*std_err)) + 
+    facet_wrap(~.metric, scales = &quot;free_y&quot;) + 
+    scale_color_discrete(guide = &#39;none&#39;) + 
+    labs(title = &quot;Performance Metric for Tuned Results&quot;,
+         x = &quot;Model Spec&quot;,
+         y = &quot;Metric Value&quot;,
+         color = &quot;Model Config&quot;
+    ) + 
+    theme_light()</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/tune_results-1.png" width="100%" /></p>
+<p>Since I do care about the positive class more than the negative class but I don’t have a strong preference to false positive vs. false negative being more costly I’m going to use F1-Score as the <a href="https://machinelearningmastery.com/tour-of-evaluation-metrics-for-imbalanced-classification/">performance metric I care most about</a>. As expected the plain vanilla specification had a higher accuracy than the version using SMOTE to correct for imbalance. But it had lower values for F1, PR AUC and ROC AUC. I can also use <code>rank_results()</code> to show the top models for the F1 measure across the different specifications:</p>
+<pre class="r"><code>rank_results(tuned_results, rank_metric = &#39;f_meas&#39;) %&gt;%
+  select(wflow_id, .config, .metric, mean, std_err) %&gt;%
+  filter(.metric == &#39;f_meas&#39;) %&gt;% 
+  kable()</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">wflow_id</th>
+<th align="left">.config</th>
+<th align="left">.metric</th>
+<th align="right">mean</th>
+<th align="right">std_err</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">smote_vanilla</td>
+<td align="left">Preprocessor1_Model050</td>
+<td align="left">f_meas</td>
+<td align="right">0.4113826</td>
+<td align="right">0.0122165</td>
+</tr>
+<tr class="even">
+<td align="left">smote_vanilla</td>
+<td align="left">Preprocessor1_Model049</td>
+<td align="left">f_meas</td>
+<td align="right">0.4096641</td>
+<td align="right">0.0135101</td>
+</tr>
+<tr class="odd">
+<td align="left">smote_vanilla</td>
+<td align="left">Preprocessor1_Model045</td>
+<td align="left">f_meas</td>
+<td align="right">0.4092579</td>
+<td align="right">0.0123975</td>
+</tr>
+<tr class="even">
+<td align="left">smote_vanilla</td>
+<td align="left">Preprocessor1_Model076</td>
+<td align="left">f_meas</td>
+<td align="right">0.4075923</td>
+<td align="right">0.0094581</td>
+</tr>
+<tr class="odd">
+<td align="left">smote_vanilla</td>
+<td align="left">Preprocessor1_Model097</td>
+<td align="left">f_meas</td>
+<td align="right">0.4049903</td>
+<td align="right">0.0089085</td>
+</tr>
+<tr class="even">
+<td align="left">smote_vanilla</td>
+<td align="left">Preprocessor1_Model063</td>
+<td align="left">f_meas</td>
+<td align="right">0.4047996</td>
+<td align="right">0.0101844</td>
+</tr>
+<tr class="odd">
+<td align="left">smote_vanilla</td>
+<td align="left">Preprocessor1_Model030</td>
+<td align="left">f_meas</td>
+<td align="right">0.4033350</td>
+<td align="right">0.0105798</td>
+</tr>
+<tr class="even">
+<td align="left">norm_vanilla</td>
+<td align="left">Preprocessor1_Model040</td>
+<td align="left">f_meas</td>
+<td align="right">0.2830217</td>
+<td align="right">0.0225049</td>
+</tr>
+</tbody>
+</table>
+<p>The top 7 models by F1 are all various configurations of the SMOTE recipe. The best model specification had an average F1 of 0.411 across the five folds. To get a better understanding of what this model’s specification actually was I extract the model configuration that has the best F1-score by using <code>extract_workflow_set_result()</code> with the workflow id and then <code>select_best()</code> with the metric I care about:</p>
+<pre class="r"><code>##Get Best Model
+best_set &lt;- tuned_results %&gt;% 
+  extract_workflow_set_result(&#39;smote_vanilla&#39;) %&gt;% 
+  select_best(metric = &#39;f_meas&#39;)
+
+kable(best_set)</code></pre>
+<table>
+<colgroup>
+<col width="5%" />
+<col width="6%" />
+<col width="6%" />
+<col width="11%" />
+<col width="11%" />
+<col width="15%" />
+<col width="12%" />
+<col width="10%" />
+<col width="23%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="right">mtry</th>
+<th align="right">trees</th>
+<th align="right">min_n</th>
+<th align="right">tree_depth</th>
+<th align="right">learn_rate</th>
+<th align="right">loss_reduction</th>
+<th align="right">sample_size</th>
+<th align="right">stop_iter</th>
+<th align="left">.config</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="right">5</td>
+<td align="right">1641</td>
+<td align="right">19</td>
+<td align="right">8</td>
+<td align="right">0.007419</td>
+<td align="right">9.425834</td>
+<td align="right">0.9830687</td>
+<td align="right">21</td>
+<td align="left">Preprocessor1_Model050</td>
+</tr>
+</tbody>
+</table>
+<p>The best model in this case had 5 random predictors, 1641 trees, and so on.</p>
+<p>Now that I know which model configuration is the best one, the last step is to final the model using the full training data and predict on the test set. The next block of code extracts the workflow, sets the parameters to be those from the <em>best_set</em> defined above using <code>finalize_workflow</code>, and then <code>last_fit()</code> does the final fitting using the full training set and prediction on the testing data when we pass it the workflow and the split object.</p>
+<pre class="r"><code>final_fit &lt;- tuned_results %&gt;%
+  extract_workflow(&#39;smote_vanilla&#39;) %&gt;%
+  finalize_workflow(best_set) %&gt;%
+  last_fit(ice_split, metrics=metric_set(accuracy, roc_auc, mn_log_loss, 
+                                         pr_auc, f_meas, precision, recall))</code></pre>
+<p>Then with <code>collect_metrics()</code> I can see the final results when the model was applied to the test set that had been unused thus far.</p>
+<pre class="r"><code>collect_metrics(final_fit) %&gt;% 
+  kable()</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">.metric</th>
+<th align="left">.estimator</th>
+<th align="right">.estimate</th>
+<th align="left">.config</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">accuracy</td>
+<td align="left">binary</td>
+<td align="right">0.9341443</td>
+<td align="left">Preprocessor1_Model1</td>
+</tr>
+<tr class="even">
+<td align="left">f_meas</td>
+<td align="left">binary</td>
+<td align="right">0.4332130</td>
+<td align="left">Preprocessor1_Model1</td>
+</tr>
+<tr class="odd">
+<td align="left">precision</td>
+<td align="left">binary</td>
+<td align="right">0.3438395</td>
+<td align="left">Preprocessor1_Model1</td>
+</tr>
+<tr class="even">
+<td align="left">recall</td>
+<td align="left">binary</td>
+<td align="right">0.5853659</td>
+<td align="left">Preprocessor1_Model1</td>
+</tr>
+<tr class="odd">
+<td align="left">roc_auc</td>
+<td align="left">binary</td>
+<td align="right">0.9101661</td>
+<td align="left">Preprocessor1_Model1</td>
+</tr>
+<tr class="even">
+<td align="left">mn_log_loss</td>
+<td align="left">binary</td>
+<td align="right">0.1546972</td>
+<td align="left">Preprocessor1_Model1</td>
+</tr>
+<tr class="odd">
+<td align="left">pr_auc</td>
+<td align="left">binary</td>
+<td align="right">0.3505282</td>
+<td align="left">Preprocessor1_Model1</td>
+</tr>
+</tbody>
+</table>
+<p>The F1 score is actually higher than in the training at 0.43% with a precision of 34%, a recall of 59%, and a ROC AUC of 0.91%.</p>
+<p>Tidymodels also makes it very easy to display ROC curves using <code>collect_predictions</code> to get the predictions from the final model and test set and <code>roc_curve</code> to calculate the sensitivity and specificity.</p>
+<pre class="r"><code>collect_predictions(final_fit) %&gt;%
+  roc_curve(is_iced, .pred_iced) %&gt;%
+  ggplot(aes(1 - specificity, sensitivity)) +
+  geom_abline(lty = 2, color = &quot;gray80&quot;, size = 1.5) +
+  geom_path(alpha = 0.8, size = 1) +
+  coord_equal() +
+  labs(color = NULL)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/roc_curve-1.png" width="100%" /></p>
+<p>As well as calculate the confusion matrix with <code>collect_predictions</code> and <code>conf_mat</code>.</p>
+<pre class="r"><code>collect_predictions(final_fit) %&gt;%
+  conf_mat(is_iced, .pred_class) %&gt;%
+  autoplot(type = &#39;heatmap&#39;)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/confusion_matrix-1.png" width="100%" /></p>
+</div>
+</div>
+<div id="part-3-interpreting-the-model" class="section level2">
+<h2>Part 3: Interpreting the model</h2>
+<p>So now the model has been built can be used for predicting whether or not a field goal attempt will get iced given certain parameters. But XGBoost is in the class of “black-box” models where it might be difficult to know what’s going on under the hood. In this third part, I’ll explore:</p>
+<ol style="list-style-type: decimal">
+<li>Variable Importance</li>
+<li>Partial Dependency Plots</li>
+<li>SHAP Values</li>
+</ol>
+<p>All of which will help to provide some interpretability to the model fit in part 2.</p>
+<div id="variable-importance" class="section level3">
+<h3>Variable Importance</h3>
+<p>Variable Importance plots are one way of understanding which predictor has the largest effect on the model outcomes. There are many ways to measure variable importance but the one I’m using is the default in the {vip} package for XGBoost which is “gain”. Variable importance using gain measures the fractional contribution of each feature to the model based on the total gain of the feature’s splits where gain is the improvement to accuracy brought by a feature to its branches.</p>
+<p>The {vip} package provides variable importance when given a model object as an input. To get that I use <code>extract_fit_parsnip()</code> to get the parsnip version of the model object. Then the <code>vip()</code> function does the rest.</p>
+<pre class="r"><code>library(vip)
+
+extract_fit_parsnip(final_fit) %&gt;%
+  vip(geom = &quot;point&quot;, include_type = T) + 
+  geom_text(aes(label = scales::percent(Importance, accuracy = 1)),
+            nudge_y = 0.023) + 
+  theme_light()</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/varImp-1.png" width="100%" /></p>
+<p>Unsurprisingly, the regulation time remaining is the most important feature which makes sense because the amount of time remaining dictates whether using the timeout on a kick is worthwhile. Although whether the kicking team is the home team being the 2nd most important feature is a bit more surprising as I would have thought game situation would apply more than home or away team. I thought score difference would be higher.</p>
+</div>
+<div id="partial-dependency" class="section level3">
+<h3>Partial Dependency</h3>
+<p>Variable importance tells us “what variables matters” but it doesn’t tell us “how they matter”. Are the relationships between the predictors and predictions linear or non-linear. Is there some magic number where a step function occurs. Variable Importance cannot answer these questions, but partial dependency plots can!</p>
+<p>A partial dependency plot shows the effect of a predictor on the model outcome holding everything else constant. The {pdp} package can be used to generate these plots. The {pdp} package is a little less friendly with {tidymodels} since you need to provide the native model object rather than the parsnip version (which is still easily accessible using <code>extract_fit_engine()</code>). Also, the data passed into the <code>partial()</code> function needs to be the same as the data that actually goes into the model object. So I create <em>fitted_data</em> by <code>prep()</code>ing the recipe and then <code>bake()</code>’ing which applies the recipe to the original data set.</p>
+<p>The <code>partial</code> function can also take a while to run, so I’m using {furrr} which allows for {purrr} functions to be run in parallel on the {future} backend. In the <code>future_map_dfr</code> function, I’m running <code>partial</code> on every predictor in the data and stacking the results on top of each other so that I can plot them in the final step. The use of <em>prob=T</em> converts the model output to a probability but since XGBoost probabilities are uncalibrated best not to read too much into the values.</p>
+<pre class="r"><code>library(pdp)
+
+##Get Processed Training Data
+model_object &lt;- extract_fit_engine(final_fit)
+
+fitted_data &lt;- rec_smote %&gt;%
+  prep() %&gt;%
+  bake(new_data = model_data) %&gt;%
+  select(-is_iced)
+
+library(furrr)
+plan(multisession, workers = 4)
+
+all_partial &lt;- future_map_dfr(
+  names(fitted_data), ~as_tibble(partial(
+    model_object,
+    train = fitted_data,
+    pred.var = .x,
+    type = &#39;classification&#39;,
+    plot = F,
+    prob = T, #Converts model output to probability scale
+    trim.outliers = T
+  )) %&gt;% 
+    mutate(var = .x) %&gt;%
+    rename(value = all_of(.x)),
+  .progress = T,
+  .options = furrr_options(seed = 20220109)
+)
+
+all_partial %&gt;% 
+  #Remove Prior Miss since its one-hot encoded
+  filter(!str_detect(var, &#39;prior_miss|overtime&#39;)) %&gt;% 
+  ggplot(aes(x = value, y = yhat, color = var)) + 
+    geom_line() + 
+    geom_smooth(se = F, lty = 2, span = .5) + 
+    facet_wrap(~var, scales = &quot;free&quot;) + 
+    #scale_y_continuous(labels = percent_format(accuracy = .1)) + 
+    scale_color_discrete(guide = &#39;none&#39;) +
+    labs(title = &quot;Partial Dependency Plots for Whether A Kick Gets Iced?&quot;,
+         subtitle = &quot;Looking at 19,072 NCAA Field Goal Attempts (2013-2021)&quot;,
+         x = &quot;Variable Value&quot;,
+         y = &quot;Prob. of Attempt Getting Iced&quot;) + 
+    theme_light()</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/pdp-1.png" width="100%" /></p>
+<p>From these plots we can tell that the likelihood of getting iced increases when:</p>
+<ul>
+<li>The Attempted Distance is between 30-50 yards</li>
+<li>When two teams are expected to be somewhat evenly matched (based on pre-game win probabilities)</li>
+<li>When nearly the end of the game or the end of the half (that middle spike in regulation time remaining is halftime since timeouts reset at the beginning of each half)</li>
+<li>When the kicking team is losing by a very small margin (or when the game is within +/- 10 points)</li>
+</ul>
+<p>While variable importance told us that Regulation Time Remaining was the most important variable, the partial dependency plot shows us how it affects the model in a non-linear way.</p>
+</div>
+<div id="shap-values" class="section level3">
+<h3>SHAP Values</h3>
+<p>The next measure of interpretability combines pieces of both variable importance and partial dependency plots. SHAP values are <a href="https://liuyanguu.github.io/post/2019/07/18/visualization-of-shap-for-xgboost/">claimed to be the most advanced method to interpret results from tree-based models</a>. They are based on Shaply values from game theory and measure feature importance based on the marginal contribution of each predictor for each observation to the model output.</p>
+<p>The <a href="https://liuyanguu.github.io/post/2019/07/18/visualization-of-shap-for-xgboost/">{SHAPforxgboost}</a> package provides an interface to getting SHAP values. The plot that will give us overall variable importance is the SHAP summary plot which we’ll get using <code>shap.plot.summary</code>. However, first the data structure needs to be prepped using the model object and the training data in a matrix.</p>
+<pre class="r"><code>library(SHAPforxgboost)
+
+shap_long &lt;- shap.prep(xgb_model = extract_fit_engine(final_fit), 
+                        X_train = fitted_data %&gt;% as.matrix())
+                       
+shap.plot.summary(shap_long)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/shap-1.png" width="100%" /></p>
+<p>In the summary plot, the most important variables are ordered from top to bottom. Within any given variable each point represents an observation. The shading of the point represents which that observation has a higher or lower value for that features. For example, in regulation time remaining lower amounts of remaining time will be orange while higher amounts will be purple. The position on the left or right side of zero represents whether they decrease or increase the likelihood of getting iced. For regulation time remaining notice that the very purple is strongly negative (on the left side) and the very orange is strongly positive (on the right side).</p>
+<p>Similar to the variable importance plot, regulation time remaining was the most important feature.</p>
+<p>We can also get dependency plots similar to the partial dependency plots with SHAP values using <code>shap.plot.dependence</code>. We’ll look at the regulation time remaining on the x-axis and the SHAP values for regulation time remaining on the y-axis. Since this returns a ggplot object, I’ll add in vertical lines to represent the end of each quarter.</p>
+<pre class="r"><code>SHAPforxgboost::shap.plot.dependence(data_long = shap_long, x = &#39;regulation_time_remaining&#39;, 
+                                     y = &#39;regulation_time_remaining&#39;, 
+                                     color_feature = &#39;regulation_time_remaining&#39;) + 
+  ggtitle(&quot;Shap Values vs. Regulation Time Remaining&quot;) + 
+  geom_vline(xintercept = 0, lty = 2) + 
+    geom_vline(xintercept = 900, lty = 2) + 
+    geom_vline(xintercept = 1800, lty = 2) + 
+    geom_vline(xintercept = 2700, lty = 2) </code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/shap2-1.png" width="100%" /></p>
+<p>Similar to the summary plot, the less time remaining in the game the more orange the point and the more time remaining the more purple. Again, like in the partial dependency plot, we see a non-linear relationship with increases towards the end of each quarter and heavy spikes in the last 3 minutes of the 2nd and 4th quarters.</p>
+<p>This is just an example of the things that can be done with SHAP values but hopefully its usefulness for understanding both what’s important and how its important has been illustrated.</p>
+</div>
+</div>
+<div id="wrapping-up" class="section level2">
+<h2>Wrapping Up</h2>
+<p>This was quite long so a huge thanks if you made it to the end. This post took a tour through {tidymodels} and some interpretable ML tools to look at when field goal attempts are more likely to get iced. If you’re a football fan then the results shouldn’t be terribly surprising. It its good to know that the model outputs generally pass the domain expertise “sniff-test”. In the next post, I’ll use this same data to attempt to understand whether icing the kicker actually works in making the kicker more likely to miss the attempt.</p>
+</div>
