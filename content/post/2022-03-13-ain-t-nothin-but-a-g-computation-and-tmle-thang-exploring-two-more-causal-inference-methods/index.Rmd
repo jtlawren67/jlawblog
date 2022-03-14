@@ -22,7 +22,7 @@ image:
 projects: []
 ---
 
-```{r setup}
+```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, error = FALSE)
 library(knitr)
 ```
@@ -163,7 +163,7 @@ g_computation <- function(split, ...){
 
 Now that the entire process has been wrapped in a function I need to create the bootstrap samples that will be passed into the function above.  In the next code block I create 1,000 bootstrap samples and using `purrr:map` pass each sample into the function to obtain the ATTs.
 
-```{r boostraps}
+```{r boostraps, cache=TRUE}
 set.seed(20220313)
 
 g_results <- bootstraps(fg_attempts, 1000, apparent = T) %>% 
@@ -213,7 +213,7 @@ The types of sub-models under consideration will be GLMs, GLMs w/ Interactions, 
 
 If you actually know the forms of the propensity model or outcome model those could be directly specified using `gform` or `Qform`.  But I'll be letting SuperLearner do all the work.
 
-```{r tmle_model, cache=TRUE}
+```{r tmle_model, cache=TRUE, results='hide'}
 tmle_model <- tmle(Y=fg_attempts$fg_made
                    ,A=if_else(fg_attempts$is_iced=='Iced', 1, 0)
                    ,W=fg_attempts %>% 
@@ -239,7 +239,7 @@ tibble(
   kable()
 ```
 
-The results of the TMLE are consistent in the conclusion that the effect of icing the kicker is not statistically significant.  But from a point estimate perspective the TMLE procedure estimates that the effect is slightly smaller at -1.65%.
+The results of the TMLE are consistent in the conclusion that the effect of icing the kicker is not statistically significant.  But from a point estimate perspective the TMLE procedure estimates that the effect is slightly larger than G-Computation at -2.63% but smaller than Weighting.
 
 ## Summary
 
@@ -272,6 +272,7 @@ bind_rows(
 ) %>% 
   mutate(method = factor(method, levels = c('Weighting', "G-Computation", "TMLE"))) %>%
   ggplot(aes(x = fct_rev(method), y = .estimate, color = method)) + 
+    geom_hline(yintercept = 0, lty = 2) + 
     geom_pointrange(aes(ymin = .lower, ymax = .upper)) + 
     geom_text(aes(y = .estimate, label = .estimate %>% percent(accuracy = .01)), vjust = -.7) +
     geom_text(aes(y = .upper, label = .upper %>% percent(accuracy = .01)), vjust = -.7) +
