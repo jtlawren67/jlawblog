@@ -13,7 +13,7 @@ tags:
 subtitle: ''
 summary: ''
 authors: []
-lastmod: '2022-03-13T20:49:35-04:00'
+lastmod: '2022-03-15T06:49:35-04:00'
 featured: no
 image:
   caption: ''
@@ -29,14 +29,14 @@ library(knitr)
 
 
 
-In my [last post](https://jlaw.netlify.app/2022/02/14/does-icing-the-kicker-really-work/) I looked at the causal effect of icing the kicker by using weighting.  Those results found that icing the kicker had a non-significant effect on the success of the kick with a point estimate of -2.82% (CI: -5.88% - 0.50%).  In this post I will explore two other methodologies for causal inference with observational data, G-Computation and Target Maximum Likelihood Estimation.  Beyond the goal of exploring new methodologies I will see how consistent these estimates will be to that from the previous post.
+In my [last post](https://jlaw.netlify.app/2022/02/14/does-icing-the-kicker-really-work/) I looked at the causal effect of icing the kicker using weighting.  Those results found that icing the kicker had a non-significant effect on the success of the field goal attempt with a point estimate of -2.82% (CI: -5.88%, 0.50%).  In this post I will explore two other methodologies for causal inference with observational data, **G-Computation** and **Target Maximum Likelihood Estimation**.  Beyond the goal of exploring new methodologies I will see how consistent these estimates are to the prior post.
 
 ## G-Computation
 
-I first learned about G-Computation from [Malcom Barrett's](https://malco.io/) [Causal Inference in R workshop](https://causal-inference-r-workshop.netlify.app/07-g-computation.html).  For causal inference the ideal goal would be to see what would happen to a kick in the world where the kicker is iced vs. isn't iced.  However, in the real world only one of these outcomes is possible.  G-Computation looks create these hypothetical worlds by:
+I first learned about G-Computation from [Malcom Barrett's](https://malco.io/) [Causal Inference in R workshop](https://causal-inference-r-workshop.netlify.app/07-g-computation.html).  For causal inference the ideal goal is to see what would happen to a field goal attempt in the world where the kicker is iced vs. isn't iced.  However, in the real world only one of these outcomes is possible.  G-Computation creates these hypothetical worlds by:
 
-1. Fitting a model on observed data including treatment indicator and covariates
-2. Creating duplicates of the data set where all observations are set to a single level of treatment (in this case make two replications of the data, one where all kicks are iced and one where all kicks are NOT iced)
+1. Fitting a model on observed data including treatment indicator (whether the kicker is iced) and covariates (other situational information)
+2. Creating duplicates of the data set where all observations are set to a single level of treatment (in this case make two replications of the data, one where all kicks are iced and one where all kicks are **NOT** iced)
 3. Predict the FG success for these replicates  
 4. Calculate Avg(Iced) - Avg(Not Iced) to obtain the causal effect.
 5. Bootstrap the entire process in order to get valid confidence intervals.
@@ -72,7 +72,7 @@ fg_attempts <- readRDS(here('content/post/2022-01-17-predicting-when-kickers-get
 
 ### Step 1: Fit a model using all the data
 
-The first step in the G-Computation process is to fit a model using all covariates and the treatment indicator against the outcome of field goal success.  This will use the same covariates from the [prior post](https://jlaw.netlify.app/2022/02/14/does-icing-the-kicker-really-work/) which include the amount of time remaining in regulation, the distance of the field goal attempt, whether the kicking team is on offense or defense, the squared score difference, whether the kicking team had previously missed, and the pre-game win probability for the kicking team.  The treatment effect is `is_iced` which reflects whether the defense called timeout before the kick and the outcome `fg_made` is whether the kick was successful.
+The first step in the G-Computation process is to fit a model using all covariates and the treatment indicator against the outcome of field goal success.  This will use the same covariates from the [prior post](https://jlaw.netlify.app/2022/02/14/does-icing-the-kicker-really-work/) which include the amount of time remaining in regulation, the distance of the field goal attempt, whether the kicking team is on offense or defense, the squared difference in score, whether the kicking team had previously missed in the game, and the pre-game win probability for the kicking team.  The treatment effect is `is_iced` which reflects whether the defense called timeout before the kick and the outcome `fg_made` is whether the kick was successful.
 
 Since I'm predicted a binary outcome I will use logistic regression.
 
@@ -85,7 +85,7 @@ m <- glm(fg_made ~ is_iced + regulation_time_remaining + attempted_distance +
 
 ### Step 2: Create Duplicates of the Data Set
 
-In order to create the hypothetical world of what would have happened if kicks were iced or not iced I'll create replicates of the data one where all the data is "iced" and one where its "not iced".  However, the value that I was interested in was the "average treatment effect on the treated" which is for the kicks that were "iced" what would have happened if they weren't.  So for these replicates I'll only be using the observations where "icing the kicker" actually occurred.
+In order to create the hypothetical world of what would have happened if kicks were iced or not iced I'll create duplicates of the data; one where all the data is "iced" and one where all the data is "not iced".  The effect that I am interested in is the "average treatment effect on the treated" (ATT) which is for the kicks that were actually "iced" what would have happened if they weren't?  Therefore for these duplicates I'll only be using the observations where "icing the kicker" actually occurred and create one duplicate version where the `is_iced` is set to zero.
 
 ```{r step2}
 replicated_data <- bind_rows(
@@ -97,7 +97,7 @@ replicated_data <- bind_rows(
 
 ```
 
-### Step 3: Predict the Probability of Success for the Replicates
+### Step 3: Predict the Probability of Success for the Duplicates
 
 This will be very straight forward using the `predict()` function.  Using `type = 'response'` returns the probabilities vs. the predicted log-odds.
 
@@ -161,7 +161,7 @@ g_computation <- function(split, ...){
 
 ```
 
-Now that the entire process has been wrapped in a function I need to create the bootstrap samples that will be passed into the function above.  In the next code block I create 1,000 bootstrap samples and using `purrr:map` pass each sample into the function to obtain the ATTs.
+Now that the entire process has been wrapped in a function I need to create the bootstrap samples that will be passed into the function  In the next code block I create 1,000 bootstrap samples and using `purrr:map` pass each sample into the function to obtain the ATTs.
 
 ```{r boostraps, cache=TRUE}
 set.seed(20220313)
@@ -184,7 +184,7 @@ g_results %>%
   kable()
 
 ```
-Using G-Computation I reach the same conclusion that icing the kicker does not have a statistically significant effect on FG success.  The point estimate of the effect of icing the kicker was -2.51% (CI: -5.66%, 0.59%)
+Using G-Computation I reach the same conclusion that icing the kicker **does not** have a statistically significant effect on FG success.  The point estimate of the effect of icing the kicker was -2.51% (CI: -5.66%, 0.59%)
 
 ## Targeted Maximum Liklihood Estimation (TMLE)
 
@@ -192,9 +192,9 @@ In the [previous post](https://jlaw.netlify.app/2022/02/14/does-icing-the-kicker
 
 In TMLE, there will be one model to estimate the probability that a kick attempt is being iced (propensity score) and a second model will be used to estimate how icing the kicker and other covariates will effect the success of that kick (outcome model).  These models get combined in an ensemble to produce estimates of the average treatment effect on the treated.  The "doubly robust" aspect is that the result will be a consistent estimator as long as one of the two models is correctly specified.
 
-For more information on TMLE as a double robust estimate check out the excellent blog from [StitchFix](https://multithreaded.stitchfix.com/blog/2021/07/23/double-robust-estimator/).
+For more information on TMLE as a double robust estimate check out the excellent blog from [StitchFix](https://multithreaded.stitchfix.com/blog/2021/07/23/double-robust-estimator/) which is a large influence on this section.
 
-To run TMLE in R, I'll use the `tmle` package which will estimate the propensity score and outcome model using the `SuperLearner` package which stacks models to create an ensemble.  As the blog states, "using SuperLearner is a way to hedge your bets rather than putting all your money on a single model, drastically reducing the chances we’ll suffer from model misspecification" since SuperLearner can leverage many different types of sub-models.
+To run TMLE in R, I'll use the `tmle` package which will estimate the propensity score and outcome model using the `SuperLearner` package which stacks models to create an ensemble.  As the blog states, "using SuperLearner is a way to hedge your bets rather than putting all your money on a single model, drastically reducing the chances we’ll suffer from model misspecification" since SuperLearner can leverage many different types of sub-models."
 
 ```{r tmle_load}
 library(tmle)
@@ -208,6 +208,7 @@ The `tmle()` function will run the procedure to estimate the various causal effe
 * *Q.SL.library* is the set of sub-models that `SuperLearner` will use to estimate the outcome model
 * *g.SL.library* is the set of sub-models that `SuperLearner` will use to estimate the propensity scores
 * *V* is the number of folds to use for the cross-validation to determine the optimal models
+* *family* is set to 'binomial' since the outcome data is binary
 
 The types of sub-models under consideration will be GLMs, GLMs w/ Interactions, GAMs, and polynomial MARS model.  The complete list of models available in SuperLearner can be found [here](https://cran.r-project.org/web/packages/SuperLearner/vignettes/Guide-to-SuperLearner.html#review-available-models) or using the `listWrappers()` function.
 
@@ -227,7 +228,7 @@ tmle_model <- tmle(Y=fg_attempts$fg_made
 )
 ```
 
-The TMLE object contains the results for a variety of causal effects (ATE, ATT, etc.).  Since in all the comparisons I've looked at the ATT, I'll do that again here.
+The TMLE object contains the results for a variety of causal effects (ATE, ATT, etc.).  Since all the comparisons I've looked at use the ATT, I'll do that again here.
 
 ```{r tmle_results}
 tibble(
@@ -243,7 +244,7 @@ The results of the TMLE are consistent in the conclusion that the effect of icin
 
 ## Summary
 
-Throughout the course of this post and [last post](https://jlaw.netlify.app/2022/02/14/does-icing-the-kicker-really-work/) I've calculated the Average Treatment Effect on the Treated using three different methodologies the results of which are:
+Throughout this post and the [last post](https://jlaw.netlify.app/2022/02/14/does-icing-the-kicker-really-work/) I've calculated the Average Treatment Effect on the Treated using three different methodologies the results of which are:
 
 ```{r summary_results, echo=FALSE, out.width="100%"}
 bind_rows(
@@ -279,12 +280,17 @@ bind_rows(
     geom_text(aes(y = .lower, label = .lower %>% percent(accuracy = .01)), vjust = -.7) +
     scale_y_continuous(label = percent) + 
     labs(title = "Summary of Three Casual Effect Estimates",
-         x = "Methodology",
+         x = "",
          y = "Causal Effect of Icing the Kicker") + 
     coord_flip() + 
-    scale_color_discrete(guide = F) + 
+    scale_color_discrete(guide = 'none') + 
     cowplot::theme_cowplot() 
 
 ```
 
 Altogether the three methodology align on the idea that icing the kicker is not a significant effect on the outcome of the Field Goal and even if it were (based on point estimate) it would be quite small.
+
+### Other Posts in the Icing the Kicker Series
+
+* Part I: [Predicting When Kickers Get Iced with {tidymodels}](https://jlaw.netlify.app/2022/01/24/predicting-when-kickers-get-iced-with-tidymodels/)
+* Part II: [Does Icing the Kicker Really Work? A Causal Inference Exercise](https://jlaw.netlify.app/2022/02/14/does-icing-the-kicker-really-work/)
