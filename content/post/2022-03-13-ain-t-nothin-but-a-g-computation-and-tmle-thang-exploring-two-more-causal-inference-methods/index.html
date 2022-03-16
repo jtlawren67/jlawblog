@@ -1,0 +1,244 @@
+---
+title: 'Ain''t Nothin But A G-Computation (and TMLE) Thang: Exploring Two More Causal
+  Inference Methods'
+author: JLaw
+date: '2022-03-13'
+slug: ain-t-nothin-but-a-g-computation-and-tmle-thang-exploring-two-more-causal-inference-methods
+categories:
+  - R
+  - CausalInference
+tags:
+  - rsample
+  - tmle
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2022-03-15T06:49:35-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+<script src="{{< blogdown/postref >}}index_files/header-attrs/header-attrs.js"></script>
+
+
+<p>In my <a href="https://jlaw.netlify.app/2022/02/14/does-icing-the-kicker-really-work/">last post</a> I looked at the causal effect of icing the kicker using weighting. Those results found that icing the kicker had a non-significant effect on the success of the field goal attempt with a point estimate of -2.82% (CI: -5.88%, 0.50%). In this post I will explore two other methodologies for causal inference with observational data, <strong>G-Computation</strong> and <strong>Target Maximum Likelihood Estimation</strong>. Beyond the goal of exploring new methodologies I will see how consistent these estimates are to the prior post.</p>
+<div id="g-computation" class="section level2">
+<h2>G-Computation</h2>
+<p>I first learned about G-Computation from <a href="https://malco.io/">Malcom Barrett’s</a> <a href="https://causal-inference-r-workshop.netlify.app/07-g-computation.html">Causal Inference in R workshop</a>. For causal inference the ideal goal is to see what would happen to a field goal attempt in the world where the kicker is iced vs. isn’t iced. However, in the real world only one of these outcomes is possible. G-Computation creates these hypothetical worlds by:</p>
+<ol style="list-style-type: decimal">
+<li>Fitting a model on observed data including treatment indicator (whether the kicker is iced) and covariates (other situational information)</li>
+<li>Creating duplicates of the data set where all observations are set to a single level of treatment (in this case make two replications of the data, one where all kicks are iced and one where all kicks are <strong>NOT</strong> iced)</li>
+<li>Predict the FG success for these replicates<br />
+</li>
+<li>Calculate Avg(Iced) - Avg(Not Iced) to obtain the causal effect.</li>
+<li>Bootstrap the entire process in order to get valid confidence intervals.</li>
+</ol>
+<p>For this exercise I won’t need any complicated packages. Using <code>rsample</code> for bootstrapping will be as exotic as it gets.</p>
+<pre class="r"><code>library(tidyverse)
+library(rsample)
+library(scales)
+library(here)</code></pre>
+<p>And the data that will be used is the same from the prior two blog posts which is the 19,072 Field Goal Attempts from College Football between 2013 and 2021. For details on that data and its construction please refer to the <a href="https://jlaw.netlify.app/2022/01/24/predicting-when-kickers-get-iced-with-tidymodels/">first post in this series</a>.</p>
+<pre class="r"><code>fg_attempts &lt;- readRDS(here(&#39;content/post/2022-01-17-predicting-when-kickers-get-iced-with-tidymodels/data/fg_attempts.RDS&#39;)) %&gt;%
+  transmute(
+    regulation_time_remaining,
+    attempted_distance,
+    drive_is_home_offense = if_else(drive_is_home_offense, 1, 0),
+    score_diff,
+    prior_miss,
+    offense_win_prob,
+    is_iced = factor(is_iced, levels = c(0, 1), labels = c(&#39;Not Iced&#39;, &#39;Iced&#39;)),
+    fg_made,
+    id_play
+  )</code></pre>
+<div id="step-1-fit-a-model-using-all-the-data" class="section level3">
+<h3>Step 1: Fit a model using all the data</h3>
+<p>The first step in the G-Computation process is to fit a model using all covariates and the treatment indicator against the outcome of field goal success. This will use the same covariates from the <a href="https://jlaw.netlify.app/2022/02/14/does-icing-the-kicker-really-work/">prior post</a> which include the amount of time remaining in regulation, the distance of the field goal attempt, whether the kicking team is on offense or defense, the squared difference in score, whether the kicking team had previously missed in the game, and the pre-game win probability for the kicking team. The treatment effect is <code>is_iced</code> which reflects whether the defense called timeout before the kick and the outcome <code>fg_made</code> is whether the kick was successful.</p>
+<p>Since I’m predicted a binary outcome I will use logistic regression.</p>
+<pre class="r"><code>m &lt;- glm(fg_made ~ is_iced + regulation_time_remaining + attempted_distance + 
+           drive_is_home_offense + I(score_diff^2) + prior_miss + offense_win_prob,
+         data = fg_attempts,
+         family = &#39;binomial&#39;)</code></pre>
+</div>
+<div id="step-2-create-duplicates-of-the-data-set" class="section level3">
+<h3>Step 2: Create Duplicates of the Data Set</h3>
+<p>In order to create the hypothetical world of what would have happened if kicks were iced or not iced I’ll create duplicates of the data; one where all the data is “iced” and one where all the data is “not iced”. The effect that I am interested in is the “average treatment effect on the treated” (ATT) which is for the kicks that were actually “iced” what would have happened if they weren’t? Therefore for these duplicates I’ll only be using the observations where “icing the kicker” actually occurred and create one duplicate version where the <code>is_iced</code> is set to zero.</p>
+<pre class="r"><code>replicated_data &lt;- bind_rows(
+  # Get all of the Iced Kicks
+  fg_attempts %&gt;% filter(is_iced == &#39;Iced&#39;),
+  # Get all of the Iced Kicks But set the treatment field to &quot;Not Iced&quot;
+  fg_attempts %&gt;% filter(is_iced == &#39;Iced&#39;) %&gt;% mutate(is_iced = &#39;Not Iced&#39;)
+)</code></pre>
+</div>
+<div id="step-3-predict-the-probability-of-success-for-the-duplicates" class="section level3">
+<h3>Step 3: Predict the Probability of Success for the Duplicates</h3>
+<p>This will be very straight forward using the <code>predict()</code> function. Using <code>type = 'response'</code> returns the probabilities vs. the predicted log-odds.</p>
+<pre class="r"><code>replicated_data &lt;- replicated_data %&gt;%
+  mutate(p_success = predict(m, newdata = ., type = &#39;response&#39;))</code></pre>
+</div>
+<div id="step-4-use-the-predicted-successes-to-calculate-the-causal-effect" class="section level3">
+<h3>Step 4: Use the Predicted Successes to Calculate the Causal Effect</h3>
+<p>From the predicted data I can calculate the average success when Iced = 1 and when Iced = 0 and take the difference to obtain the causal effect of icing the kicker.</p>
+<pre class="r"><code>replicated_data %&gt;% 
+  group_by(is_iced) %&gt;% 
+  # Get average success by group
+  summarize(p_success = mean(p_success)) %&gt;%
+  spread(is_iced, p_success) %&gt;%
+  # Calculate the causal effect
+  mutate(ATT = `Iced` - `Not Iced`) %&gt;%
+  # Pretty format using percentages
+  mutate(across(everything(), scales::percent_format(accuracy = .01))) %&gt;% 
+  kable()</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">Iced</th>
+<th align="left">Not Iced</th>
+<th align="left">ATT</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">67.66%</td>
+<td align="left">70.12%</td>
+<td align="left">-2.46%</td>
+</tr>
+</tbody>
+</table>
+<p>From this calculation, the average treatment effect on the treated is -2.46% which is very close to the -2.82% from the <a href="https://jlaw.netlify.app/2022/02/14/does-icing-the-kicker-really-work/">previous post</a>.</p>
+<p>But to know if this effect would be statistically significant I’ll need to bootstrap the whole process.</p>
+</div>
+<div id="step-5-bootstrap-the-process-to-obtain-confidence-intervals" class="section level3">
+<h3>Step 5: Bootstrap the Process to Obtain Confidence Intervals</h3>
+<p>To bootstrap the function using <code>rsample</code> I need to first create a function that takes splits from the bootstraps and returns the ATT estimates calculated in Step 4 above:</p>
+<pre class="r"><code>g_computation &lt;- function(split, ...){
+  .df &lt;- analysis(split)
+  
+  m &lt;- glm(fg_made ~ is_iced + regulation_time_remaining + attempted_distance + 
+                   drive_is_home_offense + I(score_diff^2) + prior_miss + offense_win_prob,
+                 data = .df,
+                 family = &#39;binomial&#39;)
+  
+  return(
+    # Create the Replicated Data
+    bind_rows(
+        fg_attempts %&gt;% filter(is_iced == &#39;Iced&#39;),
+        fg_attempts %&gt;% filter(is_iced == &#39;Iced&#39;) %&gt;% mutate(is_iced = &#39;Not Iced&#39;)
+    ) %&gt;% 
+      # Calculate predictions on replicated data
+      mutate(p_success = predict(m, newdata = ., type = &#39;response&#39;)) %&gt;%
+      group_by(is_iced) %&gt;%
+      summarize(p_success = mean(p_success)
+      ) %&gt;%
+      spread(is_iced, p_success) %&gt;%
+      # Calculate ATT
+      mutate(ATT = `Iced` - `Not Iced`)
+  )
+  
+} </code></pre>
+<p>Now that the entire process has been wrapped in a function I need to create the bootstrap samples that will be passed into the function In the next code block I create 1,000 bootstrap samples and using <code>purrr:map</code> pass each sample into the function to obtain the ATTs.</p>
+<pre class="r"><code>set.seed(20220313)
+
+g_results &lt;- bootstraps(fg_attempts, 1000, apparent = T) %&gt;% 
+  mutate(results = map(splits, g_computation)) %&gt;%
+  select(results, id) %&gt;%
+  unnest(results)</code></pre>
+<p>Finally, I’ll use the 2.5 and 97.5 percentiles to form the confidence intervals and the mean to form the point estimate of the ATT distribution returned from the bootstrap process.</p>
+<pre class="r"><code>g_results %&gt;% 
+  summarize(.lower = quantile(ATT, .025),
+            .estimate = mean(ATT),
+            .upper = quantile(ATT, .975)) %&gt;%
+  mutate(across(everything(), scales::percent_format(accuracy = .01))) %&gt;%
+  kable()</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">.lower</th>
+<th align="left">.estimate</th>
+<th align="left">.upper</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">-5.66%</td>
+<td align="left">-2.51%</td>
+<td align="left">0.59%</td>
+</tr>
+</tbody>
+</table>
+<p>Using G-Computation I reach the same conclusion that icing the kicker <strong>does not</strong> have a statistically significant effect on FG success. The point estimate of the effect of icing the kicker was -2.51% (CI: -5.66%, 0.59%)</p>
+</div>
+</div>
+<div id="targeted-maximum-liklihood-estimation-tmle" class="section level2">
+<h2>Targeted Maximum Liklihood Estimation (TMLE)</h2>
+<p>In the <a href="https://jlaw.netlify.app/2022/02/14/does-icing-the-kicker-really-work/">previous post</a> using weighting and in the G-Computation section above there is a fundamental assumption that all of the covariates that can influence Icing the Kicker’s influence on field goal success have been controlled for in the model. In practice, this is difficult to know for sure. In this case, there is a probably an influence of weather and wind direction/speed that is not covered in this data because it was difficult to obtain. Targeted Maximum Likelihood Estimation (TMLE) is one of the “doubly robust” estimators that will provide some safety against model misspecification.</p>
+<p>In TMLE, there will be one model to estimate the probability that a kick attempt is being iced (propensity score) and a second model will be used to estimate how icing the kicker and other covariates will effect the success of that kick (outcome model). These models get combined in an ensemble to produce estimates of the average treatment effect on the treated. The “doubly robust” aspect is that the result will be a consistent estimator as long as one of the two models is correctly specified.</p>
+<p>For more information on TMLE as a double robust estimate check out the excellent blog from <a href="https://multithreaded.stitchfix.com/blog/2021/07/23/double-robust-estimator/">StitchFix</a> which is a large influence on this section.</p>
+<p>To run TMLE in R, I’ll use the <code>tmle</code> package which will estimate the propensity score and outcome model using the <code>SuperLearner</code> package which stacks models to create an ensemble. As the blog states, “using SuperLearner is a way to hedge your bets rather than putting all your money on a single model, drastically reducing the chances we’ll suffer from model misspecification” since SuperLearner can leverage many different types of sub-models."</p>
+<pre class="r"><code>library(tmle)</code></pre>
+<p>The <code>tmle()</code> function will run the procedure to estimate the various causal effect statistics. The parameters of the function are:</p>
+<ul>
+<li><em>Y</em> is whether the Field Goal attempt was successful</li>
+<li><em>A</em> is the treatment indicators of whether the Field Goal attempt was iced or not</li>
+<li><em>W</em> is a data set of covariates</li>
+<li><em>Q.SL.library</em> is the set of sub-models that <code>SuperLearner</code> will use to estimate the outcome model</li>
+<li><em>g.SL.library</em> is the set of sub-models that <code>SuperLearner</code> will use to estimate the propensity scores</li>
+<li><em>V</em> is the number of folds to use for the cross-validation to determine the optimal models</li>
+<li><em>family</em> is set to ‘binomial’ since the outcome data is binary</li>
+</ul>
+<p>The types of sub-models under consideration will be GLMs, GLMs w/ Interactions, GAMs, and polynomial MARS model. The complete list of models available in SuperLearner can be found <a href="https://cran.r-project.org/web/packages/SuperLearner/vignettes/Guide-to-SuperLearner.html#review-available-models">here</a> or using the <code>listWrappers()</code> function.</p>
+<p>If you actually know the forms of the propensity model or outcome model those could be directly specified using <code>gform</code> or <code>Qform</code>. But I’ll be letting SuperLearner do all the work.</p>
+<pre class="r"><code>tmle_model &lt;- tmle(Y=fg_attempts$fg_made
+                   ,A=if_else(fg_attempts$is_iced==&#39;Iced&#39;, 1, 0)
+                   ,W=fg_attempts %&gt;% 
+                     transmute(regulation_time_remaining, attempted_distance,
+                            drive_is_home_offense, score_diff=score_diff^2,
+                            prior_miss, offense_win_prob)
+                   ,Q.SL.library=c(&quot;SL.glm&quot;, &quot;SL.glm.interaction&quot;, &quot;SL.gam&quot;, &quot;SL.polymars&quot;)
+                   ,g.SL.library=c(&quot;SL.glm&quot;, &quot;SL.glm.interaction&quot;, &quot;SL.gam&quot;, &quot;SL.polymars&quot;)
+                   ,V=10
+                   ,family=&quot;binomial&quot;
+)</code></pre>
+<p>The TMLE object contains the results for a variety of causal effects (ATE, ATT, etc.). Since all the comparisons I’ve looked at use the ATT, I’ll do that again here.</p>
+<pre class="r"><code>tibble(
+  .lower = tmle_model$estimates$ATT$CI[1],
+  .estimate = tmle_model$estimates$ATT$psi,
+  .upper = tmle_model$estimates$ATT$CI[2]
+) %&gt;%
+  mutate(across(everything(), scales::percent_format(accuracy = .01))) %&gt;%
+  kable()</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">.lower</th>
+<th align="left">.estimate</th>
+<th align="left">.upper</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">-5.77%</td>
+<td align="left">-2.63%</td>
+<td align="left">0.52%</td>
+</tr>
+</tbody>
+</table>
+<p>The results of the TMLE are consistent in the conclusion that the effect of icing the kicker is not statistically significant. But from a point estimate perspective the TMLE procedure estimates that the effect is slightly larger than G-Computation at -2.63% but smaller than Weighting.</p>
+</div>
+<div id="summary" class="section level2">
+<h2>Summary</h2>
+<p>Throughout this post and the <a href="https://jlaw.netlify.app/2022/02/14/does-icing-the-kicker-really-work/">last post</a> I’ve calculated the Average Treatment Effect on the Treated using three different methodologies the results of which are:</p>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/summary_results-1.png" width="100%" /></p>
+<p>Altogether the three methodology align on the idea that icing the kicker is not a significant effect on the outcome of the Field Goal and even if it were (based on point estimate) it would be quite small.</p>
+<div id="other-posts-in-the-icing-the-kicker-series" class="section level3">
+<h3>Other Posts in the Icing the Kicker Series</h3>
+<ul>
+<li>Part I: <a href="https://jlaw.netlify.app/2022/01/24/predicting-when-kickers-get-iced-with-tidymodels/">Predicting When Kickers Get Iced with {tidymodels}</a></li>
+<li>Part II: <a href="https://jlaw.netlify.app/2022/02/14/does-icing-the-kicker-really-work/">Does Icing the Kicker Really Work? A Causal Inference Exercise</a></li>
+</ul>
+</div>
+</div>
