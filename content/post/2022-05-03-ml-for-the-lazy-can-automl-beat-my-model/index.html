@@ -1,0 +1,473 @@
+---
+title: 'ML for the Lazy: Can AutoML Beat My Model?'
+author: JLaw
+date: '2022-05-03'
+slug: ml-for-the-lazy-can-automl-beat-my-model
+categories:
+  - R
+  - ML
+tags:
+  - tidymodels
+  - h2o
+  - themis
+  - SuperLearner
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2022-04-30T17:35:48-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+<script src="{{< blogdown/postref >}}index_files/header-attrs/header-attrs.js"></script>
+
+
+<p>In this fourth (and hopefully final) entry in my “Icing the Kicker” series of posts, I’m going to jump back to the <a href="https://jlaw.netlify.app/2022/01/24/predicting-when-kickers-get-iced-with-tidymodels/">first post</a> where I used <code>tidymodels</code> to predict whether or not a kick attempt would be iced. However, this time I see if using the <code>h2o</code> AutoML feature and the <code>SuperLearner</code> package can improve the predictive performance of my initial model.</p>
+<div id="why-is-this-ml-for-the-lazy" class="section level3">
+<h3>Why is this ML for the Lazy?</h3>
+<p>I called this ML for the Lazy because for h2o and SuperLearner models I’m going to do absolutely nothing but let the algorithms run. No tuning, no nothing.</p>
+</div>
+<div id="the-data" class="section level3">
+<h3>The Data</h3>
+<p>The data for this exercise was initially described in the <a href="https://jlaw.netlify.app/2022/01/24/predicting-when-kickers-get-iced-with-tidymodels/">first</a> post in the series. During this post I will construct three models:</p>
+<ol style="list-style-type: decimal">
+<li>Replicating the final model from the original <a href="https://jlaw.netlify.app/2022/01/24/predicting-when-kickers-get-iced-with-tidymodels/">post</a> using <code>tidymodels</code></li>
+<li>A version using <code>h2o</code>’s <a href="https://docs.h2o.ai/h2o/latest-stable/h2o-docs/automl.html">autoML</a> function</li>
+<li>A version using the <a href="https://github.com/ecpolley/SuperLearner"><code>SuperLearner</code></a> package for ensembles</li>
+</ol>
+<pre class="r"><code>library(tidyverse) #Data Manipulation
+library(tidymodels) # Data Splitting and Replicating Initial Model
+library(themis) # For SMOTE Recipie
+library(h2o) # For AutoML
+library(SuperLearner) # For SuperLearner Ensemble.
+library(here) # For path simplification</code></pre>
+<p>I’ll read in the data from the first post. This code block should look familiar from the other three posts in the series.</p>
+<pre class="r"><code>fg_data &lt;- readRDS(here(&#39;content/post/2022-01-17-predicting-when-kickers-get-iced-with-tidymodels/data/fg_attempts.RDS&#39;)) %&gt;%
+  transmute(
+    regulation_time_remaining,
+    attempted_distance,
+    drive_is_home_offense = if_else(drive_is_home_offense, 1, 0),
+    score_diff,
+    prior_miss = if_else(prior_miss==1, &#39;yes&#39;, &#39;no&#39;),
+    offense_win_prob,
+    is_overtime = if_else(period &gt; 4, 1, 0),
+    is_iced = factor(is_iced, levels = c(1, 0), labels = c(&#39;iced&#39;, &#39;not_iced&#39;))
+  )</code></pre>
+<p>The next step is to replicate how the data was divided in the training and testing sets from the initial post. This is done using the <code>initial_split()</code> function from <code>rsample</code>. The seed will be set to what it originally was so that the same training and testing splits are used.</p>
+<pre class="r"><code>set.seed(20220102)
+ice_split &lt;- initial_split(fg_data, strata = is_iced)
+ice_train &lt;- training(ice_split)
+ice_test &lt;- testing(ice_split)</code></pre>
+</div>
+<div id="model-1-tidymodels" class="section level3">
+<h3>Model #1: TidyModels</h3>
+<p>To replicate the results from <code>tidymodels</code> I will first reconstruct the pre-processing recipe that used one-hot encoding to turn categorical variables into numeric and applied the SMOTE algorithm to deal with the severe class imbalance in the data.</p>
+<pre class="r"><code>rec_smote &lt;- recipe(is_iced ~ ., data = ice_train) %&gt;%
+  step_dummy(all_nominal_predictors(), one_hot = T) %&gt;%
+  step_smote(is_iced) </code></pre>
+<p>In that post the final model was a tuned XGBoost model with the following parameters:
+<img src="params.PNG" /></p>
+<p>So rather than set up a tuning grid, I’ll just build a spec that includes that exact parameters and combine it with the recipe in a workflow:</p>
+<pre class="r"><code>orig_wf &lt;- workflow(rec_smote,
+               boost_tree(
+                 &quot;classification&quot;,
+                 mtry = 5,
+                 trees = 1641,
+                 min_n = 19,
+                 tree_depth = 8,
+                 learn_rate = 0.007419,
+                 loss_reduction = 9.425834,
+                 sample_size = 0.9830687,
+                 stop_iter = 21
+               )) </code></pre>
+<p>Next step is to run the model on the full training data and predict on the testing data using the <code>last_fit()</code> function. I will have the function returns testing set metrics for Precision, Recall, and F1 Score.</p>
+<pre class="r"><code>orig_results &lt;- last_fit(orig_wf, 
+                         ice_split, 
+                         metrics=metric_set(f_meas, precision, recall))</code></pre>
+<p>The performance metrics can be extracted using the <code>collect_metrics()</code> function and then I’ll do some post-processing to put it in a format that will eventually be combined with the other models:</p>
+<pre class="r"><code>orig_metrics &lt;- collect_metrics(orig_results) %&gt;% 
+  transmute(
+    label = &quot;Original Model&quot;,
+    metric = .metric,
+    estimate = .estimate
+  )
+
+kable(orig_metrics)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">label</th>
+<th align="left">metric</th>
+<th align="right">estimate</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">Original Model</td>
+<td align="left">f_meas</td>
+<td align="right">0.4324324</td>
+</tr>
+<tr class="even">
+<td align="left">Original Model</td>
+<td align="left">precision</td>
+<td align="right">0.3428571</td>
+</tr>
+<tr class="odd">
+<td align="left">Original Model</td>
+<td align="left">recall</td>
+<td align="right">0.5853659</td>
+</tr>
+</tbody>
+</table>
+<p>And the <code>collection_predictions()</code> function will extract the predictions for the test set to use in a confusion matrix:</p>
+<pre class="r"><code>orig_cf &lt;- collect_predictions(orig_results) %&gt;%
+  count(is_iced, .pred_class) %&gt;% 
+  mutate(label = &quot;Original Model&quot;, .before = 1) %&gt;% 
+  rename(pred = .pred_class)</code></pre>
+</div>
+<div id="model-2---h2o-automl" class="section level3">
+<h3>Model #2 - h2o AutoML</h3>
+<p>The next candidate will be h2o’s AutoML function. h2O is an open-source machine learning platform that runs in java and has interfaces with R amongst others. The AutoML feature will auto-magically try different models and eventually construct a leaderboard of the best models. For this section, the blog post from <a href="https://rileyking.netlify.app/post/could-automl-win-in-the-sliced-data-science-competition/">Riley King</a> was an inspiration as AutoML was used to compare against data from the Sliced data science competition.</p>
+<p>In order to start using h2o I must first initialize the engine:</p>
+<pre class="r"><code>h2o.init()</code></pre>
+<p>h2O also has its own data format which must used. Fortunately its easy to convert between the tibbles and this format with <code>as.h2o</code>:</p>
+<pre class="r"><code>train_data &lt;- as.h2o(ice_train)</code></pre>
+<p>Due to how h2o is set up, I’ll need to specific the name of the dependent variable (y) as a string and provide the list of predictors as a vector of strings (x). This is most easily done prior to the function call using <code>setdiff()</code> to remove the dependent from the other variables.</p>
+<pre class="r"><code>y &lt;- &quot;is_iced&quot;
+x &lt;- setdiff(names(train_data), y)</code></pre>
+<p>Now its time to run the AutoML function. In the <code>h2o.automl()</code> function I provide the name of the dependent variable, the vector of the independent variable, a project name which I believe doesn’t matter for this purpose, a boolean to tell it to try to balance classes, and a seed so that results are replicable. The final parameter I give the function is the “max_runtime_secs”. Since the algorithm will continue to spawn new models it needs a criteria to know when to stop. For convenience, I will allow it to run for 10 minutes.</p>
+<pre class="r"><code>h2oAML &lt;- h2o.automl(
+  y = y,
+  x = x,
+  training_frame = train_data,
+  project_name = &quot;ice_the_kicker_bakeoff&quot;,
+  balance_classes = T,
+  max_runtime_secs = 600,
+  seed = 20220425
+)</code></pre>
+<p>When the AutoML algorithm completes each model that was run will be placed in a leaderboard which can be accessed by:</p>
+<pre class="r"><code>leaderboard_tbl &lt;- h2oAML@leaderboard %&gt;% as_tibble()
+
+leaderboard_tbl %&gt;% head() %&gt;% kable()</code></pre>
+<table>
+<colgroup>
+<col width="42%" />
+<col width="8%" />
+<col width="8%" />
+<col width="8%" />
+<col width="16%" />
+<col width="8%" />
+<col width="8%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left">model_id</th>
+<th align="right">auc</th>
+<th align="right">logloss</th>
+<th align="right">aucpr</th>
+<th align="right">mean_per_class_error</th>
+<th align="right">rmse</th>
+<th align="right">mse</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">GBM_grid_1_AutoML_1_20220430_215247_model_47</td>
+<td align="right">0.9193728</td>
+<td align="right">0.1092884</td>
+<td align="right">0.9953164</td>
+<td align="right">0.4591029</td>
+<td align="right">0.1759418</td>
+<td align="right">0.0309555</td>
+</tr>
+<tr class="even">
+<td align="left">GBM_grid_1_AutoML_1_20220430_215247_model_95</td>
+<td align="right">0.9186846</td>
+<td align="right">0.1098212</td>
+<td align="right">0.9953443</td>
+<td align="right">0.4834514</td>
+<td align="right">0.1766268</td>
+<td align="right">0.0311970</td>
+</tr>
+<tr class="odd">
+<td align="left">StackedEnsemble_AllModels_4_AutoML_1_20220430_215247</td>
+<td align="right">0.9182852</td>
+<td align="right">0.1070530</td>
+<td align="right">0.9951190</td>
+<td align="right">0.4476356</td>
+<td align="right">0.1731510</td>
+<td align="right">0.0299813</td>
+</tr>
+<tr class="even">
+<td align="left">StackedEnsemble_AllModels_3_AutoML_1_20220430_215247</td>
+<td align="right">0.9182371</td>
+<td align="right">0.1072580</td>
+<td align="right">0.9952534</td>
+<td align="right">0.4525710</td>
+<td align="right">0.1735284</td>
+<td align="right">0.0301121</td>
+</tr>
+<tr class="odd">
+<td align="left">GBM_grid_1_AutoML_1_20220430_215247_model_69</td>
+<td align="right">0.9181298</td>
+<td align="right">0.1097581</td>
+<td align="right">0.9952088</td>
+<td align="right">0.4819644</td>
+<td align="right">0.1765332</td>
+<td align="right">0.0311640</td>
+</tr>
+<tr class="even">
+<td align="left">StackedEnsemble_AllModels_2_AutoML_1_20220430_215247</td>
+<td align="right">0.9179346</td>
+<td align="right">0.1077711</td>
+<td align="right">0.9950966</td>
+<td align="right">0.4411767</td>
+<td align="right">0.1738748</td>
+<td align="right">0.0302325</td>
+</tr>
+</tbody>
+</table>
+<p>I can get the top model from the leaderboard by running <code>h2o.getModel()</code> on the model id from the leaderboard. In this case it was a Gradient Boosted Machine (GMB).</p>
+<pre class="r"><code>model_names &lt;- leaderboard_tbl$model_id
+top_model &lt;- h2o.getModel(model_names[1])</code></pre>
+<p>With the model id I can also see what the parameters are that were used in this model.</p>
+<pre class="r"><code>top_model@model$model_summary %&gt;% 
+  pivot_longer(cols = everything(),
+               names_to = &quot;Parameter&quot;, values_to = &quot;Value&quot;) %&gt;% 
+  kable(align = &#39;c&#39;)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="center">Parameter</th>
+<th align="center">Value</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="center">number_of_trees</td>
+<td align="center">74.000000</td>
+</tr>
+<tr class="even">
+<td align="center">number_of_internal_trees</td>
+<td align="center">74.000000</td>
+</tr>
+<tr class="odd">
+<td align="center">model_size_in_bytes</td>
+<td align="center">11612.000000</td>
+</tr>
+<tr class="even">
+<td align="center">min_depth</td>
+<td align="center">3.000000</td>
+</tr>
+<tr class="odd">
+<td align="center">max_depth</td>
+<td align="center">3.000000</td>
+</tr>
+<tr class="even">
+<td align="center">mean_depth</td>
+<td align="center">3.000000</td>
+</tr>
+<tr class="odd">
+<td align="center">min_leaves</td>
+<td align="center">6.000000</td>
+</tr>
+<tr class="even">
+<td align="center">max_leaves</td>
+<td align="center">8.000000</td>
+</tr>
+<tr class="odd">
+<td align="center">mean_leaves</td>
+<td align="center">7.851351</td>
+</tr>
+</tbody>
+</table>
+<p>While for <code>tidymodels</code> the <code>last_fit()</code> function ran the model on the test set for me, for h2o I’ll need to do that myself… but its not that difficult. h2o has an <code>h2o.predict()</code> function similar to R’s <code>predict()</code> which takes in a model and data to predict on through a <em>newdata</em> parameter. For that <em>newdata</em> I need to convert the test data into the h2o format through <code>as.h2o()</code>. Then I bind the predictions as a new column into the rest of the test data so that performance statistics and confusion metrics can be generated.</p>
+<pre class="r"><code>h2o_predictions &lt;- h2o.predict(top_model, newdata = as.h2o(ice_test)) %&gt;%
+  as_tibble() %&gt;%
+  bind_cols(ice_test)</code></pre>
+<p>Similar to how I needed to do the predictions manually, I’ll also need to collect the performance metrics manually. This is also easy using the <code>yardstick</code> package:</p>
+<pre class="r"><code>h2o_metrics &lt;- bind_rows(
+  #Calculate Performance Metrics
+  yardstick::f_meas(h2o_predictions, is_iced, predict),
+  yardstick::precision(h2o_predictions, is_iced, predict),
+  yardstick::recall(h2o_predictions, is_iced, predict)
+) %&gt;%
+  # Add an id column and make it the first column
+  mutate(label = &quot;h2o&quot;, .before = 1) %&gt;% 
+  # Remove the periods from column names
+  rename_with(~str_remove(.x, &#39;\\.&#39;)) %&gt;%
+  # Drop the estimator column
+  select(-estimator)
+
+kable(h2o_metrics)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">label</th>
+<th align="left">metric</th>
+<th align="right">estimate</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">h2o</td>
+<td align="left">f_meas</td>
+<td align="right">0.3731020</td>
+</tr>
+<tr class="even">
+<td align="left">h2o</td>
+<td align="left">precision</td>
+<td align="right">0.2398884</td>
+</tr>
+<tr class="odd">
+<td align="left">h2o</td>
+<td align="left">recall</td>
+<td align="right">0.8390244</td>
+</tr>
+</tbody>
+</table>
+<p>Finally, I’ll compute the confusion matrix.</p>
+<pre class="r"><code>h2o_cf &lt;- h2o_predictions %&gt;% 
+  count(is_iced, pred= predict) %&gt;% 
+  mutate(label = &quot;h2o&quot;, .before = 1)</code></pre>
+</div>
+<div id="model-3-superlearner" class="section level3">
+<h3>Model #3: SuperLearner</h3>
+<p>The third candidate model that I’ll try is through the <code>SuperLearner</code> package. <code>SuperLearner</code> is an ensemble package that will create many different types of models and then by taking a weighted combination of those models hopes to attain better performance accuracy than any of the individual models along.</p>
+<p>To use the <code>SuperLearner()</code> function, the dependent variable vector Y must be provide as a numeric vector, and the predictors vector X must also only contain numeric data, therefore all factors are converted back to numeric.</p>
+<p>Since I’m predicting a binary outcome (whether or not a kick attempt will be iced) I specify the family as <em>binomial</em>. Finally, the models to be combined as specified in the <code>SL.library</code> argument. The full list of models are contained in the <code>listWrappers()</code> function. However, I’m choosing a subset primarily out of convenience. Mostly that I couldn’t get some of the other models (for example bartMachine) to run properly. The models I’m choosing to include in the ensemble are a GLM, XGBoost, GLM w/ Interactions, Regularized GLM (glmnet), MARS (earth), GAM, and a Random Forest.</p>
+<pre class="r"><code>mod &lt;- SuperLearner(
+  Y = ice_train %&gt;% mutate(iced = if_else(is_iced == &#39;iced&#39;, 1, 0)) %&gt;% 
+    pull(iced),
+  X = ice_train %&gt;% mutate(prior_miss = if_else(prior_miss == &#39;yes&#39;, 1, 0)) %&gt;% 
+    select(-is_iced) %&gt;% as.data.frame,
+  family = binomial(),
+  SL.library = c( &#39;SL.glm&#39;, &quot;SL.xgboost&quot;, &quot;SL.glm.interaction&quot;, &#39;SL.glmnet&#39;, 
+                  &#39;SL.earth&#39;, &#39;SL.gam&#39;, &#39;SL.randomForest&#39;)
+)</code></pre>
+<p>Since the ultimate output of the SuperLearner is a weighted combination of those models I can extract the weights and show which models have the highest influence on the final predictions.</p>
+<pre class="r"><code>mod$coef %&gt;% as_tibble(rownames = &quot;model&quot;) %&gt;% 
+  mutate(model = str_remove_all(model, &#39;(SL\\.)|(_All)&#39;)) %&gt;%
+  ggplot(aes(x = fct_reorder(model, -value), y = value, fill = model)) + 
+    geom_col() + 
+    geom_text(aes(label = value %&gt;% percent), vjust = 0) + 
+    scale_fill_viridis_d(option = &quot;B&quot;, end = .8, guide = &#39;none&#39;) + 
+    labs(x = &quot;Model&quot;, y = &quot;% Contribution of Model&quot;, title = &quot;% Contribution For Each Component to SuperLearner&quot;) + 
+    cowplot::theme_cowplot() + 
+    theme(
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank()
+    )</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/plot_weights-1.png" width="100%" /></p>
+<p>It appears that Random Forest has the strongest effect followed by the MARS model and the XGBoost model.</p>
+<p>Predicting the test set is similar to the h2o version except I can use the generic predict function. However, the predict function will return a vector of probabilities of being iced rather than a label like h2o did. Therefore I need to make a judgement call on a probability cut-off for determining an attempt as iced or not. I’ll choose to use the incidence rate of the training data, 4.2%, as the cut-off. Probabilities greater than 4.2% will be considered “iced” and below that will be “not iced”.</p>
+<pre class="r"><code>pred_sl = predict(mod, newdata = ice_test %&gt;% 
+                    mutate(prior_miss = if_else(prior_miss == &#39;yes&#39;, 1, 0)) %&gt;%
+                    select(-is_iced) %&gt;% 
+                    as.data.frame, type = &#39;response&#39;)$pred 
+
+pred_sl &lt;- ice_test %&gt;%
+  mutate(pred = if_else(pred_sl &gt;= mean(ice_train$is_iced == &#39;iced&#39;), 1, 0),
+         pred = factor(pred, levels = c(1, 0), labels = c(&#39;iced&#39;, &#39;not_iced&#39;)))</code></pre>
+<p>Similar to the above section, I’ll use <code>yardstick</code> for the performance metrics.</p>
+<pre class="r"><code>sl_metrics &lt;- bind_rows(
+  yardstick::f_meas(pred_sl, is_iced, pred),
+  yardstick::precision(pred_sl, is_iced, pred),
+  yardstick::recall(pred_sl, is_iced, pred)
+) %&gt;% 
+  mutate(label = &quot;SuperLearner&quot;, .before = 1) %&gt;% 
+  rename_with(~str_remove(.x, &#39;\\.&#39;)) %&gt;% 
+  select(-estimator)
+
+kable(sl_metrics)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">label</th>
+<th align="left">metric</th>
+<th align="right">estimate</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">SuperLearner</td>
+<td align="left">f_meas</td>
+<td align="right">0.3389513</td>
+</tr>
+<tr class="even">
+<td align="left">SuperLearner</td>
+<td align="left">precision</td>
+<td align="right">0.2097335</td>
+</tr>
+<tr class="odd">
+<td align="left">SuperLearner</td>
+<td align="left">recall</td>
+<td align="right">0.8829268</td>
+</tr>
+</tbody>
+</table>
+<p>And calculate the confusion matrix.</p>
+<pre class="r"><code>sl_cf &lt;- pred_sl %&gt;% 
+  count(is_iced, pred) %&gt;% 
+  mutate(label = &quot;SuperLearner&quot;, .before = 1)</code></pre>
+</div>
+<div id="comparing-the-three-models" class="section level3">
+<h3>Comparing the Three Models</h3>
+<p>For each of the three models I’ve calculated Precision, Recall, and F1. I’ll combine this information in a plot so its easier to see the different performance for each model:</p>
+<pre class="r"><code>bind_rows(
+  orig_metrics,
+  h2o_metrics,
+  sl_metrics
+) %&gt;% 
+  ggplot(aes(x = str_wrap(label, 9), y = estimate, fill = label)) + 
+    geom_col() + 
+    geom_text(aes(label = estimate %&gt;% percent), vjust = 1, color = &#39;grey90&#39;) + 
+    scale_fill_viridis_d(option = &quot;C&quot;, end = .6, guide = &#39;none&#39;) + 
+    facet_wrap(~metric, nrow = 1, scales = &quot;free_y&quot;) +
+    labs(x = &quot;Model&quot;, y = &quot;Performance Metric&quot;,
+         title = &quot;Comparing the Performance Metrics on Test Set&quot;) + 
+    theme_light() + 
+    theme(
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      strip.text = element_text(color = &#39;black&#39;)
+    )</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/combined_perf-1.png" width="100%" />
+From the perspective of the F1-Score which balances precision and recall the original model performed the best. But looking at the components it appears that the original model had a higher precision meaning that when it predicted an iced attempt it was more likely to be right than the other models (although was still only right 35% of the time). However, it left some true iced attempts on the table since its recall was substantially lower than both the h2o model and the SuperLearner model.</p>
+<p>I can get a better lens on what things are and are not being predicted well by looking at each model’s confusion matrix on the test set.</p>
+<pre class="r"><code>bind_rows(
+  orig_cf,
+  h2o_cf,
+  sl_cf
+) %&gt;% 
+  group_by(label) %&gt;% 
+  mutate(pct = n/sum(n)) %&gt;% 
+  ggplot(aes(x = is_iced, y = pred, fill = n)) + 
+    geom_tile() + 
+    geom_text(aes(label = glue::glue(&#39;{n}\n({pct %&gt;% percent})&#39;)),
+              color = &#39;grey90&#39;) + 
+    facet_wrap(~label, nrow = 1) + 
+    scale_fill_viridis_c(guide = &#39;none&#39;, end = .8) + 
+    labs(x = &quot;Actual Value&quot;, y = &quot;Predicted Value&quot;,
+         title = &quot;Comparing Confusion Matrices&quot;) + 
+    theme_light() + 
+    theme(
+      axis.ticks = element_blank(),
+      strip.text = element_text(color = &#39;black&#39;)
+    )</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/combined_cf-1.png" width="100%" /></p>
+<p>In the confusion matrix its much easier to see that the original model was less likely to make a prediction of iced than the other two models. This led to it having the higher precision but also the lower recall as the original model missed 85 iced attempts vs. the h2o model only missing 33 and the SuperLearner only missing 24.</p>
+<p>So which model performed the best? If I’m just going by balanced performance by looking at the F1 score then the original model outperformed the other two. However, its worth thinking about whether precision or recall is more important since that could have an influence on how to view the model’s performance. If ensuring that all the iced kicked are captured is most important then I should weight more towards recall. But if I want to feel that when the model predicts an iced kick that there will be an iced kick I should stick with the original model.</p>
+</div>
+<div id="other-posts-in-the-icing-the-kicker-series" class="section level3">
+<h3>Other Posts in the Icing the Kicker Series</h3>
+<ul>
+<li>Part I: <a href="https://jlaw.netlify.app/2022/01/24/predicting-when-kickers-get-iced-with-tidymodels/">Predicting When Kickers Get Iced with {tidymodels}</a></li>
+<li>Part II: <a href="https://jlaw.netlify.app/2022/02/14/does-icing-the-kicker-really-work/">Does Icing the Kicker Really Work? A Causal Inference Exercise</a></li>
+<li>Part III: <a href="https://jlaw.netlify.app/2022/03/13/ain-t-nothin-but-a-g-computation-and-tmle-thang-exploring-two-more-causal-inference-methods/">Ain’t Nothin But A G-Computation (and TMLE) Thang: Exploring Two More Causal Inference Methods</a></li>
+</ul>
+</div>
