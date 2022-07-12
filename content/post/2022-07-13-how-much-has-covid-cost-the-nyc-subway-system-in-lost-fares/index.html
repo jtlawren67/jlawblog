@@ -15,7 +15,7 @@ tags:
 subtitle: ''
 summary: ''
 authors: []
-lastmod: '2022-07-10T19:16:41-04:00'
+lastmod: '2022-07-13T03:16:41-04:00'
 featured: no
 image:
   caption: ''
@@ -26,7 +26,7 @@ projects: []
 
 
 
-<p>With things in NYC beginning to return to normal after two years of COVID I found myself thinking about how much money was lost in the 2+ years where people were working from and the subway stopped running 24hrs a day. Seeing an opportunity to mess around with some forecasting packages, I set out to determine *how much money in lost rides has COVID cost the MTA?“.</p>
+<p>With things in NYC beginning to return to normal after two years of COVID I found myself thinking about how much money was lost in Subway fares in the 2+ years where people were working from home. Seeing an opportunity to mess around with some forecasting packages, I set out to determine *how much money in lost rides has COVID cost the MTA?“.</p>
 <p>For this post, I’ll be using the <code>modeltime</code> <a href="https://www.business-science.io/code-tools/2020/06/29/introducing-modeltime.html?utm_content=buffer86bae&amp;utm_medium=social&amp;utm_source=twitter.com&amp;utm_campaign=buffer">package</a> from Business-Science.io which is a time-series integration into tidymodels to run multiple time series candidates and choose the best one.</p>
 <div id="libraries" class="section level2">
 <h2>Libraries</h2>
@@ -55,7 +55,7 @@ library(prophet)</code></pre>
 </div>
 <div id="methodology" class="section level2">
 <h2>Methodology</h2>
-<p>The dataset contains the weekly number of subway swipes from May 2010 through June 2022. To determine the number of “lost fares”, I’m going to build a forecast of the number of swipes from 2020 onwards and use the residuals between the forecast and the actual data. Since I don’t reasonably expect a model to accurately predict 2020 onwards but I want to ensure I will have a reasonable model, I will train the model on data from 2010 through 2018 and then validate based on the 2019 data which should be reasonably similar to 2018.</p>
+<p>The dataset contains the weekly number of subway swipes from May 2010 through June 2022. To determine the number of “lost fares”, I’m going to build a forecast of the number of swipes from 2020 onwards and use the residuals between the forecast and the actual data to determine the number of “lost swipes”. Since I don’t reasonably expect a model to accurately predict 2020 onwards but I want to ensure I will have a reasonable model, I will train the model on data from 2010 through 2018 and then validate based on the 2019 data which should be similar to 2018.</p>
 <p>Based on the validation set I will choose the best model and then using that model I will forecast 2020, 2021, and 2022.</p>
 <p>Ultimately this test plan looks as follows:</p>
 <pre class="r"><code>dt %&gt;% 
@@ -82,10 +82,11 @@ library(prophet)</code></pre>
   dt %&gt;% filter(year(week_start) &lt; 2020) %&gt;% arrange(week_start),
   assess = 52, cumulative = T)</code></pre>
 <p>The assess options tells the function to split the last 52 weeks of data into the validation set and the cumulative option tells the function to use all the other data in the training set.</p>
+<p>The training data runs from 2010-05-29 to 2018-12-29 and the validation data runs from 2019-01-05 to 2019-12-28.</p>
 </div>
 <div id="modeling" class="section level2">
 <h2>Modeling</h2>
-<p>The modeling process will use the recipe / workflow ecosystem that is often used in the <code>tidymodels</code> ecosystem. However, add-on packages like <code>modeltime</code> and <code>treesnip</code> will allow for extensions to time series and other ML algorithms. For a more detailed look at Tidymodels check out my post on <a href="https://jlaw.netlify.app/2022/01/24/predicting-when-kickers-get-iced-with-tidymodels/">icing the kicker</a>.</p>
+<p>The modeling process will use the recipe / workflow process that is used in the <code>tidymodels</code> ecosystem. However, add-on packages like <code>modeltime</code> and <code>treesnip</code> will allow for extensions to time series and other ML algorithms. For a more detailed look at Tidymodels check out my post on <a href="https://jlaw.netlify.app/2022/01/24/predicting-when-kickers-get-iced-with-tidymodels/">icing the kicker</a>.</p>
 <div id="pre-preprocessing" class="section level3">
 <h3>Pre-Preprocessing</h3>
 <p>The first step with tidymodels is to set up a recipe for pre-processing and featuring engineering. It tells the ecosystem the model formula and what new features to create or remove. In the below recipe, I’m setting the <em>week_start</em> fields to be an “id” as opposed to a predictor because some of the models we’ll try (CatBoost, XGBoost) can’t handle dates. The “id” role means that the data remains but isn’t used in the model.</p>
@@ -276,7 +277,6 @@ prophet_boost_wf &lt;- workflow() %&gt;%
         axis.text.x = element_text(angle = 60, hjust = .5, vjust = .5)
       )</code></pre>
 <p><img src="{{< blogdown/postref >}}index_files/figure-html/validation_viz-1.png" width="100%" /></p>
-<p>From the visualizations its clear that the Prophet models and the XGBoost model fit the 2019 data very well.</p>
 </div>
 </div>
 <div id="forecasting-the-covid-time-period" class="section level2">
@@ -324,16 +324,17 @@ a monthly unlimited card costs $127, for Seniors and other reduced fare populati
     geom_line() + 
     geom_ribbon(aes(ymin = fares_lost_lo*-1, ymax = fares_lost_high*-1), alpha = .3,
                 fill = &#39;darkgreen&#39;) + 
-    scale_y_continuous(labels = dollar, breaks = c(1e9, 3e9, 5e9)) + 
+    scale_y_continuous(labels = dollar, breaks = seq(0, 6e9, 1e9), expand = c(0 ,0)) + 
     labs(title = &quot;Cumulative Amount of Subway Fares Lost Since 2020&quot;,
          x = &quot;Date&quot;, y = &quot;$ Lost&quot;, caption = &quot;$ Lost = Projected Swipes Lost * $2.00&quot;) + 
     cowplot::theme_cowplot() + 
     theme(
-      plot.title.position = &#39;plot&#39;
+      plot.title.position = &#39;plot&#39;,
+      panel.grid.major.y = element_line(color = &#39;grey45&#39;)
     )</code></pre>
 <p><img src="{{< blogdown/postref >}}index_files/figure-html/loss_viz-1.png" width="100%" /></p>
 </div>
 <div id="concluding-thoughts" class="section level2">
 <h2>Concluding Thoughts</h2>
-<p>While things are starting to return to more “normalcy” on the NYC subway its still not exactly what is was in the pre-COVID times. Based on this forecasting exercise, its estimated that the MTA has already lost around $5B in “lost fares” and that number is continuing to grow. Because while things are recovering, there’s still a long way to go.</p>
+<p>While things are starting to return to more “normalcy” on the NYC subway its still far from what is was in the pre-COVID times. Based on this forecasting exercise, its estimated that the MTA has already lost around $5B in “lost fares” and that number is continuing to grow. Because while things are recovering, there’s still a long way to go.</p>
 </div>

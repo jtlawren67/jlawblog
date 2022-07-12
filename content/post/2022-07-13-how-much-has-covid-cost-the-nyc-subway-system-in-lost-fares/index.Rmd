@@ -15,7 +15,7 @@ tags:
 subtitle: ''
 summary: ''
 authors: []
-lastmod: '2022-07-10T19:16:41-04:00'
+lastmod: '2022-07-13T03:16:41-04:00'
 featured: no
 image:
   caption: ''
@@ -31,7 +31,7 @@ library(knitr)
 options(scipen=999)
 ```
 
-With things in NYC beginning to return to normal after two years of COVID I found myself thinking about how much money was lost in the 2+ years where people were working from and the subway stopped running 24hrs a day.  Seeing an opportunity to mess around with some forecasting packages, I set out to determine *how much money in lost rides has COVID cost the MTA?".
+With things in NYC beginning to return to normal after two years of COVID I found myself thinking about how much money was lost in Subway fares in the 2+ years where people were working from home.  Seeing an opportunity to mess around with some forecasting packages, I set out to determine *how much money in lost rides has COVID cost the MTA?".
 
 For this post, I'll be using the `modeltime` [package](https://www.business-science.io/code-tools/2020/06/29/introducing-modeltime.html?utm_content=buffer86bae&utm_medium=social&utm_source=twitter.com&utm_campaign=buffer) from Business-Science.io which is a time-series integration into tidymodels to run multiple time series candidates and choose the best one.
 
@@ -69,7 +69,7 @@ dt <- readRDS('data/mta_data.RDS') %>%
 
 ## Methodology
 
-The dataset contains the weekly number of subway swipes from May 2010 through June 2022.  To determine the number of "lost fares", I'm going to build a forecast of the number of swipes from 2020 onwards and use the residuals between the forecast and the actual data.  Since I don't reasonably expect a model to accurately predict 2020 onwards but I want to ensure I will have a reasonable model, I will train the model on data from 2010 through 2018 and then validate based on the 2019 data which should be reasonably similar to 2018.
+The dataset contains the weekly number of subway swipes from May 2010 through June 2022.  To determine the number of "lost fares", I'm going to build a forecast of the number of swipes from 2020 onwards and use the residuals between the forecast and the actual data to determine the number of "lost swipes".  Since I don't reasonably expect a model to accurately predict 2020 onwards but I want to ensure I will have a reasonable model, I will train the model on data from 2010 through 2018 and then validate based on the 2019 data which should be similar to 2018.
 
 Based on the validation set I will choose the best model and then using that model I will forecast 2020, 2021, and 2022.
 
@@ -110,9 +110,11 @@ splits <- time_series_split(
 
 The assess options tells the function to split the last 52 weeks of data into the validation set and the cumulative option tells the function to use all the other data in the training set.
 
+The training data runs from `r paste(range(training(splits)$week_start), collapse = " to ")` and the validation data runs from `r paste(range(testing(splits)$week_start), collapse = " to ")`.
+
 ## Modeling
 
-The modeling process will use the recipe / workflow ecosystem that is often used in the `tidymodels` ecosystem.  However, add-on packages like `modeltime` and `treesnip` will allow for extensions to time series and other ML algorithms.  For a more detailed look at Tidymodels check out my post on [icing the kicker](https://jlaw.netlify.app/2022/01/24/predicting-when-kickers-get-iced-with-tidymodels/).
+The modeling process will use the recipe / workflow process that is used in the `tidymodels` ecosystem.  However, add-on packages like `modeltime` and `treesnip` will allow for extensions to time series and other ML algorithms.  For a more detailed look at Tidymodels check out my post on [icing the kicker](https://jlaw.netlify.app/2022/01/24/predicting-when-kickers-get-iced-with-tidymodels/).
 
 ### Pre-Preprocessing
 
@@ -249,8 +251,6 @@ calibration_table %>%
 
 ```
 
-From the visualizations its clear that the Prophet models and the XGBoost model fit the 2019 data very well.
-
 ## Forecasting the COVID Time Period
 
 Now that I've identified the Prophet w/ XGBoosted errors model as the best model, its time to retrain it one final time on both the training and validation data before using it to forecast the COVID time period.  The refiting on all data is handled by `modeltime_refit()`.
@@ -314,16 +314,17 @@ loss_amt %>%
     geom_line() + 
     geom_ribbon(aes(ymin = fares_lost_lo*-1, ymax = fares_lost_high*-1), alpha = .3,
                 fill = 'darkgreen') + 
-    scale_y_continuous(labels = dollar, breaks = c(1e9, 3e9, 5e9)) + 
+    scale_y_continuous(labels = dollar, breaks = seq(0, 6e9, 1e9), expand = c(0 ,0)) + 
     labs(title = "Cumulative Amount of Subway Fares Lost Since 2020",
          x = "Date", y = "$ Lost", caption = "$ Lost = Projected Swipes Lost * $2.00") + 
     cowplot::theme_cowplot() + 
     theme(
-      plot.title.position = 'plot'
+      plot.title.position = 'plot',
+      panel.grid.major.y = element_line(color = 'grey45')
     )
 
 ```
 
 ## Concluding Thoughts
 
-While things are starting to return to more "normalcy" on the NYC subway its still not exactly what is was in the pre-COVID times.  Based on this forecasting exercise, its estimated that the MTA has already lost around $5B in "lost fares" and that number is continuing to grow.  Because while things are recovering, there's still a long way to go.
+While things are starting to return to more "normalcy" on the NYC subway its still far from what is was in the pre-COVID times.  Based on this forecasting exercise, its estimated that the MTA has already lost around $5B in "lost fares" and that number is continuing to grow.  Because while things are recovering, there's still a long way to go.
