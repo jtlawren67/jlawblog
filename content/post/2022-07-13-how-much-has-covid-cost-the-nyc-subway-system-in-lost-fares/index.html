@@ -1,0 +1,340 @@
+---
+title: How much has COVID cost the NYC Subway system in "lost fares"?
+author: JLaw
+date: '2022-07-13'
+slug: how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares
+categories:
+  - R
+  - Forecasting
+tags:
+  - tidymodels
+  - modeltime
+  - prophet
+  - treesnip
+  - catboost
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2022-07-13T03:16:41-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+
+
+<p>With things in NYC beginning to return to normal after two years of COVID I found myself thinking about how much money was lost in Subway fares in the 2+ years where people were working from home. Seeing an opportunity to mess around with some forecasting packages, I set out to determine *how much money in lost rides has COVID cost the MTA?“.</p>
+<p>For this post, I’ll be using the <code>modeltime</code> <a href="https://www.business-science.io/code-tools/2020/06/29/introducing-modeltime.html?utm_content=buffer86bae&amp;utm_medium=social&amp;utm_source=twitter.com&amp;utm_campaign=buffer">package</a> from Business-Science.io which is a time-series integration into tidymodels to run multiple time series candidates and choose the best one.</p>
+<div id="libraries" class="section level2">
+<h2>Libraries</h2>
+<pre class="r"><code>### Data Manipulation Packages
+library(timetk)
+library(tidyverse)
+library(scales)
+library(lubridate)
+
+# Modeling Ecosystem
+library(modeltime) 
+library(tidymodels) 
+library(treesnip) 
+
+### Model Packages
+library(catboost)
+library(prophet)</code></pre>
+</div>
+<div id="data" class="section level2">
+<h2>Data</h2>
+<p>For this project, I’ll be using the MTA’s weekly <a href="http://web.mta.info/developers/fare.html">fare data</a> which contains the number swipes for each fare type, for each station. I’d previously scraped data from this website in a <a href="https://jlaw.netlify.app/2020/09/07/covid-19s-impact-on-the-nyc-subway-system/">prior blog post</a> so I won’t go through the methodology again.</p>
+<p>Since for this project I don’t need station level or fare type granularity, I’m going to aggregate the data set to the date level.</p>
+<pre class="r"><code>dt &lt;- readRDS(&#39;data/mta_data.RDS&#39;) %&gt;% 
+  group_by(week_start) %&gt;% 
+  summarize(fares = sum(fares))</code></pre>
+</div>
+<div id="methodology" class="section level2">
+<h2>Methodology</h2>
+<p>The dataset contains the weekly number of subway swipes from May 2010 through June 2022. To determine the number of “lost fares”, I’m going to build a forecast of the number of swipes from 2020 onwards and use the residuals between the forecast and the actual data to determine the number of “lost swipes”. Since I don’t reasonably expect a model to accurately predict 2020 onwards but I want to ensure I will have a reasonable model, I will train the model on data from 2010 through 2018 and then validate based on the 2019 data which should be similar to 2018.</p>
+<p>Based on the validation set I will choose the best model and then using that model I will forecast 2020, 2021, and 2022.</p>
+<p>Ultimately this test plan looks as follows:</p>
+<pre class="r"><code>dt %&gt;% 
+  mutate(lbl = case_when(
+    week_start &lt; ymd(20190101) ~ &quot;a) Train&quot;,
+    year(week_start) == 2019 ~ &#39;b) Validate&#39;,
+    year(week_start) &gt;= 2020 ~ &#39;c) Test&#39;
+  ), 
+  total_fares = fares) %&gt;% 
+  ggplot(aes(x = week_start)) + 
+  geom_line(data = dt, aes(y = fares), color = &#39;grey60&#39;) + 
+  geom_line(aes(y = fares, color = lbl)) + 
+  labs(title = &#39;Testing Plan for Forecasting&#39;,
+       x = &quot;Date&quot;, y = &quot;# of Metrocard Swipes&quot;,
+       color = &quot;&quot;) + 
+  scale_y_continuous(labels = comma) + 
+  facet_wrap(~lbl, nrow = 3) + 
+  cowplot::theme_cowplot()</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/test_plan-1.png" width="100%" /></p>
+<p>In order to split the data, I’m going to first chop off the 2020+ data into a test dataframe:</p>
+<pre class="r"><code>test &lt;- dt %&gt;% filter(year(week_start) &gt;= 2020)</code></pre>
+<p>And then use <em>timetk</em>’s <code>time_series_split</code> to create the sets that will be used for model development and validation:</p>
+<pre class="r"><code>splits &lt;- time_series_split(
+  dt %&gt;% filter(year(week_start) &lt; 2020) %&gt;% arrange(week_start),
+  assess = 52, cumulative = T)</code></pre>
+<p>The assess options tells the function to split the last 52 weeks of data into the validation set and the cumulative option tells the function to use all the other data in the training set.</p>
+<p>The training data runs from 2010-05-29 to 2018-12-29 and the validation data runs from 2019-01-05 to 2019-12-28.</p>
+</div>
+<div id="modeling" class="section level2">
+<h2>Modeling</h2>
+<p>The modeling process will use the recipe / workflow process that is used in the <code>tidymodels</code> ecosystem. However, add-on packages like <code>modeltime</code> and <code>treesnip</code> will allow for extensions to time series and other ML algorithms. For a more detailed look at Tidymodels check out my post on <a href="https://jlaw.netlify.app/2022/01/24/predicting-when-kickers-get-iced-with-tidymodels/">icing the kicker</a>.</p>
+<div id="pre-preprocessing" class="section level3">
+<h3>Pre-Preprocessing</h3>
+<p>The first step with tidymodels is to set up a recipe for pre-processing and featuring engineering. It tells the ecosystem the model formula and what new features to create or remove. In the below recipe, I’m setting the <em>week_start</em> fields to be an “id” as opposed to a predictor because some of the models we’ll try (CatBoost, XGBoost) can’t handle dates. The “id” role means that the data remains but isn’t used in the model.</p>
+<p>The <code>step_timeseries_signature()</code> creates a large number of features based on the date field such as fields for year, day, half, quarter, month, day of the year, day of week, etc. It also includes a number of time based fields which won’t be necessarily since this data is at a weekly grain. These unnecessary fields are removed in the <code>step_rm()</code> function. Finally, all categorical variables are one-hot-encoded to turn them into indicator variables using <code>step_dummy()</code>.</p>
+<pre class="r"><code>rec &lt;- recipe(fares ~ ., data = training(splits)) %&gt;%
+  update_role(week_start, new_role = &#39;id&#39;) %&gt;% 
+  step_timeseries_signature(week_start) %&gt;% 
+  step_rm(matches(&quot;(.iso$)|(am.pm$)|(.xts$)|(hour)|(minute)|(second)|(wday)&quot;)) %&gt;% 
+  step_dummy(all_nominal(), one_hot = TRUE)</code></pre>
+</div>
+<div id="model-fitting" class="section level3">
+<h3>Model Fitting</h3>
+<p>To determine the best model for the forecasting portion I’m going to look at 6 different modeling workflows:</p>
+<ol style="list-style-type: decimal">
+<li>CatBoost</li>
+<li>XGBoost</li>
+<li>Auto Arima with XGBoosted Errors</li>
+<li>Exponential Smoothing</li>
+<li>Prophet</li>
+<li>Prophet with XGBoosted Errors</li>
+</ol>
+<p>For each of these models, I will set up a workflow, add the proper model using the parsnip interface, add the recipe, and fit the model. For the last 4 models, I re-update the role of the <em>week_start</em> field back to a predictor from an id since those models can use the date field directly.</p>
+<pre class="r"><code>catboost_wf &lt;- workflow() %&gt;% 
+  add_model(
+    boost_tree(mode = &#39;regression&#39;) %&gt;% 
+      set_engine(&#39;catboost&#39;)
+  ) %&gt;% 
+  add_recipe(rec) %&gt;% 
+  fit(training(splits))
+
+xgboost_wf &lt;- workflow() %&gt;% 
+  add_model(
+    boost_tree(mode = &#39;regression&#39;) %&gt;% 
+      set_engine(&#39;xgboost&#39;)
+  ) %&gt;% 
+  add_recipe(rec) %&gt;% 
+  fit(training(splits))
+
+arima_boosted_wf &lt;- workflow() %&gt;% 
+  add_model(
+    arima_boost() %&gt;%
+      set_engine(engine = &quot;auto_arima_xgboost&quot;)
+  ) %&gt;%
+  add_recipe(rec %&gt;% update_role(week_start, new_role = &quot;predictor&quot;)) %&gt;%
+  fit(training(splits))
+
+
+ets_wf &lt;- workflow() %&gt;% 
+  add_model(
+    exp_smoothing() %&gt;%
+      set_engine(engine = &quot;ets&quot;)
+  ) %&gt;%
+  add_recipe(rec %&gt;% update_role(week_start, new_role = &quot;predictor&quot;)) %&gt;%
+  fit(training(splits))
+
+prophet_wf &lt;- workflow() %&gt;%
+  add_model(
+    prophet_reg(seasonality_yearly = TRUE) %&gt;% 
+      set_engine(engine = &#39;prophet&#39;)
+  ) %&gt;%
+  add_recipe(rec %&gt;% update_role(week_start, new_role = &quot;predictor&quot;)) %&gt;%
+  fit(training(splits))
+
+prophet_boost_wf &lt;- workflow() %&gt;%
+  add_model(
+    prophet_boost(seasonality_yearly = TRUE) %&gt;%
+      set_engine(&#39;prophet_xgboost&#39;)
+  ) %&gt;% 
+  add_recipe(rec %&gt;% update_role(week_start, new_role = &quot;predictor&quot;)) %&gt;%
+  fit(training(splits))</code></pre>
+</div>
+<div id="validating" class="section level3">
+<h3>Validating</h3>
+<p>To apply these models to the validation set and calculate accuracy I use the <code>modeltime</code> package’s <code>modeltime_table()</code> and <code>modeltime_calibrate()</code> functions. The first organizes the various workflows into a single object and the later will compute the accurate based on the validation set of 2019 data.</p>
+<pre class="r"><code>calibration_table &lt;- modeltime_table(
+  catboost_wf,
+  xgboost_wf,
+  arima_boosted_wf,
+  ets_wf,
+  prophet_wf,
+  prophet_boost_wf
+) %&gt;% 
+  modeltime_calibrate(testing(splits))</code></pre>
+<p>I can then assess the accuracy measures for the time series using <code>table_modeltime_accuracy()</code> after sorting by the root mean squared error which will be the accuracy metric I use to determine the best model.</p>
+<pre class="r"><code>calibration_table %&gt;%
+  modeltime_accuracy() %&gt;%
+  arrange(rmse) %&gt;% 
+  select(.model_desc, where(is.double)) %&gt;%
+  mutate(across(where(is.double), 
+                ~if_else(.x &lt; 10, round(.x, 2), round(.x, 0)))) %&gt;%
+  kable()</code></pre>
+<table style="width:100%;">
+<colgroup>
+<col width="45%" />
+<col width="11%" />
+<col width="7%" />
+<col width="7%" />
+<col width="8%" />
+<col width="11%" />
+<col width="7%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left">.model_desc</th>
+<th align="right">mae</th>
+<th align="right">mape</th>
+<th align="right">mase</th>
+<th align="right">smape</th>
+<th align="right">rmse</th>
+<th align="right">rsq</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">PROPHET W/ XGBOOST ERRORS</td>
+<td align="right">947892</td>
+<td align="right">3.00</td>
+<td align="right">0.59</td>
+<td align="right">3.04</td>
+<td align="right">1271929</td>
+<td align="right">0.76</td>
+</tr>
+<tr class="even">
+<td align="left">PROPHET W/ REGRESSORS</td>
+<td align="right">1150569</td>
+<td align="right">3.75</td>
+<td align="right">0.71</td>
+<td align="right">3.76</td>
+<td align="right">1515907</td>
+<td align="right">0.63</td>
+</tr>
+<tr class="odd">
+<td align="left">XGBOOST</td>
+<td align="right">1292654</td>
+<td align="right">4.08</td>
+<td align="right">0.80</td>
+<td align="right">4.25</td>
+<td align="right">1888753</td>
+<td align="right">0.59</td>
+</tr>
+<tr class="even">
+<td align="left">ARIMA(0,1,2) W/ XGBOOST ERRORS</td>
+<td align="right">1515049</td>
+<td align="right">4.81</td>
+<td align="right">0.94</td>
+<td align="right">4.96</td>
+<td align="right">1946304</td>
+<td align="right">0.55</td>
+</tr>
+<tr class="odd">
+<td align="left">CATBOOST</td>
+<td align="right">1900626</td>
+<td align="right">6.31</td>
+<td align="right">1.17</td>
+<td align="right">6.20</td>
+<td align="right">2362239</td>
+<td align="right">0.62</td>
+</tr>
+<tr class="even">
+<td align="left">ETS(A,N,A)</td>
+<td align="right">1930427</td>
+<td align="right">6.25</td>
+<td align="right">1.19</td>
+<td align="right">6.31</td>
+<td align="right">2436219</td>
+<td align="right">0.08</td>
+</tr>
+</tbody>
+</table>
+<p>From the accuracy table, the best model was the Prophet w/ XGBoosted Errors.</p>
+<p>The calibration table data contains a column called <code>.calibration_data</code> which contains the validation set predictions which I can use to visualize the the forecasted fit vs. the actuals in for the 2019 data.</p>
+<pre class="r"><code>calibration_table %&gt;% 
+    select(.model_desc, .calibration_data) %&gt;% 
+    unnest(cols = c(.calibration_data)) %&gt;% 
+    filter(year(week_start)==2019, .model_desc != &#39;ACTUAL&#39;) %&gt;% 
+    ggplot(aes(x = week_start)) + 
+      geom_line(aes(y = .actual), color = &#39;black&#39;, lty = 2) + 
+      geom_line(aes(y = .prediction, color = .model_desc), lwd = 1.2) + 
+      facet_wrap(~.model_desc, ncol = 2) + 
+      scale_color_discrete(guide = &quot;none&quot;) +
+      scale_y_continuous(label = comma) + 
+      labs(title = &quot;Comparing Models to Test Set of 2009&quot;, 
+           subtitle = &quot;Dashed Line is Actuals&quot;,
+           y = &quot;# of Fares&quot;,
+           x = &quot;Date&quot;) + 
+      theme_bw() + 
+      theme(
+        axis.text.x = element_text(angle = 60, hjust = .5, vjust = .5)
+      )</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/validation_viz-1.png" width="100%" /></p>
+</div>
+</div>
+<div id="forecasting-the-covid-time-period" class="section level2">
+<h2>Forecasting the COVID Time Period</h2>
+<p>Now that I’ve identified the Prophet w/ XGBoosted errors model as the best model, its time to retrain it one final time on both the training and validation data before using it to forecast the COVID time period. The refiting on all data is handled by <code>modeltime_refit()</code>.</p>
+<pre class="r"><code>refit_tbl &lt;- calibration_table %&gt;% 
+    filter(.model_desc ==&#39;PROPHET W/ XGBOOST ERRORS&#39; ) %&gt;%
+    modeltime_refit(data = bind_rows(training(splits), testing(splits)))</code></pre>
+<p>Finally, the forecasting onto the test set is handled by <code>modeltime_forecast()</code>. The test data and actuals are passed into the function so that the actuals and forecast can be directly compared.</p>
+<pre class="r"><code>final_fcst &lt;- refit_tbl %&gt;% 
+  modeltime_forecast(
+    new_data = test,
+    actual_data = dt,
+    keep_data = TRUE
+  )</code></pre>
+<p>The forecast vs. the actuals can be visualized with <code>plot_modeltime_forecast()</code>:</p>
+<pre class="r"><code>final_fcst %&gt;% 
+  plot_modeltime_forecast(.conf_interval_show = T, .interactive = F) + 
+  scale_y_continuous(labels = comma)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/final_viz-1.png" width="672" /></p>
+</div>
+<div id="calculating-the-lost-fare-amount" class="section level2">
+<h2>Calculating the “Lost Fare” Amount</h2>
+<p>Now with forecast computed I can determine the number of lost fares by comparing the forecast number of fares to the actual number of fares. Then to convert that to an amount of money, I’m using a simplistic assumption that each fare would have cost about 2 dollars. This is a heuristic since there are <a href="https://new.mta.info/fares">many different kinds of fares</a> in the NYC Subway system which have different costs. A full-fare cost $2.75,
+a monthly unlimited card costs $127, for Seniors and other reduced fare populations the cost is half-price as $1.35.</p>
+<pre class="r"><code>loss_amt &lt;- final_fcst %&gt;% 
+  filter(.model_desc == &#39;PROPHET W/ XGBOOST ERRORS&#39;,
+         .index &gt;= min(test$week_start)) %&gt;% 
+  mutate(diff = fares-.value,
+         diff_lo = fares - .conf_lo,
+         diff_hi = fares - .conf_hi,
+         fare = diff * 2.00,
+         fare_lo = diff_lo * 2.00,
+         fare_high = diff_hi* 2.00) %&gt;% 
+  arrange(.index) %&gt;%
+  mutate(fares_lost = cumsum(fare),
+         fares_lost_lo = cumsum(fare_lo),
+         fares_lost_high = cumsum(fare_high)) </code></pre>
+<p>Using the confidence intervals of the predictions I can form a range of how much in “lost fares” the MTA suffered since 2020.</p>
+<p>Ultimately, this analysis shows that the MTA has likely lost $5B in lost fares since 2020, but it would be as low as $4.4B or as high as $5.7B.</p>
+<p>The cumulative loss can be visualized as follows:</p>
+<pre class="r"><code>loss_amt %&gt;% 
+  filter(.index &gt;= ymd(20200101)) %&gt;%
+  ggplot(aes(x = .index, y = fares_lost*-1)) + 
+    geom_line() + 
+    geom_ribbon(aes(ymin = fares_lost_lo*-1, ymax = fares_lost_high*-1), alpha = .3,
+                fill = &#39;darkgreen&#39;) + 
+    scale_y_continuous(labels = dollar, breaks = seq(0, 6e9, 1e9), expand = c(0 ,0)) + 
+    labs(title = &quot;Cumulative Amount of Subway Fares Lost Since 2020&quot;,
+         x = &quot;Date&quot;, y = &quot;$ Lost&quot;, caption = &quot;$ Lost = Projected Swipes Lost * $2.00&quot;) + 
+    cowplot::theme_cowplot() + 
+    theme(
+      plot.title.position = &#39;plot&#39;,
+      panel.grid.major.y = element_line(color = &#39;grey45&#39;)
+    )</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/loss_viz-1.png" width="100%" /></p>
+</div>
+<div id="concluding-thoughts" class="section level2">
+<h2>Concluding Thoughts</h2>
+<p>While things are starting to return to more “normalcy” on the NYC subway its still far from what is was in the pre-COVID times. Based on this forecasting exercise, its estimated that the MTA has already lost around $5B in “lost fares” and that number is continuing to grow. Because while things are recovering, there’s still a long way to go.</p>
+</div>
