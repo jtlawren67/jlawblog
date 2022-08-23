@@ -9,11 +9,10 @@ categories:
 tags:
   - tsibble
   - fable
-  - fable.prophet
 subtitle: ''
 summary: ''
 authors: []
-lastmod: '2022-08-19T21:45:08-04:00'
+lastmod: '2022-08-24T01:45:08-04:00'
 featured: no
 image:
   caption: ''
@@ -30,7 +29,7 @@ options(scipen=999)
 
 In my [prior post](https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/) I used forecasting to look at the effect of COVID from an expected amount of New York City subway swipes.  In this post I will drill a level deeper to run forecasts for various types of subway cards to see if any particularly type has recovered better or worse than any others.
 
-The goal for this post will be to create a top-level forecast for total NYC subway fares and forecasts for each of the types of subway cards.  The sub-levels of individual subway cards form a natural hierarchy with the total number and my forecast, I'd like the forecasts for the sub-levels and for the total to match each other for the sake of consistency.  This is called "hierarhical forecasting".  More details can be found in Rob Hyndman and George Athanasopoulos' [Forecasting: Principles and Practice](https://otexts.com/fpp3/hierarchical.html).
+The goal for this post will be to create a top-level forecast for total NYC subway fares and forecasts for each of the types of subway cards.  The sub-levels of individual subway cards form a natural hierarchy with the total number and my forecast, I'd like the forecasts for the sub-levels and for the total to match each other for the sake of consistency.  This is called "hierarchical forecasting".  More details can be found in Rob Hyndman and George Athanasopoulos' [Forecasting: Principles and Practice](https://otexts.com/fpp3/hierarchical.html).
 
 The book makes use of the `fable` and `tsibble` packages and I will use those here are well.
 
@@ -142,10 +141,19 @@ dt_ts %>%
 
 The objective of this post is to determine which types of Subway fares have been most affected by COVID.  In order to do this I'll consider the time between 2010-2019 to be the pre-COVID period which the forecasting model will be built and then I'll forecast 2020 - June 2022 and compare to the actuals.
 
+The `fable` package uses the `model()` function to set and fit forecasts.  In this case I'm creating a forecast named *base* and using an ARIMA model on the univariate time series for fares.  If I had wanted to use Exponential Smoothing I would just change `ARIMA()` to `ETS()`.  So in short, `fable` provides a simple mechanism to fit forecasts.
+
+As it presently stands the **base** model for the aggregate time series does not have to match the total of the individual series.  The `reconcile()` function lets you choose the method of all the key structure of the data will be made to "work".
+
+In this example, I'm trying out:
+
+* Bottoms-Ups: Make the aggregate level equal the sum of the individuals
+* Top-Down: Make the individual forecasts equal the aggregate series
+* Min Trace: Reconciliation using the minimum race combination method which looks to [minimize the forecast variances of the set of coherent forecasts](https://otexts.com/fpp3/reconciliation.html)
 
 
 ```{r model_fit}
-fit <- dt_ts %>% #dt_filled %>%
+fit <- dt_ts %>% 
   filter(year(year_week)< 2020) %>%
   model(base = ARIMA(fares))%>%
   reconcile(bottom_up = bottom_up(base),
@@ -153,17 +161,31 @@ fit <- dt_ts %>% #dt_filled %>%
             min_trace = min_trace(base, "mint_shrink"))
 ```
 
+The `fit` object now contains four types of forecasts (base, bottom_up, top_down, min_trace) for each fare type and for the aggregation of the fare types.  
+
+Handling the forecasting for 2020+ data is handled by the `forecast()` function.  The `fit` object is passed into the `forecast()` function and the 2020+ data gets passed into the *new_data* function.
+
 ```{r forecasting}
 fc <- fit %>% 
   forecast(new_data = dt_ts %>% filter(year(year_week) >= '2020')) 
 
 ```
 
+The `fc` object now contains the four forecasts for each fare type and the aggregate forecast for the last 2.5 years of data.  This can be displayed with the `autoplot()` function.
+
 ```{r visual}
-autoplot(fc, dt_ts, level = NULL) + 
+autoplot(fc, dt_ts %>% ungroup(), level = NULL) + 
   facet_wrap(~fare_type, scales = "free_y") + 
-  scale_y_continuous(labels = scales::comma_format())
+  scale_y_continuous(labels = scales::comma_format()) + 
+  theme(
+    legend.position = 'bottom',
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
+  )
 ```
+
+## So did the forecasts reconcile correctly?
+
+Since this post is about Hierarchical Time Series it will be important to check to see if the reconciliation works.  In the following chart, I will add up the fare type forecasts for each of the four forecasting models and compare them to the aggregate forecast.  For simplicity I will just choose a single data point.
 
 ```{r checking_reconciliation}
 fc %>% filter(year_week == yearweek('2020 W01')) %>%
@@ -172,7 +194,9 @@ fc %>% filter(year_week == yearweek('2020 W01')) %>%
     is_aggregated(fare_type), 'aggregated', as.character(fare_type)),
     year_week, model = .model, forecast = .mean) %>% 
   spread(model, forecast) %>% 
-  group_by(is_aggregated = ifelse(fare_type == 'aggregated', 'Top-Level', 'Sum of Components')) %>% 
+  group_by(is_aggregated = ifelse(fare_type == 'aggregated', 
+                                  'Top-Level', 
+                                  'Sum of Components')) %>% 
   summarize(across(where(is.numeric), sum)) %>% 
   gather(model, value, -is_aggregated) %>% 
   ggplot(aes(x = model, y = value, fill = is_aggregated)) + 
@@ -196,7 +220,11 @@ fc %>% filter(year_week == yearweek('2020 W01')) %>%
       legend.direction = 'horizontal'
     )
 ```
+In the *base* (unreconciled) model the top-level time series is 500K fares higher than the sum of the various fare types.  However, we want the forecasts to be consistent with each other and that's exactly what we see in the three reconciled models.  In the bottoms-up model, the "top-level" is scaled down to match the sum of the fare types.  In top-down the sum of components are scaled up to match the "top-level".  And min_trace is somewhere in-between.
 
+## How much did each Fare Type recovery to Pre-COVID levels?
+
+Now that we have the reconciled forecasts we're now able to actually to the analysis to determine which Fare Types have recovered the most and least to pre-COVID levels.  This will be done using the maximum available date in the data set and the min_trace forecast.
 
 ```{r recovery}
 bind_rows(
@@ -224,16 +252,16 @@ bind_rows(
   ggplot(aes(x = fct_reorder(fare_type, -fares), y = fares, fill = fct_rev(period))) + 
     geom_col(position = 'dodge') + 
     geom_text(aes(label = paste0(round(fares/1e6, 1), "MM")), vjust = 0,
-              position = position_dodge(width = .9)) + 
+              position = position_dodge(width = .9), size = 3) + 
     stat_summary(
       aes(x = fare_type, y = fares),
       geom = 'label',
       inherit.aes = F,
-      fontface = 'bold', fill = 'lightgrey',
+      fontface = 'bold', fill = 'lightgrey', size = 3,
       fun.data = function(x){
-        return(data.frame(y = max(x)+3e6,
+        return(data.frame(y = max(x)+8e6,
                           label = paste0((min(x)/max(x)) %>% percent,
-                          " Recovered")))
+                          "\nRecovered")))
       }
     )  + 
     labs(title = "Actuals vs. Projected Subway Fares",
@@ -244,26 +272,34 @@ bind_rows(
          fill = "") + 
     scale_fill_viridis_d(option = "C", begin = .2, end = .8) + 
     #This link was dope https://stackoverflow.com/questions/22945651/remove-space-between-plotted-data-and-the-axes
-    scale_y_continuous(expand = expansion(mult = c(0, .05))) + 
+    scale_y_continuous(expand = expansion(mult = c(0, .12))) + 
     cowplot::theme_cowplot() + 
     theme(
       legend.position = 'bottom',
       legend.direction = 'horizontal',
       axis.text.y = element_blank(),
       axis.ticks.y = element_blank(),
-      axis.line.y = element_blank()
+      axis.line.y = element_blank(),
+      axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
     )
 
 
 ```
 
+Overall, the forecast shows that subway fares have only recovered to 40% of the Pre-COVID levels.  The fare types that have recovered the most are the Student and Senior cards which may make sense as schools are generally back to in-person person.  The fare type that has recovered the least is the monthly unlimited card which also makes sense as hybrid work environments make paying for a full month of unlimited a less valuable proposition.
+
+## Appendix: Measuring Forecast Accuracy
+
+To end this post its worthwhile to show how I would measure the forecast accuracy.  The `accuracy()` function from `fabletools` makes it very easy to see forecasting accuracy metrics.  Just pass in the forecast, the actuals, and a list of metrics and you get a tibble back.
+
 ```{r}
-####Appendix: Forecast Accuarcy
+####Appendix: Forecast Accuracy
 fc %>%
   accuracy(
     data = dt_ts,
     measures = list(rmse = RMSE, mase = MASE, mape = MAPE)
   ) %>%
+  filter(.model == 'min_trace') %>% 
   arrange(mape)
 ```
-
+Although since we're trying predict "what if COVID didn't happen" I don't expect these forecasts to perform very well.
