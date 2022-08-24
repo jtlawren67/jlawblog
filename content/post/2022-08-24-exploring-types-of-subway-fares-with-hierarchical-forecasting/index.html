@@ -23,9 +23,9 @@ projects: []
 
 
 
-<p>In my <a href="https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/">prior post</a> I used forecasting to look at the effect of COVID from an expected amount of New York City subway swipes. In this post I will drill a level deeper to run forecasts for various types of subway cards to see if any particularly type has recovered better or worse than any others.</p>
-<p>The goal for this post will be to create a top-level forecast for total NYC subway fares and forecasts for each of the types of subway cards. The sub-levels of individual subway cards form a natural hierarchy with the total number and my forecast, I’d like the forecasts for the sub-levels and for the total to match each other for the sake of consistency. This is called “hierarchical forecasting”. More details can be found in Rob Hyndman and George Athanasopoulos’ <a href="https://otexts.com/fpp3/hierarchical.html">Forecasting: Principles and Practice</a>.</p>
-<p>The book makes use of the <code>fable</code> and <code>tsibble</code> packages and I will use those here are well.</p>
+<p>In my <a href="https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/">prior post</a> I used forecasting to look at the effect of COVID on the expected amount of New York City subway swipes. In this post I will drill a level deeper to run forecasts for various types of subway fares to see if any particularly type has recovered better or worse than any others.</p>
+<p>The goal for this post will be to create a top-level forecast for total NYC subway fares and forecasts for each of the types of subway fares. The sub-levels of individual subway fares form a natural hierarchy with the total number. For my forecast, I’d like the forecasts for the sub-levels and for the total to match each other for the sake of consistency. This is called “hierarchical forecasting”. More details can be found in Rob Hyndman and George Athanasopoulos’ <a href="https://otexts.com/fpp3/hierarchical.html">Forecasting: Principles and Practice</a>.</p>
+<p>The book makes use of the <code>fable</code> and <code>tsibble</code> packages.</p>
 <div id="libraries" class="section level2">
 <h2>Libraries</h2>
 <pre class="r"><code>library(tsibble) # Data Structure for Time Series
@@ -38,7 +38,7 @@ library(scales) # Convenience Functions for Percents</code></pre>
 <h2>Data Preparation</h2>
 <p>The data set will be the same as from the <a href="https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/">prior blog post</a> which contains weekly Subway data by station, card type, and week from May 2010 through June 2022. Please see the <a href="https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/">previous post</a> for more details on the data processing. The raw fare files come from the <a href="http://web.mta.info/developers/fare.html">MTA’s Website</a>.</p>
 <pre class="r"><code>dt &lt;- readRDS(here(&#39;content/post/2022-07-13-how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/data/mta_data.rds&#39;))</code></pre>
-<p>In the data set there are 30 different fare types, however, I really don’t want to create 30 different forecasts. Especially if some of these are going to be small. The top 5 fare types make up 93% of the fares, so I’ll aggregate the data set to the week and fare_type level and add up the fares column which represents the number of swipes on each card.</p>
+<p>In the data set there are 30 different fare types, however, I really don’t want to create 30 different forecasts. Especially if some of these are going to be small volume. The top 5 fare types make up 93% of the fares, so I’ll group the other 25 into an “other” category. Then I aggregate the data set to the week and fare_type level and add up the fares column which represents the number of swipes for each fare type.</p>
 <pre class="r"><code>dt_by_fare &lt;- dt %&gt;%
   #Remove Out of Pattern Thursday File
   filter(week_start != &#39;2010-12-30&#39;) %&gt;%
@@ -64,7 +64,7 @@ library(scales) # Convenience Functions for Percents</code></pre>
 <pre class="r"><code>dt_ts &lt;- tsibble(dt_by_fare, key = fare_type, index = year_week) %&gt;% 
   aggregate_key(fare_type, fares = sum(fares))</code></pre>
 <p>The <code>dt_ts</code> data set is now 628 rows greater than the <code>dt_by_fare</code> data set. This is because of the aggregated layer that was generated from <code>aggregate_key()</code>. The 628 is the number of distinct weeks in the data.</p>
-<p>If continuing down the forecasting path there were eventually be an error during the forecast step due to a missing value in the initial time series. The <code>scan_gaps()</code> function from <code>tsibble</code> will look for implicit missing observations (gaps in the index). The <code>count_gaps()</code> function will also provide a similar summary.</p>
+<p>If continuing down the forecasting path there would eventually be an error during the forecast step due to a missing value in the initial time series. The <code>scan_gaps()</code> function from <code>tsibble</code> will look for implicit missing observations (gaps in the index). The <code>count_gaps()</code> function will also provide a similar summary.</p>
 <pre class="r"><code>scan_gaps(dt_ts) %&gt;% 
   count(year_week) %&gt;%
   kable()</code></pre>
@@ -205,6 +205,7 @@ dt_ts %&gt;%
 <pre class="r"><code>autoplot(fc, dt_ts %&gt;% ungroup(), level = NULL) + 
   facet_wrap(~fare_type, scales = &quot;free_y&quot;) + 
   scale_y_continuous(labels = scales::comma_format()) + 
+  labs(color = &quot;&quot;, x = &quot;Date&quot; ,y = &quot;Number of Fares&quot;) + 
   theme(
     legend.position = &#39;bottom&#39;,
     axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
@@ -307,7 +308,7 @@ In the <em>base</em> (unreconciled) model the top-level time series is 500K fare
       axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
     )</code></pre>
 <p><img src="{{< blogdown/postref >}}index_files/figure-html/recovery-1.png" width="100%" /></p>
-<p>Overall, the forecast shows that subway fares have only recovered to 40% of the Pre-COVID levels. The fare types that have recovered the most are the Student and Senior cards which may make sense as schools are generally back to in-person person. The fare type that has recovered the least is the monthly unlimited card which also makes sense as hybrid work environments make paying for a full month of unlimited a less valuable proposition.</p>
+<p>Overall, the forecast shows that subway fares have only recovered to 40% of the Pre-COVID levels. The fare types that have recovered the most are the Student and Senior cards which may make sense as schools are generally back to in-person instruction. The fare type that has recovered the least is the monthly unlimited card which also makes sense as hybrid work environments make paying for a full month of unlimited a less valuable proposition.</p>
 </div>
 <div id="appendix-measuring-forecast-accuracy" class="section level2">
 <h2>Appendix: Measuring Forecast Accuracy</h2>
@@ -319,16 +320,85 @@ fc %&gt;%
     measures = list(rmse = RMSE, mase = MASE, mape = MAPE)
   ) %&gt;%
   filter(.model == &#39;min_trace&#39;) %&gt;% 
-  arrange(mape)</code></pre>
-<pre><code>## # A tibble: 7 × 6
-##   .model    fare_type         .type      rmse  mase   mape
-##   &lt;chr&gt;     &lt;chr*&gt;            &lt;chr&gt;     &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt;
-## 1 min_trace seniors           Test    497396.  9.09   169.
-## 2 min_trace full_fare         Test   7735877. 11.6    199.
-## 3 min_trace other             Test   1835483.  5.46   241.
-## 4 min_trace &lt;aggregated&gt;      Test  20683422. 12.3    261.
-## 5 min_trace weekly_unlimited  Test   4266233.  8.34   295.
-## 6 min_trace monthly_unlimited Test   5788133. 12.8    489.
-## 7 min_trace student           Test    703170.  1.47 43077.</code></pre>
+  arrange(mape) %&gt;% 
+  kable()</code></pre>
+<table style="width:100%;">
+<colgroup>
+<col width="15%" />
+<col width="27%" />
+<col width="9%" />
+<col width="16%" />
+<col width="15%" />
+<col width="16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left">.model</th>
+<th align="left">fare_type</th>
+<th align="left">.type</th>
+<th align="right">rmse</th>
+<th align="right">mase</th>
+<th align="right">mape</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">min_trace</td>
+<td align="left">seniors</td>
+<td align="left">Test</td>
+<td align="right">497395.6</td>
+<td align="right">9.090555</td>
+<td align="right">169.1391</td>
+</tr>
+<tr class="even">
+<td align="left">min_trace</td>
+<td align="left">full_fare</td>
+<td align="left">Test</td>
+<td align="right">7735877.4</td>
+<td align="right">11.608419</td>
+<td align="right">199.1030</td>
+</tr>
+<tr class="odd">
+<td align="left">min_trace</td>
+<td align="left">other</td>
+<td align="left">Test</td>
+<td align="right">1835483.2</td>
+<td align="right">5.458558</td>
+<td align="right">241.3594</td>
+</tr>
+<tr class="even">
+<td align="left">min_trace</td>
+<td align="left"><aggregated></td>
+<td align="left">Test</td>
+<td align="right">20683422.4</td>
+<td align="right">12.284181</td>
+<td align="right">260.5088</td>
+</tr>
+<tr class="odd">
+<td align="left">min_trace</td>
+<td align="left">weekly_unlimited</td>
+<td align="left">Test</td>
+<td align="right">4266233.0</td>
+<td align="right">8.342853</td>
+<td align="right">295.2711</td>
+</tr>
+<tr class="even">
+<td align="left">min_trace</td>
+<td align="left">monthly_unlimited</td>
+<td align="left">Test</td>
+<td align="right">5788133.3</td>
+<td align="right">12.763524</td>
+<td align="right">489.1300</td>
+</tr>
+<tr class="odd">
+<td align="left">min_trace</td>
+<td align="left">student</td>
+<td align="left">Test</td>
+<td align="right">703170.5</td>
+<td align="right">1.469493</td>
+<td align="right">43077.3022</td>
+</tr>
+</tbody>
+</table>
 <p>Although since we’re trying predict “what if COVID didn’t happen” I don’t expect these forecasts to perform very well.</p>
 </div>

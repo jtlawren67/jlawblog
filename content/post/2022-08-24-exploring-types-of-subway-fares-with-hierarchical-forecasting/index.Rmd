@@ -27,11 +27,11 @@ library(knitr)
 options(scipen=999)
 ```
 
-In my [prior post](https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/) I used forecasting to look at the effect of COVID from an expected amount of New York City subway swipes.  In this post I will drill a level deeper to run forecasts for various types of subway cards to see if any particularly type has recovered better or worse than any others.
+In my [prior post](https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/) I used forecasting to look at the effect of COVID on the expected amount of New York City subway swipes.  In this post I will drill a level deeper to run forecasts for various types of subway fares to see if any particularly type has recovered better or worse than any others.
 
-The goal for this post will be to create a top-level forecast for total NYC subway fares and forecasts for each of the types of subway cards.  The sub-levels of individual subway cards form a natural hierarchy with the total number and my forecast, I'd like the forecasts for the sub-levels and for the total to match each other for the sake of consistency.  This is called "hierarchical forecasting".  More details can be found in Rob Hyndman and George Athanasopoulos' [Forecasting: Principles and Practice](https://otexts.com/fpp3/hierarchical.html).
+The goal for this post will be to create a top-level forecast for total NYC subway fares and forecasts for each of the types of subway fares.  The sub-levels of individual subway fares form a natural hierarchy with the total number. For my forecast, I'd like the forecasts for the sub-levels and for the total to match each other for the sake of consistency.  This is called "hierarchical forecasting".  More details can be found in Rob Hyndman and George Athanasopoulos' [Forecasting: Principles and Practice](https://otexts.com/fpp3/hierarchical.html).
 
-The book makes use of the `fable` and `tsibble` packages and I will use those here are well.
+The book makes use of the `fable` and `tsibble` packages.
 
 ## Libraries
 
@@ -55,9 +55,9 @@ The data set will be the same as from the [prior blog post](https://jlaw.netlify
 dt <- readRDS(here('content/post/2022-07-13-how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/data/mta_data.rds'))
 ```
 
-In the data set there are 30 different fare types, however, I really don't want to create 30 different forecasts.  Especially if some of these are going to be small.  The top 5 fare types make up 93% of the fares, so I'll aggregate the data set to the week and fare_type level and add up the fares column which represents the number of swipes on each card.
+In the data set there are 30 different fare types, however, I really don't want to create 30 different forecasts.  Especially if some of these are going to be small volume.  The top 5 fare types make up 93% of the fares, so I'll group the other 25 into an "other" category.  Then I aggregate the data set to the week and fare_type level and add up the fares column which represents the number of swipes for each fare type.
 
-```{r aggregate}
+```{r aggregate, cache=TRUE}
 dt_by_fare <- dt %>%
   #Remove Out of Pattern Thursday File
   filter(week_start != '2010-12-30') %>%
@@ -92,7 +92,7 @@ dt_ts <- tsibble(dt_by_fare, key = fare_type, index = year_week) %>%
 
 The `dt_ts` data set is now 628 rows greater than the `dt_by_fare` data set.  This is because of the aggregated layer that was generated from `aggregate_key()`.  The 628 is the number of distinct weeks in the data.
 
-If continuing down the forecasting path there were eventually be an error during the forecast step due to a missing value in the initial time series.  The `scan_gaps()` function from `tsibble` will look for implicit missing observations (gaps in the index).  The `count_gaps()` function will also provide a similar summary.
+If continuing down the forecasting path there would eventually be an error during the forecast step due to a missing value in the initial time series.  The `scan_gaps()` function from `tsibble` will look for implicit missing observations (gaps in the index).  The `count_gaps()` function will also provide a similar summary.
 
 ```{r gaps}
 scan_gaps(dt_ts) %>% 
@@ -152,7 +152,7 @@ In this example, I'm trying out:
 * Min Trace: Reconciliation using the minimum race combination method which looks to [minimize the forecast variances of the set of coherent forecasts](https://otexts.com/fpp3/reconciliation.html)
 
 
-```{r model_fit}
+```{r model_fit, cache=TRUE}
 fit <- dt_ts %>% 
   filter(year(year_week)< 2020) %>%
   model(base = ARIMA(fares))%>%
@@ -177,6 +177,7 @@ The `fc` object now contains the four forecasts for each fare type and the aggre
 autoplot(fc, dt_ts %>% ungroup(), level = NULL) + 
   facet_wrap(~fare_type, scales = "free_y") + 
   scale_y_continuous(labels = scales::comma_format()) + 
+  labs(color = "", x = "Date" ,y = "Number of Fares") + 
   theme(
     legend.position = 'bottom',
     axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
@@ -286,7 +287,7 @@ bind_rows(
 
 ```
 
-Overall, the forecast shows that subway fares have only recovered to 40% of the Pre-COVID levels.  The fare types that have recovered the most are the Student and Senior cards which may make sense as schools are generally back to in-person person.  The fare type that has recovered the least is the monthly unlimited card which also makes sense as hybrid work environments make paying for a full month of unlimited a less valuable proposition.
+Overall, the forecast shows that subway fares have only recovered to 40% of the Pre-COVID levels.  The fare types that have recovered the most are the Student and Senior cards which may make sense as schools are generally back to in-person instruction.  The fare type that has recovered the least is the monthly unlimited card which also makes sense as hybrid work environments make paying for a full month of unlimited a less valuable proposition.
 
 ## Appendix: Measuring Forecast Accuracy
 
@@ -300,6 +301,7 @@ fc %>%
     measures = list(rmse = RMSE, mase = MASE, mape = MAPE)
   ) %>%
   filter(.model == 'min_trace') %>% 
-  arrange(mape)
+  arrange(mape) %>% 
+  kable()
 ```
 Although since we're trying predict "what if COVID didn't happen" I don't expect these forecasts to perform very well.
