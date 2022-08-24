@@ -1,0 +1,92 @@
+---
+title: When Will NYC's Subway Ridership Recover?
+author: JLaw
+date: '2022-08-29'
+slug: when-will-nyc-s-subway-ridership-recover
+categories:
+  - R
+  - Forecasting
+tags:
+  - prophet
+  - modeltime
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2022-08-29T01:29:14-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+
+
+<p>During the writing of my posts about COVIDs effect on the NYC Subway ridership the New York Times published an article called <a href="https://www.nytimes.com/2022/08/15/nyregion/mta-nyc-budget.html"><em>The Pandemic Wasn’t Supposed to Hurt New York Transit This Much</em></a>. In this article there’s comment that:</p>
+<p><img src="nytimes.PNG" /></p>
+<p>While I have no knowledge of there this 80% target by 2026 comes from, I do have some subway fare data sitting around. So why not compare the article’s data to my own.</p>
+<p>The methodology will be similar to what I did in my <a href="https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/">initial subway forecasting post</a> using the <code>modeltime</code> package and the champion Prophet w/ XGBoosted Errors to do the forecasting.</p>
+<div id="libraries" class="section level2">
+<h2>Libraries</h2>
+<pre class="r"><code>### Data Manipulation Packages
+library(timetk) # For time series features in recipe
+library(tidyverse) # General Data Manipulation
+library(scales) # Making prettier scales
+library(lubridate) # Dealing with Dates
+
+# Modeling Ecosystem
+library(modeltime) # Framework for Time Series models
+library(tidymodels) # Framework for general recipie and workflows
+
+### Model Packages
+library(prophet) # Algorithm for forecasting</code></pre>
+</div>
+<div id="data" class="section level2">
+<h2>Data</h2>
+<p>The data is the same set from my [initial post](post](<a href="https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/" class="uri">https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/</a>).</p>
+<pre class="r"><code>fares &lt;- readRDS(file.path(here(), &#39;content&#39;, &#39;post&#39;, 
+                           &#39;2022-07-13-how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares&#39;, 
+                           &#39;data&#39;,
+                           &#39;mta_data.RDS&#39;)) %&gt;% 
+  group_by(week_start) %&gt;% 
+  summarize(fares = sum(fares))</code></pre>
+<pre class="r"><code>rec &lt;- recipe(fares ~ ., data = fares %&gt;% filter(week_start &gt;= ymd(20200401))) %&gt;%
+  step_timeseries_signature(week_start) %&gt;% 
+  step_rm(matches(&quot;(.iso$)|(am.pm$)|(.xts$)|(hour)|(minute)|(second)|(wday)&quot;)) %&gt;% 
+  step_dummy(all_nominal(), one_hot = TRUE)</code></pre>
+<pre class="r"><code>prophet_boost_wf &lt;- workflow() %&gt;%
+  add_model(
+    prophet_boost(seasonality_yearly = TRUE) %&gt;%
+      set_engine(&#39;prophet_xgboost&#39;)
+  ) %&gt;% 
+  add_recipe(rec) %&gt;%
+  fit(fares %&gt;% filter(week_start &gt;= ymd(20200401)) )</code></pre>
+<pre class="r"><code>final_fcst &lt;- modeltime_table(
+    prophet_boost_wf
+  ) %&gt;% 
+  modeltime_forecast(
+    new_data = tibble(week_start = seq.Date(ymd(20220618), by = &quot;weeks&quot;, 
+                                            length.out = 52*10)),
+    actual_data = fares,
+    keep_data = TRUE
+  )</code></pre>
+<pre class="r"><code>final_fcst %&gt;% 
+  plot_modeltime_forecast(.conf_interval_show = T, .interactive = F) + 
+  scale_y_continuous(labels = comma)</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-6-1.png" width="672" /></p>
+</div>
+<div id="when-does-fares-return-to-80-to-100" class="section level2">
+<h2>When does fares return to 80%? To 100%?</h2>
+<pre class="r"><code>baseline &lt;- fares %&gt;% 
+  filter(month(week_start)==12 &amp; year(week_start) == 2019) %&gt;% 
+  summarize(avg_fares = mean(fares)) %&gt;% 
+  pull(avg_fares)
+
+recovery &lt;- final_fcst %&gt;% 
+  filter(week_start &gt;= ymd(20200401)) %&gt;% 
+  mutate(recovery_pct = .value / baseline) %&gt;% 
+  ggplot(aes(x = week_start, y = recovery_pct)) + 
+    geom_line() + 
+    scale_y_continuous(labels = percent)</code></pre>
+</div>

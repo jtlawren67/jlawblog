@@ -1,0 +1,125 @@
+---
+title: When Will NYC's Subway Ridership Recover?
+author: JLaw
+date: '2022-08-29'
+slug: when-will-nyc-s-subway-ridership-recover
+categories:
+  - R
+  - Forecasting
+tags:
+  - prophet
+  - modeltime
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2022-08-29T01:29:14-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, error = FALSE)
+library(knitr)
+options(scipen=999)
+```
+
+During the writing of my posts about COVIDs effect on the NYC Subway ridership the New York Times published an article called [*The Pandemic Wasn’t Supposed to Hurt New York Transit This Much*](https://www.nytimes.com/2022/08/15/nyregion/mta-nyc-budget.html).  In this article there's comment that:
+
+![](nytimes.PNG)
+
+While I have no knowledge of there this 80% target by 2026 comes from, I do have some subway fare data sitting around.  So why not compare the article's data to my own.
+
+The methodology will be similar to what I did in my [initial subway forecasting post](https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/) using the `modeltime` package and the champion Prophet w/ XGBoosted Errors to do the forecasting.
+
+## Libraries
+```{r libaries}
+### Data Manipulation Packages
+library(timetk) # For time series features in recipe
+library(tidyverse) # General Data Manipulation
+library(scales) # Making prettier scales
+library(lubridate) # Dealing with Dates
+
+# Modeling Ecosystem
+library(modeltime) # Framework for Time Series models
+library(tidymodels) # Framework for general recipie and workflows
+
+### Model Packages
+library(prophet) # Algorithm for forecasting
+
+```
+
+```{r echo=FALSE}
+library(here)
+```
+
+## Data
+
+The data is the same set from my [initial post](post](https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/).  
+
+```{r}
+fares <- readRDS(file.path(here(), 'content', 'post', 
+                           '2022-07-13-how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares', 
+                           'data',
+                           'mta_data.RDS')) %>% 
+  group_by(week_start) %>% 
+  summarize(fares = sum(fares))
+```
+
+
+```{r}
+rec <- recipe(fares ~ ., data = fares %>% filter(week_start >= ymd(20200401))) %>%
+  step_timeseries_signature(week_start) %>% 
+  step_rm(matches("(.iso$)|(am.pm$)|(.xts$)|(hour)|(minute)|(second)|(wday)")) %>% 
+  step_dummy(all_nominal(), one_hot = TRUE)
+```
+
+```{r}
+prophet_boost_wf <- workflow() %>%
+  add_model(
+    prophet_boost(seasonality_yearly = TRUE) %>%
+      set_engine('prophet_xgboost')
+  ) %>% 
+  add_recipe(rec) %>%
+  fit(fares %>% filter(week_start >= ymd(20200401)) )
+```
+
+
+```{r}
+final_fcst <- modeltime_table(
+    prophet_boost_wf
+  ) %>% 
+  modeltime_forecast(
+    new_data = tibble(week_start = seq.Date(ymd(20220618), by = "weeks", 
+                                            length.out = 52*10)),
+    actual_data = fares,
+    keep_data = TRUE
+  )
+```
+
+```{r}
+final_fcst %>% 
+  plot_modeltime_forecast(.conf_interval_show = T, .interactive = F) + 
+  scale_y_continuous(labels = comma)
+```
+
+## When does fares return to 80%?  To 100%?
+
+```{r}
+baseline <- fares %>% 
+  filter(month(week_start)==12 & year(week_start) == 2019) %>% 
+  summarize(avg_fares = mean(fares)) %>% 
+  pull(avg_fares)
+
+recovery <- final_fcst %>% 
+  filter(week_start >= ymd(20200401)) %>% 
+  mutate(recovery_pct = .value / baseline) %>% 
+  ggplot(aes(x = week_start, y = recovery_pct)) + 
+    geom_line() + 
+    scale_y_continuous(labels = percent)
+
+```
+
