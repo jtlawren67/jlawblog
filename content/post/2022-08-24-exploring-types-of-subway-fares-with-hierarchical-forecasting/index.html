@@ -1,0 +1,404 @@
+---
+title: Exploring Types of Subway Fares with Hierarchical Forecasting
+author: JLaw
+date: '2022-08-24'
+slug: exploring-types-of-subway-fares-with-hierarchical-forecasting
+categories:
+  - R
+  - Forecasting
+tags:
+  - tsibble
+  - fable
+subtitle: ''
+summary: ''
+authors: []
+lastmod: '2022-08-24T01:45:08-04:00'
+featured: no
+image:
+  caption: ''
+  focal_point: ''
+  preview_only: no
+projects: []
+---
+
+
+
+<p>In my <a href="https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/">prior post</a> I used forecasting to look at the effect of COVID on the expected amount of New York City subway swipes. In this post I will drill a level deeper to run forecasts for various types of subway fares to see if any particularly type has recovered better or worse than any others.</p>
+<p>The goal for this post will be to create a top-level forecast for total NYC subway fares and forecasts for each of the types of subway fares. The sub-levels of individual subway fares form a natural hierarchy with the total number. For my forecast, I’d like the forecasts for the sub-levels and for the total to match each other for the sake of consistency. This is called “hierarchical forecasting”. More details can be found in Rob Hyndman and George Athanasopoulos’ <a href="https://otexts.com/fpp3/hierarchical.html">Forecasting: Principles and Practice</a>.</p>
+<p>The book makes use of the <code>fable</code> and <code>tsibble</code> packages.</p>
+<div id="libraries" class="section level2">
+<h2>Libraries</h2>
+<pre class="r"><code>library(tsibble) # Data Structure for Time Series
+library(tidyverse) # Data Manipulation Packages
+library(fable) # Time Series Forecasting Models
+library(lubridate) # Date Manipulation
+library(scales) # Convenience Functions for Percents</code></pre>
+</div>
+<div id="data-preparation" class="section level2">
+<h2>Data Preparation</h2>
+<p>The data set will be the same as from the <a href="https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/">prior blog post</a> which contains weekly Subway data by station, card type, and week from May 2010 through June 2022. Please see the <a href="https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/">previous post</a> for more details on the data processing. The raw fare files come from the <a href="http://web.mta.info/developers/fare.html">MTA’s Website</a>.</p>
+<pre class="r"><code>dt &lt;- readRDS(here(&#39;content/post/2022-07-13-how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/data/mta_data.rds&#39;))</code></pre>
+<p>In the data set there are 30 different fare types, however, I really don’t want to create 30 different forecasts. Especially if some of these are going to be small volume. The top 5 fare types make up 93% of the fares, so I’ll group the other 25 into an “other” category. Then I aggregate the data set to the week and fare_type level and add up the fares column which represents the number of swipes for each fare type.</p>
+<pre class="r"><code>dt_by_fare &lt;- dt %&gt;%
+  #Remove Out of Pattern Thursday File
+  filter(week_start != &#39;2010-12-30&#39;) %&gt;%
+  #Clean Up fare types and create date fields
+  mutate(
+    week_start = ymd(week_start),
+    year_week = yearweek(week_start),
+    fare_type = case_when(
+      fare_type == &#39;ff&#39; ~ &#39;full_fare&#39;,
+      fare_type == &#39;x30_d_unl&#39; ~ &#39;monthly_unlimited&#39;,
+      fare_type == &#39;x7_d_unl&#39; ~ &#39;weekly_unlimited&#39;,
+      fare_type == &#39;students&#39; ~ &#39;student&#39;,
+      fare_type == &#39;sen_dis&#39; ~ &#39;seniors&#39;,
+      TRUE ~ &#39;other&#39;
+    )
+  ) %&gt;% 
+  group_by(week_start, year_week, key,  fare_type) %&gt;% 
+  # Drop all the groupings during summary
+  summarize(fares = sum(fares),  .groups = &#39;drop&#39;)</code></pre>
+<p>Now the data set has gone from 7,244,430 rows to 3,702.</p>
+<p>To be able to use the <code>fable</code> package to do forecasting, the data needs to be in the <code>tsibble</code> format. This construction takes a “key” and an “index” parameter. The “key” is the grouping factor which in this case is the <em>fare_type</em> and the “index” is the time parameter which will be the <em>year_week</em> field.</p>
+<p>Then to create the “hierarchical” structure into the data, the <code>aggregate_key</code> function from <code>fabletools</code> is used. Telling the structure to be aggregated over the fare_types by adding up the fares will allow for forecasting reconciliation to ensure that the forecast outputs are coherent.</p>
+<pre class="r"><code>dt_ts &lt;- tsibble(dt_by_fare, key = fare_type, index = year_week) %&gt;% 
+  aggregate_key(fare_type, fares = sum(fares))</code></pre>
+<p>The <code>dt_ts</code> data set is now 628 rows greater than the <code>dt_by_fare</code> data set. This is because of the aggregated layer that was generated from <code>aggregate_key()</code>. The 628 is the number of distinct weeks in the data.</p>
+<p>If continuing down the forecasting path there would eventually be an error during the forecast step due to a missing value in the initial time series. The <code>scan_gaps()</code> function from <code>tsibble</code> will look for implicit missing observations (gaps in the index). The <code>count_gaps()</code> function will also provide a similar summary.</p>
+<pre class="r"><code>scan_gaps(dt_ts) %&gt;% 
+  count(year_week) %&gt;%
+  kable()</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">year_week</th>
+<th align="right">n</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">2011 W18</td>
+<td align="right">6</td>
+</tr>
+<tr class="even">
+<td align="left">2013 W16</td>
+<td align="right">7</td>
+</tr>
+</tbody>
+</table>
+<p>The function shows that I’m missing the data for the 18th week of 2011 and the 16th week at 2013. At first I thought this was a problem with my data processing from before. But when visiting the <a href="http://web.mta.info/developers/fare.html">MTA website</a> those files are actually missing.</p>
+<p><img src="missing.png" /></p>
+<p>Notice that the file for May 21st, 2011 is not listed. Same with May 4th, 2013.</p>
+<p>To get around this issue, I need to first turn the implicit missings into explicit NAs. This can be done with <code>tsibble</code>’s <code>fill_gaps()</code> function which adds in <em>NA</em>s for the missing dates.</p>
+<pre class="r"><code>dt_ts &lt;- dt_ts  %&gt;% 
+  group_by_key() %&gt;% 
+  fill_gaps()
+
+
+dt_ts %&gt;% 
+  head() %&gt;% 
+  kable()</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">year_week</th>
+<th align="left">fare_type</th>
+<th align="right">fares</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">2011 W18</td>
+<td align="left">full_fare</td>
+<td align="right">NA</td>
+</tr>
+<tr class="even">
+<td align="left">2013 W16</td>
+<td align="left">full_fare</td>
+<td align="right">NA</td>
+</tr>
+<tr class="odd">
+<td align="left">2010 W21</td>
+<td align="left">full_fare</td>
+<td align="right">11545507</td>
+</tr>
+<tr class="even">
+<td align="left">2010 W22</td>
+<td align="left">full_fare</td>
+<td align="right">12580200</td>
+</tr>
+<tr class="odd">
+<td align="left">2010 W23</td>
+<td align="left">full_fare</td>
+<td align="right">12820291</td>
+</tr>
+<tr class="even">
+<td align="left">2010 W24</td>
+<td align="left">full_fare</td>
+<td align="right">12707781</td>
+</tr>
+</tbody>
+</table>
+<p>Notice that the two missing dates now appear. However, the forecasting is also going to have problems with the <em>NA</em> values. So I’ll need to fill in a value. For simplicity, I’m going to use <code>tidyr</code>’s <code>fill</code> function and just use the previous value.</p>
+<pre class="r"><code>dt_ts &lt;- dt_ts %&gt;% 
+  arrange(year_week) %&gt;% 
+  fill(fares, .direction = &#39;down&#39;)
+
+dt_ts %&gt;% 
+  filter(year_week %in% c(yearweek(&#39;2011 W17&#39;), 
+                          yearweek(&#39;2011 W18&#39;), 
+                          yearweek(&#39;2011 W19&#39;)
+                          ),
+         fare_type == &#39;full_fare&#39;
+           ) %&gt;% 
+  arrange(fare_type) %&gt;% 
+  kable()</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th align="left">year_week</th>
+<th align="left">fare_type</th>
+<th align="right">fares</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">2011 W17</td>
+<td align="left">full_fare</td>
+<td align="right">13795196</td>
+</tr>
+<tr class="even">
+<td align="left">2011 W18</td>
+<td align="left">full_fare</td>
+<td align="right">13795196</td>
+</tr>
+<tr class="odd">
+<td align="left">2011 W19</td>
+<td align="left">full_fare</td>
+<td align="right">13794517</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div id="forecasting" class="section level2">
+<h2>Forecasting</h2>
+<p>The objective of this post is to determine which types of Subway fares have been most affected by COVID. In order to do this I’ll consider the time between 2010-2019 to be the pre-COVID period which the forecasting model will be built and then I’ll forecast 2020 - June 2022 and compare to the actuals.</p>
+<p>The <code>fable</code> package uses the <code>model()</code> function to set and fit forecasts. In this case I’m creating a forecast named <em>base</em> and using an ARIMA model on the univariate time series for fares. If I had wanted to use Exponential Smoothing I would just change <code>ARIMA()</code> to <code>ETS()</code>. So in short, <code>fable</code> provides a simple mechanism to fit forecasts.</p>
+<p>As it presently stands the <strong>base</strong> model for the aggregate time series does not have to match the total of the individual series. The <code>reconcile()</code> function lets you choose the method of all the key structure of the data will be made to “work”.</p>
+<p>In this example, I’m trying out:</p>
+<ul>
+<li>Bottoms-Ups: Make the aggregate level equal the sum of the individuals</li>
+<li>Top-Down: Make the individual forecasts equal the aggregate series</li>
+<li>Min Trace: Reconciliation using the minimum race combination method which looks to <a href="https://otexts.com/fpp3/reconciliation.html">minimize the forecast variances of the set of coherent forecasts</a></li>
+</ul>
+<pre class="r"><code>fit &lt;- dt_ts %&gt;% 
+  filter(year(year_week)&lt; 2020) %&gt;%
+  model(base = ARIMA(fares))%&gt;%
+  reconcile(bottom_up = bottom_up(base),
+            top_down = top_down(base),
+            min_trace = min_trace(base, &quot;mint_shrink&quot;))</code></pre>
+<p>The <code>fit</code> object now contains four types of forecasts (base, bottom_up, top_down, min_trace) for each fare type and for the aggregation of the fare types.</p>
+<p>Handling the forecasting for 2020+ data is handled by the <code>forecast()</code> function. The <code>fit</code> object is passed into the <code>forecast()</code> function and the 2020+ data gets passed into the <em>new_data</em> function.</p>
+<pre class="r"><code>fc &lt;- fit %&gt;% 
+  forecast(new_data = dt_ts %&gt;% filter(year(year_week) &gt;= &#39;2020&#39;)) </code></pre>
+<p>The <code>fc</code> object now contains the four forecasts for each fare type and the aggregate forecast for the last 2.5 years of data. This can be displayed with the <code>autoplot()</code> function.</p>
+<pre class="r"><code>autoplot(fc, dt_ts %&gt;% ungroup(), level = NULL) + 
+  facet_wrap(~fare_type, scales = &quot;free_y&quot;) + 
+  scale_y_continuous(labels = scales::comma_format()) + 
+  labs(color = &quot;&quot;, x = &quot;Date&quot; ,y = &quot;Number of Fares&quot;) + 
+  theme(
+    legend.position = &#39;bottom&#39;,
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
+  )</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/visual-1.png" width="100%" /></p>
+</div>
+<div id="so-did-the-forecasts-reconcile-correctly" class="section level2">
+<h2>So did the forecasts reconcile correctly?</h2>
+<p>Since this post is about Hierarchical Time Series it will be important to check to see if the reconciliation works. In the following chart, I will add up the fare type forecasts for each of the four forecasting models and compare them to the aggregate forecast. For simplicity I will just choose a single data point.</p>
+<pre class="r"><code>fc %&gt;% filter(year_week == yearweek(&#39;2020 W01&#39;)) %&gt;%
+  as_tibble() %&gt;% 
+  transmute(fare_type = if_else(
+    is_aggregated(fare_type), &#39;aggregated&#39;, as.character(fare_type)),
+    year_week, model = .model, forecast = .mean) %&gt;% 
+  spread(model, forecast) %&gt;% 
+  group_by(is_aggregated = ifelse(fare_type == &#39;aggregated&#39;, 
+                                  &#39;Top-Level&#39;, 
+                                  &#39;Sum of Components&#39;)) %&gt;% 
+  summarize(across(where(is.numeric), sum)) %&gt;% 
+  gather(model, value, -is_aggregated) %&gt;% 
+  ggplot(aes(x = model, y = value, fill = is_aggregated)) + 
+    geom_col(position = &#39;dodge&#39;) + 
+    geom_text(aes(label = paste0(round(value/1e6, 1), &quot;MM&quot;)), vjust = 0,
+              position = position_dodge(width = 1)) +
+    coord_cartesian(ylim = c(30e6, 30.6e6)) + 
+    scale_y_continuous(labels = function(x){paste0(x/1e6, &quot;MM&quot;)}) + 
+    scale_fill_viridis_d(option = &quot;C&quot;, begin = .2, end = .8) + 
+    labs(title = &quot;Comparing Different Reconciliation Methods&quot;,
+         subtitle = &quot;Week 1 2020&quot;,
+         caption = &#39;NOTE: y-axis does NOT start at 0&#39;,
+         x = &quot;Reconcilation Method&quot;, y = &quot;Total # of Fares&quot;,
+         fill = &quot;&quot;) + 
+    cowplot::theme_cowplot() + 
+    theme(
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.line.y = element_blank(),
+      legend.position = &#39;bottom&#39;,
+      legend.direction = &#39;horizontal&#39;
+    )</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/checking_reconciliation-1.png" width="100%" />
+In the <em>base</em> (unreconciled) model the top-level time series is 500K fares higher than the sum of the various fare types. However, we want the forecasts to be consistent with each other and that’s exactly what we see in the three reconciled models. In the bottoms-up model, the “top-level” is scaled down to match the sum of the fare types. In top-down the sum of components are scaled up to match the “top-level”. And min_trace is somewhere in-between.</p>
+</div>
+<div id="how-much-did-each-fare-type-recovery-to-pre-covid-levels" class="section level2">
+<h2>How much did each Fare Type recovery to Pre-COVID levels?</h2>
+<p>Now that we have the reconciled forecasts we’re now able to actually to the analysis to determine which Fare Types have recovered the most and least to pre-COVID levels. This will be done using the maximum available date in the data set and the min_trace forecast.</p>
+<pre class="r"><code>bind_rows(
+  dt_ts %&gt;% 
+    filter(year_week == max(year_week)) %&gt;% 
+    as_tibble() %&gt;%
+    transmute(fare_type =  if_else(is_aggregated(fare_type), 
+                                   &#39;All Fares&#39;, 
+                                   as.character(fare_type)), 
+              time = &quot;actuals&quot;, 
+              fares),
+  fc %&gt;% 
+    as_tibble() %&gt;% 
+    filter(year_week == max(year_week), .model == &quot;min_trace&quot;) %&gt;% 
+    as_tibble() %&gt;%
+    transmute(fare_type =  if_else(is_aggregated(fare_type), 
+                                   &#39;All Fares&#39;, 
+                                   as.character(fare_type)), 
+              time = &#39;projected&#39;, 
+              fares = .mean)
+) %&gt;% 
+  spread(time, fares) %&gt;% 
+  mutate(recovery = actuals / projected) %&gt;% 
+  gather(period, fares, -fare_type, -recovery) %&gt;%
+  ggplot(aes(x = fct_reorder(fare_type, -fares), y = fares, fill = fct_rev(period))) + 
+    geom_col(position = &#39;dodge&#39;) + 
+    geom_text(aes(label = paste0(round(fares/1e6, 1), &quot;MM&quot;)), vjust = 0,
+              position = position_dodge(width = .9), size = 3) + 
+    stat_summary(
+      aes(x = fare_type, y = fares),
+      geom = &#39;label&#39;,
+      inherit.aes = F,
+      fontface = &#39;bold&#39;, fill = &#39;lightgrey&#39;, size = 3,
+      fun.data = function(x){
+        return(data.frame(y = max(x)+8e6,
+                          label = paste0((min(x)/max(x)) %&gt;% percent,
+                          &quot;\nRecovered&quot;)))
+      }
+    )  + 
+    labs(title = &quot;Actuals vs. Projected Subway Fares&quot;,
+         subtitle = &quot;% Recovered is difference between Actual and Projected&quot;,
+         caption = &quot;Comparing W24 2022 Data&quot;,
+         x = &quot;&quot;,
+         y = &quot;# of Fares&quot;,
+         fill = &quot;&quot;) + 
+    scale_fill_viridis_d(option = &quot;C&quot;, begin = .2, end = .8) + 
+    #This link was dope https://stackoverflow.com/questions/22945651/remove-space-between-plotted-data-and-the-axes
+    scale_y_continuous(expand = expansion(mult = c(0, .12))) + 
+    cowplot::theme_cowplot() + 
+    theme(
+      legend.position = &#39;bottom&#39;,
+      legend.direction = &#39;horizontal&#39;,
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.line.y = element_blank(),
+      axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
+    )</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/recovery-1.png" width="100%" /></p>
+<p>Overall, the forecast shows that subway fares have only recovered to 40% of the Pre-COVID levels. The fare types that have recovered the most are the Student and Senior cards which may make sense as schools are generally back to in-person instruction. The fare type that has recovered the least is the monthly unlimited card which also makes sense as hybrid work environments make paying for a full month of unlimited a less valuable proposition.</p>
+</div>
+<div id="appendix-measuring-forecast-accuracy" class="section level2">
+<h2>Appendix: Measuring Forecast Accuracy</h2>
+<p>To end this post its worthwhile to show how I would measure the forecast accuracy. The <code>accuracy()</code> function from <code>fabletools</code> makes it very easy to see forecasting accuracy metrics. Just pass in the forecast, the actuals, and a list of metrics and you get a tibble back.</p>
+<pre class="r"><code>####Appendix: Forecast Accuracy
+fc %&gt;%
+  accuracy(
+    data = dt_ts,
+    measures = list(rmse = RMSE, mase = MASE, mape = MAPE)
+  ) %&gt;%
+  filter(.model == &#39;min_trace&#39;) %&gt;% 
+  arrange(mape) %&gt;% 
+  kable()</code></pre>
+<table style="width:100%;">
+<colgroup>
+<col width="15%" />
+<col width="27%" />
+<col width="9%" />
+<col width="16%" />
+<col width="15%" />
+<col width="16%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th align="left">.model</th>
+<th align="left">fare_type</th>
+<th align="left">.type</th>
+<th align="right">rmse</th>
+<th align="right">mase</th>
+<th align="right">mape</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">min_trace</td>
+<td align="left">seniors</td>
+<td align="left">Test</td>
+<td align="right">497395.6</td>
+<td align="right">9.090555</td>
+<td align="right">169.1391</td>
+</tr>
+<tr class="even">
+<td align="left">min_trace</td>
+<td align="left">full_fare</td>
+<td align="left">Test</td>
+<td align="right">7735877.4</td>
+<td align="right">11.608419</td>
+<td align="right">199.1030</td>
+</tr>
+<tr class="odd">
+<td align="left">min_trace</td>
+<td align="left">other</td>
+<td align="left">Test</td>
+<td align="right">1835483.2</td>
+<td align="right">5.458558</td>
+<td align="right">241.3594</td>
+</tr>
+<tr class="even">
+<td align="left">min_trace</td>
+<td align="left"><aggregated></td>
+<td align="left">Test</td>
+<td align="right">20683422.4</td>
+<td align="right">12.284181</td>
+<td align="right">260.5088</td>
+</tr>
+<tr class="odd">
+<td align="left">min_trace</td>
+<td align="left">weekly_unlimited</td>
+<td align="left">Test</td>
+<td align="right">4266233.0</td>
+<td align="right">8.342853</td>
+<td align="right">295.2711</td>
+</tr>
+<tr class="even">
+<td align="left">min_trace</td>
+<td align="left">monthly_unlimited</td>
+<td align="left">Test</td>
+<td align="right">5788133.3</td>
+<td align="right">12.763524</td>
+<td align="right">489.1300</td>
+</tr>
+<tr class="odd">
+<td align="left">min_trace</td>
+<td align="left">student</td>
+<td align="left">Test</td>
+<td align="right">703170.5</td>
+<td align="right">1.469493</td>
+<td align="right">43077.3022</td>
+</tr>
+</tbody>
+</table>
+<p>Although since we’re trying predict “what if COVID didn’t happen” I don’t expect these forecasts to perform very well.</p>
+</div>
