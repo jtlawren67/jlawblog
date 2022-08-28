@@ -27,13 +27,13 @@ library(knitr)
 options(scipen=999)
 ```
 
-During the writing of my posts about COVID's effect on the NYC Subway ridership the New York Times published an article called [*The Pandemic Wasn’t Supposed to Hurt New York Transit This Much*](https://www.nytimes.com/2022/08/15/nyregion/mta-nyc-budget.html).  In this article there's comment that:
+While writing my posts about COVID's effect on NYC Subway ridership the New York Times published an article called [*The Pandemic Wasn’t Supposed to Hurt New York Transit This Much*](https://www.nytimes.com/2022/08/15/nyregion/mta-nyc-budget.html).  The article states:
 
 ![](nytimes.PNG)
 
-While I have no knowledge of there this 80% target by 2026 comes from, I do have some subway fare data sitting around.  So why not compare the article's data to my own.
+I believe the 80% target by 2026 comes from a McKinsey study.  While I don't know the details of the study I do have some subway fare data sitting around.  So why not compare the article's data to my own.
 
-The methodology will be similar to what I did in my [initial subway forecasting post](https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/) using the `modeltime` package and the champion Prophet w/ XGBoosted Errors to do the forecasting.
+The methodology will be similar to what I did in my [initial subway forecasting post](https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/) using the `modeltime` package and the champion model Prophet w/ XGBoosted Errors to do the forecasting.
 
 ## Libraries
 ```{r libaries}
@@ -45,7 +45,7 @@ library(lubridate) # Dealing with Dates
 
 # Modeling Ecosystem
 library(modeltime) # Framework for Time Series models
-library(tidymodels) # Framework for general recipie and workflows
+library(tidymodels) # Framework for general recipe and workflows
 
 ### Model Packages
 library(prophet) # Algorithm for forecasting
@@ -58,7 +58,7 @@ library(here)
 
 ## Data
 
-The data is the same set from my [initial post](post](https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/).  Its initially at the week/station/fare level.  For this exercise I just need the data at the weekly level.
+The data is the same as from my [initial post](https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/).  Its initially at the week/station/fare level.  For this exercise I just need the data at the weekly level.
 
 ```{r}
 fares <- readRDS(file.path(here(), 'content', 'post', 
@@ -69,11 +69,11 @@ fares <- readRDS(file.path(here(), 'content', 'post',
   summarize(fares = sum(fares))
 ```
 
-My [first blog post](https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/) in this series covered the `modeltime` package in more detail for trying out many different forcasting models.  That post found that Prophet with XGBoosted Errors was the best model.  Here I'll be replicating that workflow for that modeltype.
+My [first blog post](https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/) in this series covered the `modeltime` package in more detail for trying out many different forecasting models.  That post found that Prophet with XGBoosted Errors was the best model.  Here I'll be replicating that workflow for that model type.
 
-*Step 1: Defining the pre-processing recipe*
+**Step 1: Defining the pre-processing recipe**
 
-This defines the forecasting formula as predicting fares based on all other features and then creates a bunch of time series specific features from the date field in `step_timeseries_signature`.  `step_rm` removes some variables created in the prior step that isn't useful, and finally `step_dummy` turns all the categorical variables into one-hot encoded indicators.  Here I also set the training data set as the MTA Fares beginning during the COVID period (after April 1, 2020) since training on the prior time period will give very strange results.
+This step defines the forecasting formula as predicting fares based on all other features. Then it creates a bunch of time series specific features from the date field in `step_timeseries_signature`.  `step_rm` removes some variables created in the prior step that aren't useful, and finally `step_dummy` turns all the categorical variables into one-hot encoded indicators.  Here I also set the training data set as the MTA Fares beginning during the COVID period (after April 1, 2020) since training on the prior time period will give very strange results.
 
 ```{r}
 rec <- recipe(fares ~ ., data = fares %>% filter(week_start >= ymd(20200401))) %>%
@@ -82,9 +82,9 @@ rec <- recipe(fares ~ ., data = fares %>% filter(week_start >= ymd(20200401))) %
   step_dummy(all_nominal(), one_hot = TRUE)
 ```
 
-*Step 2: Define the Model Workflow and Fit the Model*
+**Step 2: Define the Model Workflow and Fit the Model**
 
-Sticking with the `tidymodels` framework, here I define a workflow which will consist of the recipe created in *Step 1* through `add_recipe` and the model set through `add_model()`.  Within `add_model()` sets the model type to be Boosted Prophet.  I believe the 'prophet_xgboost' is the default engine so `set_engine` isn't necessary, but good to keep around anyway.
+Sticking with the `tidymodels` framework, here I define a workflow which will consist of the recipe created in **Step 1** through `add_recipe` and the model set through `add_model()`.  Within `add_model()` the model type is set to Boosted Prophet.  I believe the 'prophet_xgboost' is the default engine so `set_engine` isn't necessary, but good to keep around anyway.
 
 ```{r}
 prophet_boost_wf <- workflow() %>%
@@ -97,9 +97,9 @@ prophet_boost_wf <- workflow() %>%
 ```
 
 
-*Step 3: Using the Model to Forecast the Future*
+**Step 3: Using the Model to Forecast the Future**
 
-In this instance I don't have a test set to work with so I'm jumping directly into forecasting.  Also since I don't know how long it will take for the forecast to recover to pre-COVID levels, I'll set the forecast horizon for 6 years. I provide the actual data in the `actual_data` field so that its included in the output data set.
+In this instance I don't have a test set to work with so I'm jumping directly into forecasting.  Also since I don't know how long it will take for the forecast to recover to pre-COVID levels, I'll set the forecast horizon for 6 years in the `h` parameter. Passing in the actual_data let it be included in the output data set.
 
 ```{r}
 final_fcst <- modeltime_table(
@@ -114,7 +114,7 @@ final_fcst <- modeltime_table(
 
 *Visualizing the Forecast*
 
-The `modeltime` package makes it easy to visualize the data through the `plot_modeltime_forecast` package.  The default is to create a `plot.ly` plot but that can be coverted to a `ggplot2` plot by setting `.interactive` to `FALSE`.
+The `modeltime` package makes it easy to visualize the data through the `plot_modeltime_forecast` package.  The default is to create a `plot.ly` plot but that can be converted to a `ggplot2` plot by setting `.interactive` to `FALSE`.
 
 ```{r}
 final_fcst %>% 
@@ -122,7 +122,7 @@ final_fcst %>%
   scale_y_continuous(labels = comma)
 ```
 
-## When does fares return to 80%?  To 100%?
+## When will Subway fares return to 80% of Pre-COVID? To 100%?
 
 Now we can see how close my forecast is to the New York Times Report.  I don't actually know what the NY Times is considering Pre-COVID levels but for my purposes I'll use the average number of fares in December 2019 to be my Pre-COVID. 
 
@@ -139,7 +139,7 @@ I'm not sure of a great way to define when is the earliest date of the first run
 
 1. Define an indicator for whether that week is above 80% (`above_80_ind`)
 2. Run a counter for each time that the indicator flips from 0 to 1 (`run_id_80`) to get an id for each run
-3. For each `run_id_80` get the sum of `above_80_inds` to represent the length of each run
+3. For each `run_id_80` get the sum of `above_80_inds` to represent the length of each run (`run_length_80`)
 
 ```{r}
 rec_pct <- final_fcst %>% 
@@ -162,7 +162,7 @@ rec_pct <- final_fcst %>%
   add_count(run_id_100, wt = above_100_ind, name = "run_length_100")
 ```
 
-Now I can plot the recovery percentage by week and show that the first time there are four concecutive weeks above 80% is `r rec_pct[which.max(rec_pct$run_length_80 >= 4), ]$week_start` and the first time there are four concecutive weeks above 100% of the Pre-COVID value is `r rec_pct[which.max(rec_pct$run_length_100 >= 4), ]$week_start`.
+Now I can plot the recovery percentage by week and show that the first time there are four consecutive weeks above 80% is `r rec_pct[which.max(rec_pct$run_length_80 >= 4), ]$week_start` and the first time there are four consecutive weeks above 100% of the Pre-COVID value is `r rec_pct[which.max(rec_pct$run_length_100 >= 4), ]$week_start`.
 
 ```{r}
 rec_pct %>% 
