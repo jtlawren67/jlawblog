@@ -23,7 +23,7 @@ projects: []
 
 
 
-<p>During the writing of my posts about COVIDs effect on the NYC Subway ridership the New York Times published an article called <a href="https://www.nytimes.com/2022/08/15/nyregion/mta-nyc-budget.html"><em>The Pandemic Wasn’t Supposed to Hurt New York Transit This Much</em></a>. In this article there’s comment that:</p>
+<p>During the writing of my posts about COVID’s effect on the NYC Subway ridership the New York Times published an article called <a href="https://www.nytimes.com/2022/08/15/nyregion/mta-nyc-budget.html"><em>The Pandemic Wasn’t Supposed to Hurt New York Transit This Much</em></a>. In this article there’s comment that:</p>
 <p><img src="nytimes.PNG" /></p>
 <p>While I have no knowledge of there this 80% target by 2026 comes from, I do have some subway fare data sitting around. So why not compare the article’s data to my own.</p>
 <p>The methodology will be similar to what I did in my <a href="https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/">initial subway forecasting post</a> using the <code>modeltime</code> package and the champion Prophet w/ XGBoosted Errors to do the forecasting.</p>
@@ -44,17 +44,22 @@ library(prophet) # Algorithm for forecasting</code></pre>
 </div>
 <div id="data" class="section level2">
 <h2>Data</h2>
-<p>The data is the same set from my [initial post](post](<a href="https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/" class="uri">https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/</a>).</p>
+<p>The data is the same set from my [initial post](post](<a href="https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/" class="uri">https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/</a>). Its initially at the week/station/fare level. For this exercise I just need the data at the weekly level.</p>
 <pre class="r"><code>fares &lt;- readRDS(file.path(here(), &#39;content&#39;, &#39;post&#39;, 
                            &#39;2022-07-13-how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares&#39;, 
                            &#39;data&#39;,
                            &#39;mta_data.RDS&#39;)) %&gt;% 
   group_by(week_start) %&gt;% 
   summarize(fares = sum(fares))</code></pre>
+<p>My <a href="https://jlaw.netlify.app/2022/07/13/how-much-has-covid-cost-the-nyc-subway-system-in-lost-fares/">first blog post</a> in this series covered the <code>modeltime</code> package in more detail for trying out many different forcasting models. That post found that Prophet with XGBoosted Errors was the best model. Here I’ll be replicating that workflow for that modeltype.</p>
+<p><em>Step 1: Defining the pre-processing recipe</em></p>
+<p>This defines the forecasting formula as predicting fares based on all other features and then creates a bunch of time series specific features from the date field in <code>step_timeseries_signature</code>. <code>step_rm</code> removes some variables created in the prior step that isn’t useful, and finally <code>step_dummy</code> turns all the categorical variables into one-hot encoded indicators. Here I also set the training data set as the MTA Fares beginning during the COVID period (after April 1, 2020) since training on the prior time period will give very strange results.</p>
 <pre class="r"><code>rec &lt;- recipe(fares ~ ., data = fares %&gt;% filter(week_start &gt;= ymd(20200401))) %&gt;%
   step_timeseries_signature(week_start) %&gt;% 
   step_rm(matches(&quot;(.iso$)|(am.pm$)|(.xts$)|(hour)|(minute)|(second)|(wday)&quot;)) %&gt;% 
   step_dummy(all_nominal(), one_hot = TRUE)</code></pre>
+<p><em>Step 2: Define the Model Workflow and Fit the Model</em></p>
+<p>Sticking with the <code>tidymodels</code> framework, here I define a workflow which will consist of the recipe created in <em>Step 1</em> through <code>add_recipe</code> and the model set through <code>add_model()</code>. Within <code>add_model()</code> sets the model type to be Boosted Prophet. I believe the ‘prophet_xgboost’ is the default engine so <code>set_engine</code> isn’t necessary, but good to keep around anyway.</p>
 <pre class="r"><code>prophet_boost_wf &lt;- workflow() %&gt;%
   add_model(
     prophet_boost(seasonality_yearly = TRUE) %&gt;%
@@ -62,31 +67,85 @@ library(prophet) # Algorithm for forecasting</code></pre>
   ) %&gt;% 
   add_recipe(rec) %&gt;%
   fit(fares %&gt;% filter(week_start &gt;= ymd(20200401)) )</code></pre>
+<p><em>Step 3: Using the Model to Forecast the Future</em></p>
+<p>In this instance I don’t have a test set to work with so I’m jumping directly into forecasting. Also since I don’t know how long it will take for the forecast to recover to pre-COVID levels, I’ll set the forecast horizon for 6 years. I provide the actual data in the <code>actual_data</code> field so that its included in the output data set.</p>
 <pre class="r"><code>final_fcst &lt;- modeltime_table(
     prophet_boost_wf
   ) %&gt;% 
   modeltime_forecast(
-    new_data = tibble(week_start = seq.Date(ymd(20220618), by = &quot;weeks&quot;, 
-                                            length.out = 52*10)),
+    h = &quot;6 years&quot;,
     actual_data = fares,
     keep_data = TRUE
   )</code></pre>
+<p><em>Visualizing the Forecast</em></p>
+<p>The <code>modeltime</code> package makes it easy to visualize the data through the <code>plot_modeltime_forecast</code> package. The default is to create a <code>plot.ly</code> plot but that can be coverted to a <code>ggplot2</code> plot by setting <code>.interactive</code> to <code>FALSE</code>.</p>
 <pre class="r"><code>final_fcst %&gt;% 
-  plot_modeltime_forecast(.conf_interval_show = T, .interactive = F) + 
+  plot_modeltime_forecast(.interactive = F) + 
   scale_y_continuous(labels = comma)</code></pre>
 <p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-6-1.png" width="672" /></p>
 </div>
 <div id="when-does-fares-return-to-80-to-100" class="section level2">
 <h2>When does fares return to 80%? To 100%?</h2>
+<p>Now we can see how close my forecast is to the New York Times Report. I don’t actually know what the NY Times is considering Pre-COVID levels but for my purposes I’ll use the average number of fares in December 2019 to be my Pre-COVID.</p>
 <pre class="r"><code>baseline &lt;- fares %&gt;% 
   filter(month(week_start)==12 &amp; year(week_start) == 2019) %&gt;% 
   summarize(avg_fares = mean(fares)) %&gt;% 
-  pull(avg_fares)
-
-recovery &lt;- final_fcst %&gt;% 
+  pull(avg_fares)</code></pre>
+<p>From the projection plot above its clear that there is a seasonality that peaks in the fall and drops in December through the New Year. To declare victory at 80% I’m going to require that there are 4 consecutive weeks of fares being above the Pre-COVID baseline.</p>
+<p>I’m not sure of a great way to define when is the earliest date of the first run of 4 weeks above a threshold but I’m working it out in three steps:</p>
+<ol style="list-style-type: decimal">
+<li>Define an indicator for whether that week is above 80% (<code>above_80_ind</code>)</li>
+<li>Run a counter for each time that the indicator flips from 0 to 1 (<code>run_id_80</code>) to get an id for each run</li>
+<li>For each <code>run_id_80</code> get the sum of <code>above_80_inds</code> to represent the length of each run</li>
+</ol>
+<pre class="r"><code>rec_pct &lt;- final_fcst %&gt;% 
   filter(week_start &gt;= ymd(20200401)) %&gt;% 
-  mutate(recovery_pct = .value / baseline) %&gt;% 
+  # Build Recovery Percentage
+  mutate(recovery_pct = .value / baseline) %&gt;%
+  # Define Runs of when recovery_pct is above .8
+  mutate(
+    above_80_ind = (recovery_pct &gt; .8),
+    above_100_ind = (recovery_pct &gt; 1)
+  ) %&gt;% 
+  # Define ID for each time we start a run
+  mutate(
+    run_id_80 = cumsum(if_else(above_80_ind == 1 &amp; lag(above_80_ind) == 0, 
+                               1, 0)),
+    run_id_100 = cumsum(if_else(above_100_ind == 1 &amp; lag(above_100_ind) == 0, 
+                               1, 0))
+  ) %&gt;% 
+  add_count(run_id_80, wt = above_80_ind, name = &quot;run_length_80&quot;) %&gt;%
+  add_count(run_id_100, wt = above_100_ind, name = &quot;run_length_100&quot;)</code></pre>
+<p>Now I can plot the recovery percentage by week and show that the first time there are four concecutive weeks above 80% is 2025-07-05 and the first time there are four concecutive weeks above 100% of the Pre-COVID value is 2027-06-26.</p>
+<pre class="r"><code>rec_pct %&gt;% 
   ggplot(aes(x = week_start, y = recovery_pct)) + 
-    geom_line() + 
-    scale_y_continuous(labels = percent)</code></pre>
+    geom_line(color = &quot;#0039A6&quot;) + 
+    geom_segment(aes(x = min(week_start), 
+                     xend = rec_pct[which.max(rec_pct$run_length_80 &gt;= 4), ]$week_start,
+                     y = .8,
+                     yend = .8), lty = 2) + 
+    geom_segment(aes(x = rec_pct[which.max(rec_pct$run_length_80 &gt;= 4), ]$week_start,
+                     xend = rec_pct[which.max(rec_pct$run_length_80 &gt;= 4), ]$week_start,
+                     y = 0,
+                     yend = .8), lty = 2) + 
+    geom_segment(aes(x = min(week_start), 
+                     xend = rec_pct[which.max(rec_pct$run_length_100 &gt;= 4), ]$week_start,
+                     y = 1,
+                     yend = 1), lty = 2) + 
+    geom_segment(aes(x = rec_pct[which.max(rec_pct$run_length_100 &gt;= 4), ]$week_start,
+                     xend = rec_pct[which.max(rec_pct$run_length_100 &gt;= 4), ]$week_start,
+                     y = 0,
+                     yend = 1), lty = 2) + 
+    scale_x_date(breaks = &quot;1 years&quot;,
+                 labels = year,
+                 expand = c(0, 0)) + 
+    scale_y_continuous(labels = percent, expand = c(0, 0),
+                       breaks = seq(0, 1.6, .2)) + 
+    labs(title = &quot;Projected MTA Recovery vs. Pre-COVID&quot;,
+         subtitle = &quot;Pre-COVID Baseline from December 2019&quot;, 
+         x = &quot;Date&quot;, y = &quot;% of Dec 2019 Baseline&quot;) + 
+    cowplot::theme_cowplot()</code></pre>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-9-1.png" width="672" />
+Based on this projection the NY Times article is being slightly pessimistic. According to the above NYC should reach 80% of Pre-COVID baseline by Mid-2025 which is earlier than the article’s projection of 2026.</p>
+<p>Who will be right? We’ll have to wait at least 3 years to find out!</p>
 </div>
