@@ -11,7 +11,7 @@ tags:
   - broom
   - ggtext
 subtitle: ''
-summary: ''
+summary: 'What goes in the summary?'
 authors: []
 lastmod: '2023-10-01T07:00:52-04:00'
 featured: no
@@ -28,13 +28,13 @@ library(knitr)
 options(scipen=999)
 ```
 
-Midway through the 2nd Season there was an episode called "Beard After Hours" which I found to be a particularly bad episode of TV in a show that for the most part I enjoy.  I wondered whether others found this to be an unexpectedly bad episode of TV or if it was just me.  I came across the website [RatinGraph](https://www.ratingraph.com/tv-shows/ted-lasso-ratings-81599/) which showed that while it wasn't the worst episode of the series, its in the bottom 3.
+The 9th episode of the 2nd Season of Ted Lasso is an episode called "Beard After Hours" which I found to be a pretty bad episode on a pretty good show.  I wondered whether others found this to be an unexpectedly bad episode of TV or if it was just me.  The website [RatinGraph](https://www.ratingraph.com/tv-shows/ted-lasso-ratings-81599/) confirmed that while it wasn't the worst episode of the series, its in the bottom 3.
 
-![TedLasso.PNG]
+![](TedLasso.PNG)
 
-More googling had shown that this episode (along with one other) were the results of the series getting an extension from 10 episodes to 12 episodes in Season 2, so they needed to create stories that didn't affect the main plot. Thus, "Beard After Hours" as a filler episode.
+Further Googling had shown that this episode (along with one other) were the results of the series getting an extension from 10 episodes to 12 episodes for Season 2.  Thus, "Beard After Hours" was a filler episode intended to not affect the main plot line.
 
-This got me thinking about what other unexpectedly bad episodes of TV there are.  And since doing unexpectedly bad and unexpectedly good are similar processes I figured why not both.  So in this post, I find the 10 most unexpectedly good and unexpectedly bad episodes of television.
+This got me thinking aboutother unexpectedly bad episodes of TV.  And since doing unexpectedly bad and unexpectedly good are similar I figured why not both.  So in this post, I find the 10 most unexpectedly good and unexpectedly bad episodes of television.
 
 ## Data
 
@@ -42,7 +42,7 @@ This got me thinking about what other unexpectedly bad episodes of TV there are.
 
 For this analysis, there are no fancy packages being used.  Just `tidyverse`, `glue`, and `broom` for data manipulation and `ggtext` and `ggrepel` for enhancements to the visualizations.
 
-First step is loading libraries
+First step is loading libraries,
 
 ```{r}
 library(tidyverse)
@@ -74,13 +74,14 @@ ratings <- read_delim(file = 'data/title.ratings.tsv', delim = '\t')
 episodes <- read_delim(file = 'data/title.episode.tsv', delim = '\t', na ='\\N')
 ```
 
-The `basics` file contains nearly 250k TV Series which is way more than I want to deal with so I'll keep data meeting a certain criteria:
+The `basics` file contains nearly 250k TV Series which is way more than I want to deal with so I'll keep shows that meet a certain criteria:
+
 * IMDB categorizes it as a TV Series
-* The show started in 1990 or later (this is more because I wanted things I'd be familiar with)
+* The show started in 1990 or later (because I wanted things I'd be familiar with)
 * IMDB classifies it as either a Comedy or a Drama
 * IMDB does **not** classify it as a Talk Show, Reality Show, News, Game Show, or Short (Genres on IMDB can have multiple categories for example [Jimmy Kimmel Live!](https://www.imdb.com/title/tt0320037) is classified as Comedy, Music, and Talk-Show)
 * There are at least 20 episodes in the Series (need a track record for how a show is rated)
-* Each episode has on average 250 votes (want to have enough stability in the ratings)
+* Each episode has on average 250 votes (want to have enough stability in the ratings and for the show to be somewhat popular)
 
 These exclusions are handled with the following code:
 
@@ -144,22 +145,27 @@ Now the dataset is all prepared to find our **unexpected** episodes.
 
 ## Methodology
 
-The methodology I'm going to use to determine what's an **unexpectedly** good or bad episode of TV is similar to the methodology used in the [tsoutliers() function in the forecast packages](https://robjhyndman.com/hyndsight/tsoutliers/).  Although since this isn't really a time-series (at least the episode orders don't have any real meaning), I'll be modifying it slightly.  My method is:
+The methodology I'm using for what's an **unexpectedly** good or bad episode of TV is similar to the methodology used in the [tsoutliers() function in the forecast packages](https://robjhyndman.com/hyndsight/tsoutliers/).  Although since this isn't really a time-series, I'll be modifying it slightly to not account for "seasonal components".  My method is:
 
-1. For each TV Series create a prediction of what the expected IMDB rating would be.  This is just a linear model using the Overall Episode number to capture a global trend (does the series get better or worse over time) as well as Season Number and Episode Number (and their interaction) to capture more local effects (is a certain season as a whole just bad).  For example, in the show Scrubs (which I love), the 9th season is rating much lower than Seasons 1-8.  Therefore episodes in Season 9 aren't really **unexpectedly** bad since the whole season is bad.
+1. For each TV Series create a prediction of what the expected IMDB rating would be.  
+    + Using a linear model with the Overall Episode number to capture a global trend (does the series get better or worse over time) as well as Season Number and Episode Number (and their interaction) to capture more local effects (is a certain season as a whole just bad).  
+    + For example, in the show Scrubs (which I love), the 9th season is rated much lower than Seasons 1-8.  Therefore episodes in Season 9 aren't really **unexpectedly** bad since the whole season is bad.
 
 2. Calculate the difference between the Predicted Ratings from the model in Step #1 and the Actual Rating from IMDB.
 
-3. Look at the distribution of the differences from Step #2.  Episodes will be labeled as **unexpectedly** good or bad if the difference calculated in step #2 is large enough.  More specifically, I look at the interquartile range (IQR) of the differences (the 75th percentile minus the 25th percentile) and label an episode as **unexpectedly bad** if that episode's difference is less than the 25th Percentile - 3 times the IQR and **unexpectedly good** if that episode's difference is greater than the 75th Percentile + 3 times the IQR.
+3. Look at the distribution of the differences from Step #2.  Episodes will be labeled as **unexpectedly** good or bad if the difference calculated in step #2 is large enough.  
+    + For "large enough" I look at the interquartile range (IQR) of the differences (the 75th percentile minus the 25th percentile) and label an episode as **unexpectedly bad** if that episode's difference is less than the 25th Percentile - 3 times the IQR and **unexpectedly good** if that episode's difference is greater than the 75th Percentile + 3 times the IQR.
 
-The amount of **unexpectedness** is based on the difference between the lower/upper bound and the actual value.  This is different than just using the difference between the predicted and the actual values.  The reason being that if a show has a very wide expected range, for example from 4 to 9.  Then the predicted value might be 6.5 and the actual value might be 9.1 which is a difference of 2.8 from the predicted value but only 0.1 outside the expected range.  **I want to focus on the greatest gap from expected**.
+4. The amount of **unexpectedness** is based on the difference between the lower/upper bound and the actual value.  
+    + This is different than just using the difference between the predicted and the actual values.  
+    + The reason being that if a show has a very wide expected range, for example from 4 to 9.  Then if the predicted value is 6.5 and the actual value is 9.1 then there's a difference of 2.8 from the predicted value but only 0.1 outside the expected range.  **I want to focus on the greatest gap from expected** so I want to take larger variability into account.
 
 A visual explanation using an episode of Stranger Things as an example:
-![Example.png]
+![](example.png)
 
 ### Function to find the Unexpected Episodes
 
-The steps above have been build into a function called `get_anomalies()` which runs the three steps described above.  The parameter *onlyAnomalies* determines whether to return **only** unexpected episodes or to return all episodes.  The differences described in step 2 are added using the `augment` function from `broom` :
+The steps above have been built into a function called `get_anomalies()` which runs the four steps described above.  The parameter *onlyAnomalies* determines whether to return **only** unexpected episodes or to return all episodes.  The differences described in step 2 are added using the `augment` function from `broom` :
 
 ```{r}
 get_anomalies <- function(dt, onlyAnomalies = T){
@@ -192,14 +198,14 @@ get_anomalies <- function(dt, onlyAnomalies = T){
       lower = .fitted + lci,
       upper = .fitted + uci,
       
-      # Calculate the difference between the bounds and the actual value to
-      # use for measure of unexpectedness
+      # Step 4 - Calculate the difference between the bounds and the actual 
+      # value to use for measure of unexpectedness
       remainder = if_else(.resid < 0, averageRating-lower, averageRating-upper)
     ) %>% 
     # Subset columns
     select(episodeOverall, seasonNumber, episodeNumber, episodeTitle, 
-           overall_average, averageRating, .fitted, .resid, .std.resid, 
-           lci, uci, anomaly, lower, upper, remainder)
+           averageRating, .fitted, .resid, 
+           anomaly, lower, upper, remainder)
   
   # Determine whether to return all episodes or just the unexpected episodes
   if(onlyAnomalies == T){
@@ -221,11 +227,11 @@ results <- all_tv_details %>%
   # Create a dataset with 1 row per TV Series with all data in a list-column
   group_by(primaryTitle) %>%
   nest() %>% 
-  # Run the function to get the unexpected episodes
+  # Run the function to get the unexpected episodes as a new list-column
   mutate(results = map(data, get_anomalies)) %>% 
-  # Break the list-column back into individual rows
+  # Break the new list-column back into individual rows
   unnest(results) %>%
-  # Drop the list columns and ungroup the data set
+  # Drop the original list columns and ungroup the data set
   select(-data) %>% 
   ungroup() %>%
   # Use Glue package to make a pretty label
@@ -243,18 +249,21 @@ And now without further ado... the RESULTS!
 
 ### The TV Shows with the Most **Unexpected Episodes**
 
-Overall, `r `nrow(results)` episodes were identified as being **unexpectedly** good or bad.  Of this bunch `r (nrow(results %>% filter(.resid < 0))/nrow(results)) %>% scales::percent(1)`  are **unexpectedly** bad.
+Overall, `r nrow(results)` episodes were identified as being **unexpectedly** good or bad.  Of this bunch `r (nrow(results %>% filter(.resid < 0))/nrow(results)) %>% scales::percent(1)`  are **unexpectedly** bad showing that its more common for a good show to miss then it is for a show to hit an unexpected home run.
 
-The first thing I want to look at is which are the 10 TV Series that have the most **expected** episodes either good or bad.
+The first thing I want to look at are the 10 TV Series that have the most **unexpected** episodes both good and bad.
 
 ```{r}
 results %>% 
+  # Group by Show
   group_by(primaryTitle) %>% 
+  # Count the number of unexpected episodes in total as well as good and bad
   summarize(
     total = n(),
     `unexpectedly bad` = sum(.resid < 0)*-1,
     `unexpectedly good` = sum(.resid > 0)
   ) %>%
+  # Get the Top 10 by Total
   slice_max(order_by = total, n = 10, with_ties = F) %>% 
   pivot_longer(
     cols = c(`unexpectedly bad`, `unexpectedly good`),
@@ -263,12 +272,14 @@ results %>%
   ) %>% 
   ggplot(aes(x = episodes, y=fct_reorder(primaryTitle, total), fill = type)) + 
     geom_col() + 
-    geom_text(aes(label = if_else(episodes != 0, abs(episodes), NA)), hjust = "inward", color = 'grey90') +
+    geom_text(aes(label = if_else(episodes != 0, abs(episodes), NA)), 
+              hjust = "inward", color = 'grey90') +
     labs(x = "# of Unexpected Episodes",
          y = "TV Series",
          title = "TV Series with Most <i style = 'color:#ba2a22'>Unexpected</i> Episodes",
          fill = "") + 
-    scale_fill_viridis_d(option = "cividis", begin = .2, end = .8, labels = str_to_title) +
+    scale_fill_viridis_d(option = "cividis", begin = .2, end = .8, 
+                         labels = str_to_title) +
      
     theme(
       legend.position = 'top',
@@ -281,11 +292,11 @@ results %>%
     )
 ```
 
-Surprisingly, at least to me, Sponge-Bob Squarepants has the most **unexpected** episodes with 5 and they're all unexpectedly bad.  This is in contrast with Desperate Housewives and Big Bang Theory which have 4 and 3 unexpected episodes which are all good.  
+Surprisingly, at least to me, SpongeBob Squarepants has the most **unexpected** episodes with 5 and they're all unexpectedly bad.  This is in contrast with Desperate Housewives and Big Bang Theory which have all unexpectedly good episodes.  
 
 ### The 10 Most **Unexpectedly Good** Episodes
 
-Using this methodology the Top 10 **Unexpectedly Good** episodes are:
+The Top 10 **Unexpectedly Good** episodes are:
 
 ```{r}
 # Define Elements for Manual Label
@@ -335,15 +346,15 @@ good_results %>%
 
 ```
 
-According to this method the most **unexpectedly good** episode of TV since 1990 is from **The Fresh Prince of Bel-Air**'s 4th Season entitled "Papa's Got a Brand New Excuse.  For those who are familiar with the show, its a pretty entertaining show that introduced Will Smith to a wider audience but this episode showed some acting chops as it contains quite possible the most iconic scene from the show.  Inquirer.com called the end of this episode ["among the most tear-jerking in sitcom history"](https://www.inquirer.com/news/bel-air-fresh-prince-dramatic-moments-will-smith-peacock-20220215.html)
+According to this method the most **unexpectedly good** episode of TV since 1990 is from **The Fresh Prince of Bel-Air**'s 4th Season entitled "Papa's Got a Brand New Excuse.  Its a pretty entertaining show in general but this episode contains quite possible the most iconic scene from the show.  Inquirer.com called the end of this episode ["among the most tear-jerking in sitcom history"](https://www.inquirer.com/news/bel-air-fresh-prince-dramatic-moments-will-smith-peacock-20220215.html).
 
-{{< youtube wQYQjJeaIek >}}
+<iframe width="560" height="315" src="https://www.youtube.com/embed/wQYQjJeaIek" frameborder="0" allowfullscreen></iframe>
 
-I'm not really familiar with many of the other episodes from this list, but at least from number 1 it seems like the method works well.  Remember is not looking for the best TV episodes but the best ones you wouldn't expect from that show.
+I'm not really familiar with many of the other episodes from this list, but at least from number 1 it seems like the method works well.  Remember this isn't looking for the best TV episodes but the best ones from a show you wouldn't expect.
 
 ### The 10 Most **Unexpectedly Bad** Episodes
 
-Using this methodology the Top 10 **Unexpectedly Bad** episodes are:
+The Top 10 **Unexpectedly Bad** episodes are:
 
 ```{r}
 # Subset Data to only Unexpectedly Bad Results
@@ -397,7 +408,7 @@ Moral of the story is that people don't like filler episodes.
 
 ### Drilling into a Few Shows
 
-Just for fun I wrote a general purpose function based on the RatinGraph charts that will show any TV Series's trend-lines and expected range as well as highlight any outliers.
+Just for fun I wrote a general purpose function inspired by the RatinGraph charts that will show any TV Series's trend-lines and expected range as well as highlight any **unexpected** episodes.
 
 ```{r}
 plot_shows <- function(title){
@@ -410,15 +421,18 @@ plot_shows <- function(title){
     mutate(primaryTitle = title) %>%
     ggplot(aes(x = episodeOverall, y = averageRating, color = seasonNumber)) + 
     # Plot the expected value range
-    geom_ribbon(aes(ymin = lower, ymax = upper), fill = 'lightblue', color = NA, alpha = .3) + 
+    geom_ribbon(aes(ymin = lower, ymax = upper), fill = 'lightblue', 
+                color = NA, alpha = .3) + 
     # Plot the overall trend line across the entire Series
     geom_smooth( se = F, method = 'lm', lty = 2, color = 'grey60') +
     # Plot the trendlines for each season
-    geom_smooth(aes(group = seasonNumber), se = F, method = 'lm', lty = 2, show.legend = F) +
+    geom_smooth(aes(group = seasonNumber), se = F, method = 'lm', 
+                lty = 2, show.legend = F) +
     # Plot the actuals for each episode
     geom_point(alpha = .5) + 
     # Add annotations for any outliers
-    geom_label_repel(data = . %>% filter(anomaly == T), size = 3, min.segment.length = 0, 
+    geom_label_repel(data = . %>% filter(anomaly == T), size = 3, 
+                     min.segment.length = 0, 
                      aes(label = glue("Season {seasonNumber} Episode {episodeNumber}
                                     {episodeTitle}
                                     Rating: {averageRating}")),
@@ -433,7 +447,6 @@ plot_shows <- function(title){
 }
 ```
 
-I can use this to dig into some specific examples:
 
 First let's look at the show with the most **unexpectedly good** episode, The Fresh Prince of Bel-Air.
 
@@ -461,7 +474,7 @@ No major outliers. And the episode "Beard After Hours" (the lowest green dot) wh
 A special thanks to Cédric Scherer.  His posit::conf(2023) presentation on [
 Engaging and Beautiful Data Visualizations with ggplot2](https://posit-conf-2023.github.io/dataviz-ggplot2/) taught me a TON.
 
-## Appendix: Code for the xample Plot for Stranger Things
+## Appendix: Code for the example Plot for Stranger Things
 
 ```{r}
 examples <- results %>% filter(primaryTitle == 'Stranger Things')
