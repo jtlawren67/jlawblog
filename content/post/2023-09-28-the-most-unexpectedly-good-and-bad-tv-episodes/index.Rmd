@@ -328,7 +328,7 @@ good_results %>%
   scale_color_manual(values = color, name = '') +
   labs(x = "", y = "IMDB Rating", 
        title = "Top 10 Unexpectedly <i style = 'color:#2E8B57'>Good Episodes </i>",
-       subtitle = "*As measured difference between Prediction Interval and Actual IMDB Episode Rating*") +
+       subtitle = "*As measured by the difference between Prediction Interval and Actual IMDB Episode Rating*") +
   coord_flip() + 
   theme(
     plot.title = element_markdown(),
@@ -382,7 +382,7 @@ bad_results %>%
     scale_color_manual(values = color, name = '') +
     labs(x = "", y = "IMDB Rating", 
          title = "Top 10 Unexpectedly <i style = 'color:#b22222'>Bad Episodes </i>",
-         subtitle = "*As measured difference between Prediction Interval and Actual IMDB Episode Rating*") +
+         subtitle = "*As measured by the difference between Prediction Interval and Actual IMDB Episode Rating*") +
     coord_flip() + 
     theme(
       plot.title = element_markdown(),
