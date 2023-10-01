@@ -10,10 +10,10 @@ tags:
   - R
   - broom
   - ggtext
-subtitle: ''
-summary: 'What goes in the summary?'
+subtitle: 'Why the Fresh Prince of Bel-Air has the Most Unexpectedly Good Episode of TV'
+summary: ''
 authors: []
-lastmod: '2023-10-01T07:00:52-04:00'
+lastmod: '2023-10-02T04:00:52-04:00'
 featured: no
 image:
   caption: ''
@@ -34,7 +34,7 @@ The 9th episode of the 2nd Season of Ted Lasso is an episode called "Beard After
 
 Further Googling had shown that this episode (along with one other) were the results of the series getting an extension from 10 episodes to 12 episodes for Season 2.  Thus, "Beard After Hours" was a filler episode intended to not affect the main plot line.
 
-This got me thinking aboutother unexpectedly bad episodes of TV.  And since doing unexpectedly bad and unexpectedly good are similar I figured why not both.  So in this post, I find the 10 most unexpectedly good and unexpectedly bad episodes of television.
+This got me thinking about other unexpectedly bad episodes of TV.  And since doing unexpectedly bad and unexpectedly good are similar I figured why not both.  So in this post, I find the 10 most unexpectedly good and unexpectedly bad episodes of television.
 
 ## Data
 
@@ -79,7 +79,8 @@ The `basics` file contains nearly 250k TV Series which is way more than I want t
 * IMDB categorizes it as a TV Series
 * The show started in 1990 or later (because I wanted things I'd be familiar with)
 * IMDB classifies it as either a Comedy or a Drama
-* IMDB does **not** classify it as a Talk Show, Reality Show, News, Game Show, or Short (Genres on IMDB can have multiple categories for example [Jimmy Kimmel Live!](https://www.imdb.com/title/tt0320037) is classified as Comedy, Music, and Talk-Show)
+* IMDB does **not** classify it as a Talk Show, Reality Show, News, Game Show, or Short 
+    + Genres on IMDB can have multiple categories for example [Jimmy Kimmel Live!](https://www.imdb.com/title/tt0320037) is classified as Comedy, Music, and Talk-Show
 * There are at least 20 episodes in the Series (need a track record for how a show is rated)
 * Each episode has on average 250 votes (want to have enough stability in the ratings and for the show to be somewhat popular)
 
@@ -145,11 +146,11 @@ Now the dataset is all prepared to find our **unexpected** episodes.
 
 ## Methodology
 
-The methodology I'm using for what's an **unexpectedly** good or bad episode of TV is similar to the methodology used in the [tsoutliers() function in the forecast packages](https://robjhyndman.com/hyndsight/tsoutliers/).  Although since this isn't really a time-series, I'll be modifying it slightly to not account for "seasonal components".  My method is:
+The methodology I'm using for what's an **unexpectedly** good or bad episode of TV is similar to the methodology used in the [tsoutliers() function in the forecast package](https://robjhyndman.com/hyndsight/tsoutliers/).  Although since this isn't really a time-series, I'll be modifying it slightly to not account for "seasonal components".  My method is:
 
 1. For each TV Series create a prediction of what the expected IMDB rating would be.  
     + Using a linear model with the Overall Episode number to capture a global trend (does the series get better or worse over time) as well as Season Number and Episode Number (and their interaction) to capture more local effects (is a certain season as a whole just bad).  
-    + For example, in the show Scrubs (which I love), the 9th season is rated much lower than Seasons 1-8.  Therefore episodes in Season 9 aren't really **unexpectedly** bad since the whole season is bad.
+    + For example, in the show Scrubs (which I love), the 9th season is rated much lower than Seasons 1-8.  Therefore episodes in Season 9 aren't  **unexpectedly** bad since the whole season is bad.
 
 2. Calculate the difference between the Predicted Ratings from the model in Step #1 and the Actual Rating from IMDB.
 
@@ -160,7 +161,7 @@ The methodology I'm using for what's an **unexpectedly** good or bad episode of 
     + This is different than just using the difference between the predicted and the actual values.  
     + The reason being that if a show has a very wide expected range, for example from 4 to 9.  Then if the predicted value is 6.5 and the actual value is 9.1 then there's a difference of 2.8 from the predicted value but only 0.1 outside the expected range.  **I want to focus on the greatest gap from expected** so I want to take larger variability into account.
 
-A visual explanation using an episode of Stranger Things as an example:
+A visual explanation using an episode of Stranger Things as an example is shown below.  I want to focus more on the difference between the 7.4 and 6.1 vs. the 8.5 and 6.1:
 ![](example.png)
 
 ### Function to find the Unexpected Episodes
@@ -402,7 +403,7 @@ I have seen more of the bad list than I did the good list.  While I don't know m
 
 Also, the Scrubs episode that appears "My Night to Remember" is the only clip show from the series.
 
-In both of these examples, they're **unexpectedly bad** because the shows in general are good (they have the two higher upper bounds of the Top 10) but these two episodes did nothing to advance the plot and were ultimately filler.  Much like the Ted Lasso episode that motivated this analysis.
+In both of these examples, they're **unexpectedly bad** because the shows in general are good (they have the two highest upper bounds of the Top 10) but these two episodes did nothing to advance the plot and were ultimately filler.  Much like the Ted Lasso episode that motivated this analysis.
 
 Moral of the story is that people don't like filler episodes.
 
