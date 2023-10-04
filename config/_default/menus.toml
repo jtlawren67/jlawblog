@@ -38,6 +38,16 @@
   url = "https://github.com/jtlawren67"
   weight = 50
 
+[[main]]
+  name = "<i class=\"fab fa-twitter\"></i> Twitter"
+  url = "https://twitter.com/JLawsRBlog"
+  weight = 60
+
+[[main]]
+  name = "<i class=\"fab fa-mastodon\"></i> Mastodon"
+  url = "https://universeodon.com/@jlaw"
+  weight = 70
+
 # Link to a PDF of your resume/CV from the menu.
 # To enable, copy your resume/CV to `static/files/cv.pdf` and uncomment the lines below.
 # [[main]]
