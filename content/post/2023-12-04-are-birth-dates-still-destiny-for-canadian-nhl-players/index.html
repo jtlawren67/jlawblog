@@ -415,9 +415,9 @@ CANADA_ICON &lt;- &quot;https://cdn-icons-png.flaticon.com/512/5372/5372678.png&
   geom_image(aes(image = NHL_ICON, y = player_pct), size = .08) + 
   geom_image(aes(image = CANADA_ICON, y = country_pct), size = .07) + 
   geom_text(aes(label = percent(player_pct, accuracy = .1), 
-                y = if_else(player_pct &gt; country_pct, player_pct + .003, player_pct - .003))) + 
+                y = if_else(player_pct &gt; country_pct, player_pct + .004, player_pct - .004))) + 
   geom_text(aes(label = percent(country_pct, accuracy = .1), 
-                y = if_else(country_pct &gt; player_pct, country_pct + .003, country_pct - .003))) +
+                y = if_else(country_pct &gt; player_pct, country_pct + .004, country_pct - .004))) +
   annotate(
     &#39;curve&#39;,
     xend = 2.3,
