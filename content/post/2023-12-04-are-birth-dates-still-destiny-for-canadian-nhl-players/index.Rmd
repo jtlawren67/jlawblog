@@ -32,7 +32,7 @@ In the first chapter [Malcolm Gladwell's Outliers](https://www.amazon.com/Outlie
 
 ![](gladwell.PNG)
 
-So because these kids are older within their level they make all the important teams at a young age which gets them better resources for skill development and continues on and on.  This book was published in 2011 and focused on Canadian Junior hockey. 
+Because these kids are older within their year they make all the important teams at a young age which gets them better resources for skill development and continues on and on.  
 
 While it seems clear that more players are born in the first few months of the year what isn't explored is whether or not this would be expected.  Maybe more people in Canada **in general** are born earlier in the year.
 
@@ -58,7 +58,7 @@ Information about births by month in Canada can be found at [Statistics Canada](
 
 ![](canadaBirth.PNG)
 
-Initially I had tried to web-scrape the table using `rvest` but could not figure out a way to deal with the multiple row headers.  Since the data could be downloaded as a CSV file my alternative solution was to use `httr` to send a call to the download link to grab the file.  The URL was found by using the inspect option in Firefox when clicking the download link.
+Initially I had tried to web-scrape the table using `rvest` but could not figure out a way to deal with the "Number" row.  Since the data could be downloaded as a CSV file my alternative solution was to use `httr` to send a call to the download link to grab the file.  The URL was found by using the inspect option in Firefox when clicking the download link.
 
 ```{r cache=TRUE}
 canada_raw <- GET('https://www150.statcan.gc.ca/t1/tbl1/en/dtl!downloadDbLoadingData-nonTraduit.action?pid=1310041501&latestN=0&startDate=19910101&endDate=20220101&csvLocale=en&selectedMembers=%5B%5B1%5D%2C%5B%5D%2C%5B1%5D%5D&checkedLevels=1D1%2C1D2') %>%
@@ -72,7 +72,7 @@ The raw data contains many columns that are either duplicative or unnecessary fo
 canada_raw %>% head(2) %>% knitr::kable()
 ```
 
-I pulled the data for 1991 through 2022 and each year has a total row as well as each individual month.  To clean up this data I filter out the total rows with `str_detect()`, keep only the *REF_DATE* for the year, extract the month using `str_extract` and keep the *VALUE* which is the actual number of births.
+I pulled the data for 1991 through 2022 and each year has a total row as well as a row for each individual month.  To clean up this data I filter out the total rows with `str_detect()`, keep only the *REF_DATE* for the year, extract the month using `str_extract` and keep the *VALUE* which is the actual number of births.
 
 ```{r}
 canada_births <- canada_raw %>%
@@ -113,13 +113,13 @@ canada_births %>%
   
 ```
   
-At first glance, Canadians seem **less** likely to be born in the beginning of the year (particularly January and February) than from random distribution.  Also, less likely to be born in the end of the year.
+At first glance, Canadians seem **less** likely to be born in the beginning of the year (particularly January and February) than from random distribution.  They're also less likely to be born in the end of the year.
 
 Let's see what the Canadian NHL players look like:
 
 ## Section 2: What is the difstribution of births by month for Canadian NHL players?
 
-To get the information about the NHL players I will use `httr` to query the NHLs API.  My original version of this analysis used the `nhlapi` which is on CRAN.  But the NHL changed their API at some point in the last few months so that package no longer functioned.
+To get the information about the NHL players I will use `httr` to query the NHLs API.  My original version of this analysis used the `nhlapi` package which is on CRAN.  But the NHL changed their API at some point in the last few months so that package no longer functioned.
 
 Getting the 2023-2024 team rosters can be done through the API endpoint `https://api-web.nhle.com/v1/roster/{team}/20232024` where `{team}` is a three-character code representing each of the teams.  To get the rosters for each team I need to first get the codes for each team.
 
@@ -145,7 +145,7 @@ Now "teams" is a list with 59 elements with each element containing information 
 teams[1:3] %>% jsonlite::toJSON(auto_unbox = T) %>% jsonlite::prettify()
 ```
 
-Ultimate I want to restructure this set of nested lists into a rectangular format.  The way I'll do this is create a tibble of list columns using `tibble()` and then `tidyr::unnest_wider` to turn each element of a list-column into its own column.
+Ultimately I want to restructure this set of nested lists into a rectangular format.  The way I'll do this is create a tibble of list columns using `tibble()` and then `tidyr::unnest_wider` to turn each element of a list-column into its own column.
 
 ```{r}
 teams <- teams %>% 
@@ -162,7 +162,7 @@ teams %>%
   kable()
 ```
 
-That was all just to get the 3-character codes needed to actually get the rosters.  Since a separate call is made to the Rosters endpoint for each time this is a good opportunity to create a function.  Then I can use `purrr::map_dfr` to iterate through the team codes to combine all the rosters together.
+That was all just to get the 3-character codes needed to actually get the rosters.  Since a separate call is made to the Rosters endpoint for each team this is a good opportunity to create a function.  Then I can use `purrr::map_dfr` to iterate through the team codes to combine all the rosters together.
 
 For the function, it'll take a team code for input and extract the player's first name, last name, birth date, and birth country.
 
@@ -222,9 +222,9 @@ Now we have the distribution of birth months for Canadian NHL players
 
 ## Section 3: Putting it all together
 
-Last section is to combine the Canada birth month data from Section 1 with the Canadian NHL player from Section 2 and make a pretty visualization.
+The last section is to combine the Canada birth month data from Section 1 with the Canadian NHL player from Section 2 and make a pretty visualization.
 
-First, combining the data and adding back the percentage of births you'd expect if every day was equally likely:
+First I combining the data and create a field for the percentage of births you'd expect if every day was equally likely (ex. if January has 31 days then there is a 31/365 chance of being randomly born in January):
 
 ```{r}
 combined <- canada_players %>%
@@ -248,7 +248,7 @@ CANADA_ICON <- "https://cdn-icons-png.flaticon.com/512/5372/5372678.png"
 
 Finally, a combination of `ggplot`, `ggtext`, and `ggimage` is used to create the visualization.
 
-```{r}
+```{r fig.height=8, fig.width=10}
 ggplot(combined, aes(x = fct_reorder(mob, -mob_id))) + 
   geom_line(aes(y = random, group = 1), lty = 2, color = 'grey60') + 
   geom_linerange(aes(ymin = country_pct, ymax = player_pct)) + 
@@ -298,6 +298,6 @@ Finally for a more stats-y perspective.  A chi-sq test can be used to see if the
 ```{r}
 broom::tidy(chisq.test(x = combined$players, p = combined$country_pct))
 ```
-The p-value of <.01 implies that we can reject the null hypothesis that they are the same distribution. From the visualization we can see that there are much more NHL players in January and February than you'd expect based on Canada's population and far fewer NHL born in August through December.
+The p-value of <.01 means that we can reject the null hypothesis that they are the same distribution. From the visualization we can see that there are much more NHL players in January and February than you'd expect based on Canada's population and far fewer NHL born in August through December.
 
-So it seems that Malcolm Gladwell's thesis in Outliers still holds true in today's NHL.
+So it seems that Malcolm Gladwell's thesis in Outliers still holds true in today's NHL among Canadian players.

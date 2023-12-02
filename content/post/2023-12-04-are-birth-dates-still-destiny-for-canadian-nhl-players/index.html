@@ -26,7 +26,7 @@ projects: []
 
 <p>In the first chapter <a href="https://www.amazon.com/Outliers-Story-Success-Malcolm-Gladwell/dp/0316017930">Malcolm Gladwell’s Outliers</a> he discusses how in Canadian Junior Hockey there is a higher likelihood for players to be born in the first quarter of the year. In his words:</p>
 <p><img src="gladwell.PNG" /></p>
-<p>So because these kids are older within their level they make all the important teams at a young age which gets them better resources for skill development and continues on and on. This book was published in 2011 and focused on Canadian Junior hockey.</p>
+<p>Because these kids are older within their year they make all the important teams at a young age which gets them better resources for skill development and continues on and on.</p>
 <p>While it seems clear that more players are born in the first few months of the year what isn’t explored is whether or not this would be expected. Maybe more people in Canada <strong>in general</strong> are born earlier in the year.</p>
 <p>Additionally I will explore whether this is still true in today’s NHL.</p>
 <p>To answer these questions I will download data on birth rates from Statistics Canada as well as player roster data from the NHL’s API.</p>
@@ -41,7 +41,7 @@ library(ggtext)</code></pre>
 <p>Gladwell’s thesis is that you see more Canadian Junior hockey players born earlier in the year because of the way that cut-offs are set for Youth Hockey. I think that he is correct but what if most people in Canada are born in the beginning of the year. Then this might be representative of the population rather than an outlier effect.</p>
 <p>Information about births by month in Canada can be found at <a href="https://www150.statcan.gc.ca/t1/tbl1/en/tv.action?pid=1310041501">Statistics Canada</a>.</p>
 <p><img src="canadaBirth.PNG" /></p>
-<p>Initially I had tried to web-scrape the table using <code>rvest</code> but could not figure out a way to deal with the multiple row headers. Since the data could be downloaded as a CSV file my alternative solution was to use <code>httr</code> to send a call to the download link to grab the file. The URL was found by using the inspect option in Firefox when clicking the download link.</p>
+<p>Initially I had tried to web-scrape the table using <code>rvest</code> but could not figure out a way to deal with the “Number” row. Since the data could be downloaded as a CSV file my alternative solution was to use <code>httr</code> to send a call to the download link to grab the file. The URL was found by using the inspect option in Firefox when clicking the download link.</p>
 <pre class="r"><code>canada_raw &lt;- GET(&#39;https://www150.statcan.gc.ca/t1/tbl1/en/dtl!downloadDbLoadingData-nonTraduit.action?pid=1310041501&amp;latestN=0&amp;startDate=19910101&amp;endDate=20220101&amp;csvLocale=en&amp;selectedMembers=%5B%5B1%5D%2C%5B%5D%2C%5B1%5D%5D&amp;checkedLevels=1D1%2C1D2&#39;) %&gt;%
   content()</code></pre>
 <p>The <code>GET()</code> command sends the request to the server and the <code>content()</code> function returns the results. Without the <code>content()</code> function there is a lot of additional information about the call such as headers, request url, etc.</p>
@@ -124,7 +124,7 @@ library(ggtext)</code></pre>
 </tr>
 </tbody>
 </table>
-<p>I pulled the data for 1991 through 2022 and each year has a total row as well as each individual month. To clean up this data I filter out the total rows with <code>str_detect()</code>, keep only the <em>REF_DATE</em> for the year, extract the month using <code>str_extract</code> and keep the <em>VALUE</em> which is the actual number of births.</p>
+<p>I pulled the data for 1991 through 2022 and each year has a total row as well as a row for each individual month. To clean up this data I filter out the total rows with <code>str_detect()</code>, keep only the <em>REF_DATE</em> for the year, extract the month using <code>str_extract</code> and keep the <em>VALUE</em> which is the actual number of births.</p>
 <pre class="r"><code>canada_births &lt;- canada_raw %&gt;%
   filter(!str_detect(`Month of birth`, &#39;Total&#39;)) %&gt;%
   transmute(
@@ -237,12 +237,12 @@ library(ggtext)</code></pre>
 </tr>
 </tbody>
 </table>
-<p>At first glance, Canadians seem <strong>less</strong> likely to be born in the beginning of the year (particularly January and February) than from random distribution. Also, less likely to be born in the end of the year.</p>
+<p>At first glance, Canadians seem <strong>less</strong> likely to be born in the beginning of the year (particularly January and February) than from random distribution. They’re also less likely to be born in the end of the year.</p>
 <p>Let’s see what the Canadian NHL players look like:</p>
 </div>
 <div id="section-2-what-is-the-difstribution-of-births-by-month-for-canadian-nhl-players" class="section level2">
 <h2>Section 2: What is the difstribution of births by month for Canadian NHL players?</h2>
-<p>To get the information about the NHL players I will use <code>httr</code> to query the NHLs API. My original version of this analysis used the <code>nhlapi</code> which is on CRAN. But the NHL changed their API at some point in the last few months so that package no longer functioned.</p>
+<p>To get the information about the NHL players I will use <code>httr</code> to query the NHLs API. My original version of this analysis used the <code>nhlapi</code> package which is on CRAN. But the NHL changed their API at some point in the last few months so that package no longer functioned.</p>
 <p>Getting the 2023-2024 team rosters can be done through the API endpoint <code>https://api-web.nhle.com/v1/roster/{team}/20232024</code> where <code>{team}</code> is a three-character code representing each of the teams. To get the rosters for each team I need to first get the codes for each team.</p>
 <p>This is going to involve a bunch of JSON manipulation which is new to me so their is probably a more elegant solution.</p>
 <p>All information on NHL teams can be retrieved from the <code>https://api.nhle.com/stats/rest/en/team</code> endpoint. Using the same <code>GET()</code> / <code>content()</code> set from the prior section I can get all the team information</p>
@@ -280,7 +280,7 @@ library(ggtext)</code></pre>
 ##     }
 ## ]
 ## </code></pre>
-<p>Ultimate I want to restructure this set of nested lists into a rectangular format. The way I’ll do this is create a tibble of list columns using <code>tibble()</code> and then <code>tidyr::unnest_wider</code> to turn each element of a list-column into its own column.</p>
+<p>Ultimately I want to restructure this set of nested lists into a rectangular format. The way I’ll do this is create a tibble of list columns using <code>tibble()</code> and then <code>tidyr::unnest_wider</code> to turn each element of a list-column into its own column.</p>
 <pre class="r"><code>teams &lt;- teams %&gt;% 
   tibble(data = .) %&gt;% 
   unnest_wider(data)</code></pre>
@@ -326,7 +326,7 @@ library(ggtext)</code></pre>
 </tr>
 </tbody>
 </table>
-<p>That was all just to get the 3-character codes needed to actually get the rosters. Since a separate call is made to the Rosters endpoint for each time this is a good opportunity to create a function. Then I can use <code>purrr::map_dfr</code> to iterate through the team codes to combine all the rosters together.</p>
+<p>That was all just to get the 3-character codes needed to actually get the rosters. Since a separate call is made to the Rosters endpoint for each team this is a good opportunity to create a function. Then I can use <code>purrr::map_dfr</code> to iterate through the team codes to combine all the rosters together.</p>
 <p>For the function, it’ll take a team code for input and extract the player’s first name, last name, birth date, and birth country.</p>
 <p>The data structure returned from the roster is a list with elements for forwards, defensemen, and goalies, Then for each player within the data looks like:</p>
 <pre class="r"><code>GET(glue::glue(&#39;https://api-web.nhle.com/v1/roster/NJD/20232024&#39;)) %&gt;% 
@@ -393,8 +393,8 @@ library(ggtext)</code></pre>
 </div>
 <div id="section-3-putting-it-all-together" class="section level2">
 <h2>Section 3: Putting it all together</h2>
-<p>Last section is to combine the Canada birth month data from Section 1 with the Canadian NHL player from Section 2 and make a pretty visualization.</p>
-<p>First, combining the data and adding back the percentage of births you’d expect if every day was equally likely:</p>
+<p>The last section is to combine the Canada birth month data from Section 1 with the Canadian NHL player from Section 2 and make a pretty visualization.</p>
+<p>First I combining the data and create a field for the percentage of births you’d expect if every day was equally likely (ex. if January has 31 days then there is a 31/365 chance of being randomly born in January):</p>
 <pre class="r"><code>combined &lt;- canada_players %&gt;%
   left_join(canada_births, by = c(&#39;mob&#39; = &#39;MONTH&#39;)) %&gt;%
   #Put in random value
@@ -451,13 +451,13 @@ CANADA_ICON &lt;- &quot;https://cdn-icons-png.flaticon.com/512/5372/5372678.png&
     plot.title = element_markdown(),
     plot.caption = element_markdown()
   )</code></pre>
-<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-17-1.png" width="672" /></p>
+<p><img src="{{< blogdown/postref >}}index_files/figure-html/unnamed-chunk-17-1.png" width="960" /></p>
 <p>Finally for a more stats-y perspective. A chi-sq test can be used to see if the distribution of the Canadian NHL players is different than Canada in general. In the following code, <em>x</em> is the number of Canadian NHL players born in each month and <em>p</em> is the expected proportion based on the distribution of birth months for Canada as a whole.</p>
 <pre class="r"><code>broom::tidy(chisq.test(x = combined$players, p = combined$country_pct))</code></pre>
 <pre><code>## # A tibble: 1 × 4
 ##   statistic p.value parameter method                                  
 ##       &lt;dbl&gt;   &lt;dbl&gt;     &lt;dbl&gt; &lt;chr&gt;                                   
 ## 1      25.6 0.00752        11 Chi-squared test for given probabilities</code></pre>
-<p>The p-value of &lt;.01 implies that we can reject the null hypothesis that they are the same distribution. From the visualization we can see that there are much more NHL players in January and February than you’d expect based on Canada’s population and far fewer NHL born in August through December.</p>
-<p>So it seems that Malcolm Gladwell’s thesis in Outliers still holds true in today’s NHL.</p>
+<p>The p-value of &lt;.01 means that we can reject the null hypothesis that they are the same distribution. From the visualization we can see that there are much more NHL players in January and February than you’d expect based on Canada’s population and far fewer NHL born in August through December.</p>
+<p>So it seems that Malcolm Gladwell’s thesis in Outliers still holds true in today’s NHL among Canadian players.</p>
 </div>
