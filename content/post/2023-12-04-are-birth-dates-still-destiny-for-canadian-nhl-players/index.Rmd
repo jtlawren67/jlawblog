@@ -32,11 +32,11 @@ In the first chapter [Malcolm Gladwell's Outliers](https://www.amazon.com/Outlie
 
 ![](gladwell.PNG)
 
-Because these kids are older within their year they make all the important teams at a young age which gets them better resources for skill development and continues on and on.  
+Because these kids are older within their year they make all the important teams at a young age which gets them better resources for skill development and so on.  
 
-While it seems clear that more players are born in the first few months of the year what isn't explored is whether or not this would be expected.  Maybe more people in Canada **in general** are born earlier in the year.
+While it seems clear that more players are born in the first few months of the year, what isn't explored is whether or not this would be expected.  Maybe more people in Canada **in general** are born earlier in the year.
 
-Additionally I will explore whether this is still true in today's NHL.
+I will explore whether Gladwell's result is expected as well as whether this is still true in today's NHL for Canadian-born players.
 
 To answer these questions I will download data on birth rates from Statistics Canada as well as player roster data from the NHL's API.
 
@@ -87,7 +87,7 @@ canada_births <- canada_raw %>%
   mutate(country_pct = country_births/sum(country_births))
 ```
 
-Then the distribution can be calculated by `dplyr` functions.  
+Then the distribution can be calculated by `dplyr` functions.  The true distribution of birth month in Canada vs. the expected distribution if every day had an equal chance is shown below:
 
 ```{r}
 canada_births %>%
@@ -109,7 +109,7 @@ canada_births %>%
     lbl = factor(lbl, levels = c('Canada %', 'Expected % from Days in Month', 'Difference')),
     across(January:December, ~percent(.x, accuracy = .1))) %>%
   arrange(lbl) %>% 
-  kable()
+  kable(col.names = c("", names(.)[-1]))
   
 ```
   
@@ -121,7 +121,7 @@ Let's see what the Canadian NHL players look like:
 
 To get the information about the NHL players I will use `httr` to query the NHLs API.  My original version of this analysis used the `nhlapi` package which is on CRAN.  But the NHL changed their API at some point in the last few months so that package no longer functioned.
 
-Getting the 2023-2024 team rosters can be done through the API endpoint `https://api-web.nhle.com/v1/roster/{team}/20232024` where `{team}` is a three-character code representing each of the teams.  To get the rosters for each team I need to first get the codes for each team.
+Getting the 2023-2024 team rosters can be done through the API endpoint `https://api-web.nhle.com/v1/roster/{team}/20232024` where `{team}` is a three-character code representing an individual team.  To get the rosters for each team I need to first get the codes for each team.
 
 This is going to involve a bunch of JSON manipulation which is new to me so their is probably a more elegant solution.
 
@@ -156,17 +156,17 @@ teams <- teams %>%
 
 Now everything is in a much more legible format:
 
-```{r}
+```{r echo = FALSE}
 teams %>% 
   head(3) %>%
   kable()
 ```
 
-That was all just to get the 3-character codes needed to actually get the rosters.  Since a separate call is made to the Rosters endpoint for each team this is a good opportunity to create a function.  Then I can use `purrr::map_dfr` to iterate through the team codes to combine all the rosters together.
+That was all just to get the 3-character codes needed to actually get the rosters.  Since a separate call is made to the Roster endpoint for each team this is a good opportunity to create a function.  Then I can use `purrr::map_dfr` to iterate through the team codes to combine all the rosters together.
 
 For the function, it'll take a team code for input and extract the player's first name, last name, birth date, and birth country.
 
-The data structure returned from the roster is a list with elements for forwards, defensemen, and goalies,  Then for each player within the data looks like:
+The data structure returned from the Roster endpoint is a list with elements for forwards, defensemen, and goalies,  Then for each player within the data looks like:
 
 ```{r}
 GET(glue::glue('https://api-web.nhle.com/v1/roster/NJD/20232024')) %>% 
@@ -176,7 +176,7 @@ GET(glue::glue('https://api-web.nhle.com/v1/roster/NJD/20232024')) %>%
     jsonlite::toJSON(auto_unbox = T, pretty = T) %>% 
     jsonlite::prettify()
 ```
-To get this data, I'll (1) pass a team code into the function to call to the API with `GET()` and `content()`, (2) use `flatten()` to remove the level of forwards, defensemen, and goalies to have all the players as one nested list, (3) turn the data into a tibble of list-columns, and (4) use the `tidyr::hoist()` function to pull only the items I want from the structure.
+To get only the data I want, I'll (1) pass a team code into the function to call to the API with `GET()` and `content()`, (2) use `flatten()` to remove the level of forwards, defensemen, and goalies to have all the players as one nested list, (3) turn the data into a tibble of list-columns with `tibble()`, and (4) use the `tidyr::hoist()` function to pull only the items I want from the structure.  Finally, I use `transmute` to add the 3-character input to the results and to exclude the *data* list-column.
 
 ```{r}
 get_roster <- function(team){
@@ -194,18 +194,18 @@ get_roster <- function(team){
 }
 ```
 
-Within `hoist()`, the construction of `list('firstName', 1L)` is to avoid having to pull the "default" item within firstName.  I'm simply saying to grab the value of the first element within the firstName item.  Since birthDate and birthCountry are not nested there is no need to do that for those fields.
+Within `hoist()`, the construction of `list('firstName', 1L)` is to avoid having to pull the "default" sub-item within firstName.  This way simply grabs the value of the first element within the firstName item.  Since birthDate and birthCountry have no sub-items there is no need to do that for those fields.
 
-Finally to get all the players from all the teams I use `purrr::map_dfr()` to iterate through the team codes and run my function.  For some reason there are empty rows that get returned.  I'll just exclude them rather than try to actually debug.
+Finally to get all the players from all the teams I use `purrr::map_dfr()` to iterate through the team codes and run my function.  There is a filter to remove any items with missing firstName fields because the Team endpoint returns information for all historical teams (e.g, Atlanta Thrashers, Hartford Whalers, etc.).  Since these teams are not active in 2023-2024 they return information but the fields I want don't populate.
 
 ```{r cache = TRUE}
 all_roster <- map_dfr(teams$triCode, get_roster) %>%
   filter(!is.na(firstName))
 ```
 
-Now we have a dataset of the `r nrow(all_roster)` players in the NHL.
+Now we have a dataset of the `r nrow(all_roster)` players in the NHL.  This number is slightly larger than the expected number of NHL players (736 = 23 players * 32 teams) so there is likely a nuance to how a roster player is determined but it shouldn't matter for this analysis.
 
-But I only want to look at Canadian players because I have no idea if the same cut-offs that apply in Canada apply in other countries in the world.  I'll also do some data cleanup on birth months and calculate the player distribution.
+Since I only want to look at Canadian players because I have no idea if the same cut-offs that apply in Canada apply in other countries in the world.  I'll also do some data cleanup on birth months and calculate the player distribution.
 
 ```{r}
 canada_players <- all_roster %>% 
@@ -218,7 +218,7 @@ canada_players <- all_roster %>%
   mutate(player_pct = players/sum(players))
 ```
 
-Now we have the distribution of birth months for Canadian NHL players
+Now we have the distribution of birth months for the `r sum(canada_players$players)` Canadian NHL players
 
 ## Section 3: Putting it all together
 
@@ -279,7 +279,7 @@ ggplot(combined, aes(x = fct_reorder(mob, -mob_id))) +
   scale_y_continuous(labels = percent) + 
   coord_flip() + 
   labs(x = "Month of Birth", y = "Percentage of Births (%)",
-       title = "Are Canadian NHL Player More Likely to be Born Early in the Year?",
+       title = "Are Canadian NHL Players More Likely to be Born Early in the Year?",
        subtitle = 'Comparing the distribution of birth months between Canadian NHL players and Canada in general ',
        caption = glue::glue("<img src = {NHL_ICON} width = '15' height=' 15' /> - Canadian NHL Players Birth Month Distribution <br />
                             <img src = {CANADA_ICON} width = '15' height=' 15' /> - Canadian Birth Month (1991-2022) Distribution")
@@ -293,11 +293,13 @@ ggplot(combined, aes(x = fct_reorder(mob, -mob_id))) +
   )
 ```
 
-Finally for a more stats-y perspective.  A chi-sq test can be used to see if the distribution of the Canadian NHL players is different than Canada in general.  In the following code, *x* is the number of Canadian NHL players born in each month and *p* is the expected proportion based on the distribution of birth months for Canada as a whole.
+Visually it looks pretty clear that there are more Canadian NHL players born in January/February than expected and fewer players born in August through the end of the year. May and July are interesting but I don't have an intuition for why more NHL players might be born in those months.
+
+For a more stats-y perspective.  A chi-sq test can be used to see if the distribution of the Canadian NHL players is different than Canada in general.  In the following code, *x* is the number of Canadian NHL players born in each month and *p* is the expected proportion based on the distribution of birth months for Canada as a whole.
 
 ```{r}
 broom::tidy(chisq.test(x = combined$players, p = combined$country_pct))
 ```
-The p-value of <.01 means that we can reject the null hypothesis that they are the same distribution. From the visualization we can see that there are much more NHL players in January and February than you'd expect based on Canada's population and far fewer NHL born in August through December.
+The p-value of <.01 means that we can reject the null hypothesis that they are the same distribution. 
 
 So it seems that Malcolm Gladwell's thesis in Outliers still holds true in today's NHL among Canadian players.
